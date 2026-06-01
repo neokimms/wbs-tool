@@ -78,6 +78,24 @@ const fallbackPreflight = {
   ],
 };
 
+const fallbackOperationsHealth = {
+  status: "watch",
+  summary: {
+    checks: 0,
+    failures: 0,
+    warnings: 1,
+    passes: 0,
+  },
+  checks: [
+    {
+      key: "operations",
+      label: "Operations health",
+      status: "warn",
+      message: "운영 상태 수집 대기",
+    },
+  ],
+};
+
 const state = {
   templates: fallbackTemplates,
   projects: fallbackProjects,
@@ -95,6 +113,7 @@ const state = {
   pendingImportJobId: null,
   pmPreflight: fallbackPreflight,
   syncDetail: null,
+  operationsHealth: fallbackOperationsHealth,
   userSelectedTemplate: false,
   userSelectedSyncProject: false,
 };
@@ -144,6 +163,24 @@ function syncStateLabel(value) {
 function syncStateClass(value) {
   if (value === "ready") return "stable";
   if (value === "offline" || value === "auth_failed" || value === "blocked") return "critical";
+  return "attention";
+}
+
+function operationStatusLabel(value) {
+  const labels = {
+    pass: "Pass",
+    warn: "Watch",
+    fail: "Fail",
+    stable: "Stable",
+    watch: "Watch",
+    critical: "Critical",
+  };
+  return labels[value] || "Watch";
+}
+
+function operationStatusClass(value) {
+  if (value === "pass" || value === "stable") return "stable";
+  if (value === "fail" || value === "critical") return "critical";
   return "attention";
 }
 
@@ -364,6 +401,31 @@ function renderSyncPanel() {
   document.querySelector("#syncPayloadPreview").textContent = preview;
 }
 
+function renderOperationsPanel() {
+  const health = state.operationsHealth || fallbackOperationsHealth;
+  const status = document.querySelector("#operationsStatus");
+  status.textContent = operationStatusLabel(health.status);
+  status.className = `status-pill ${operationStatusClass(health.status)}`;
+
+  const checks = health.checks?.length ? health.checks : fallbackOperationsHealth.checks;
+  document.querySelector("#operationsChecks").innerHTML = checks
+    .map(
+      (check) => `
+        <article class="operation-check">
+          <label>
+            <input type="checkbox" disabled ${check.status === "pass" ? "checked" : ""} />
+            <span>
+              <strong>${escapeHtml(check.label)}</strong>
+              <small>${escapeHtml(check.message)}</small>
+            </span>
+          </label>
+          <span class="status-pill ${operationStatusClass(check.status)}">${operationStatusLabel(check.status)}</span>
+        </article>
+      `,
+    )
+    .join("");
+}
+
 function renderAll() {
   renderMetrics();
   renderTemplates();
@@ -374,16 +436,18 @@ function renderAll() {
   renderApplyButton();
   renderSyncProjectSelect();
   renderSyncPanel();
+  renderOperationsPanel();
 }
 
 async function loadData() {
   try {
-    const [dashboard, templates, projects, approvals, pmPreflight] = await Promise.all([
+    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
       request("/api/approvals"),
       request("/api/pm-engine/preflight"),
+      request("/api/operations/health"),
     ]);
 
     state.dashboard = dashboard;
@@ -391,10 +455,16 @@ async function loadData() {
     state.projects = projects.length ? projects : fallbackProjects;
     state.approvals = approvals;
     state.pmPreflight = pmPreflight;
+    state.operationsHealth = operationsHealth;
   } catch (error) {
     state.dashboard.metrics.projects = state.projects.length;
     state.dashboard.metrics.templates = state.templates.length;
     state.dashboard.metrics.pending_approvals = state.approvals.filter((approval) => approval.status === "Pending").length;
+    state.operationsHealth = {
+      ...fallbackOperationsHealth,
+      status: "critical",
+      checks: [{ key: "operations", label: "Operations health", status: "fail", message: error.message }],
+    };
   }
 
   renderAll();

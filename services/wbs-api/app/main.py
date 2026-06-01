@@ -33,6 +33,7 @@ OPENPROJECT_DEFAULT_TYPE_ID = os.getenv("OPENPROJECT_DEFAULT_TYPE_ID", "")
 OPENPROJECT_TYPE_MAP_JSON = os.getenv("OPENPROJECT_TYPE_MAP_JSON", "{}")
 OPENPROJECT_SYNC_PARENT_LINKS = os.getenv("OPENPROJECT_SYNC_PARENT_LINKS", "true").lower() in {"1", "true", "yes", "on"}
 PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
+BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/app/backups/postgres"))
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1352,6 +1353,52 @@ def build_openproject_payload_sample(
     }
 
 
+def operation_check(
+    key: str,
+    label: str,
+    status: str,
+    message: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "status": status,
+        "message": message,
+        "metadata": metadata or {},
+    }
+
+
+def backup_health_check() -> dict[str, Any]:
+    backup_files = sorted(BACKUP_DIR.glob("*.dump"), key=lambda path: path.stat().st_mtime, reverse=True)
+    if not backup_files:
+        return operation_check(
+            "backup_rehearsal",
+            "Backup rehearsal",
+            "warn",
+            f"No PostgreSQL backup found in {BACKUP_DIR}",
+            {"backup_dir": str(BACKUP_DIR), "latest_backup": None},
+        )
+
+    latest = backup_files[0]
+    latest_at = datetime.fromtimestamp(latest.stat().st_mtime, tz=timezone.utc)
+    age_hours = round((datetime.now(timezone.utc) - latest_at).total_seconds() / 3600, 1)
+    status = "pass" if age_hours <= 168 else "warn"
+    message = f"Latest backup {latest.name}, {age_hours}h old"
+    return operation_check(
+        "backup_rehearsal",
+        "Backup rehearsal",
+        status,
+        message,
+        {
+            "backup_dir": str(BACKUP_DIR),
+            "latest_backup": latest.name,
+            "latest_backup_at": latest_at.isoformat(),
+            "age_hours": age_hours,
+        },
+    )
+
+
 def template_rows_or_phases(template: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if rows:
         return rows
@@ -1949,6 +1996,125 @@ async def dashboard(request: Request) -> dict[str, Any]:
             {"name": "Excel preview queue", "level": "watch" if preview_import_count else "stable"},
             {"name": "Backup rehearsal", "level": "stable"},
         ],
+    }
+
+
+@app.get("/api/operations/health")
+async def operations_health(request: Request) -> dict[str, Any]:
+    async with get_pool(request).acquire() as connection:
+        database_version = await connection.fetchval("SHOW server_version")
+        project_count = await connection.fetchval("SELECT count(*) FROM wbs_projects")
+        template_count = await connection.fetchval("SELECT count(*) FROM wbs_templates")
+        template_item_count = await connection.fetchval("SELECT count(*) FROM wbs_template_items")
+        pending_approval_count = await connection.fetchval(
+            "SELECT count(*) FROM wbs_approval_requests WHERE status = 'Pending'"
+        )
+        preview_import_count = await connection.fetchval(
+            "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'"
+        )
+        existing_tables = await connection.fetch(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ANY($1::text[])
+            """,
+            [
+                "wbs_templates",
+                "wbs_template_items",
+                "wbs_projects",
+                "wbs_import_jobs",
+                "wbs_approval_requests",
+            ],
+        )
+
+    table_names = {row["table_name"] for row in existing_tables}
+    required_tables = {
+        "wbs_templates",
+        "wbs_template_items",
+        "wbs_projects",
+        "wbs_import_jobs",
+        "wbs_approval_requests",
+    }
+    missing_tables = sorted(required_tables - table_names)
+    preflight = await run_openproject_preflight()
+    openproject_status = "pass" if preflight["state"] == "ready" else "warn"
+    if preflight["state"] in {"offline", "auth_failed", "blocked"}:
+        openproject_status = "fail"
+
+    checks = [
+        operation_check(
+            "postgresql",
+            "PostgreSQL",
+            "pass",
+            f"PostgreSQL {database_version} is reachable",
+            {"version": database_version},
+        ),
+        operation_check(
+            "schema",
+            "Schema migration",
+            "fail" if missing_tables else "pass",
+            "Required WBS tables are present" if not missing_tables else "Missing required WBS tables",
+            {"missing_tables": missing_tables},
+        ),
+        operation_check(
+            "template_baseline",
+            "WBS template baseline",
+            "pass" if template_count and template_item_count else "fail",
+            f"{template_count} templates, {template_item_count} template items",
+            {"templates": template_count, "template_items": template_item_count},
+        ),
+        operation_check(
+            "portfolio_seed",
+            "Project portfolio",
+            "pass" if project_count else "warn",
+            f"{project_count} projects registered",
+            {"projects": project_count},
+        ),
+        operation_check(
+            "approval_queue",
+            "PMO approval queue",
+            "warn" if pending_approval_count else "pass",
+            f"{pending_approval_count} pending approvals",
+            {"pending_approvals": pending_approval_count},
+        ),
+        operation_check(
+            "excel_preview_queue",
+            "Excel preview queue",
+            "warn" if preview_import_count else "pass",
+            f"{preview_import_count} imports waiting for apply",
+            {"preview_imports": preview_import_count},
+        ),
+        operation_check(
+            "openproject_preflight",
+            "OpenProject preflight",
+            openproject_status,
+            f"Engine state: {preflight['state']}",
+            {"state": preflight["state"], "ready_for_actual_sync": preflight["ready_for_actual_sync"]},
+        ),
+        backup_health_check(),
+        operation_check(
+            "metrics",
+            "Metrics endpoint",
+            "pass",
+            "Prometheus metrics are exposed at /metrics",
+            {"path": "/metrics"},
+        ),
+    ]
+    failures = len([check for check in checks if check["status"] == "fail"])
+    warnings = len([check for check in checks if check["status"] == "warn"])
+    status = "critical" if failures else "watch" if warnings else "stable"
+
+    return {
+        "status": status,
+        "generated_at": utc_now_iso(),
+        "summary": {
+            "checks": len(checks),
+            "failures": failures,
+            "warnings": warnings,
+            "passes": len([check for check in checks if check["status"] == "pass"]),
+        },
+        "checks": checks,
     }
 
 

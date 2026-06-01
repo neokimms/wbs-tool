@@ -91,6 +91,8 @@ spec:
               value: {{ .Values.api.openprojectSyncParentLinks | quote }}
             - name: PORTAL_ORIGIN
               value: {{ .Values.api.portalOrigin | quote }}
+            - name: BACKUP_DIR
+              value: {{ .Values.api.backupDir | quote }}
           readinessProbe:
             httpGet:
               path: /health

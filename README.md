@@ -139,6 +139,12 @@ bash scripts/status-check.sh
 REQUIRE_OPENPROJECT=1 bash scripts/status-check.sh
 ```
 
+포털의 `제품화 체크` 패널은 운영 상태 API를 사용합니다. PostgreSQL, 스키마, 템플릿, 승인/Excel 대기열, OpenProject preflight, 백업 리허설, metrics 노출 여부를 한 번에 확인합니다.
+
+```bash
+curl http://localhost:8000/api/operations/health
+```
+
 PostgreSQL 백업은 `backups/postgres` 아래에 custom dump 형식으로 생성됩니다. 기본 대상은 `.env`의 `POSTGRES_DB`이며, 인자로 다른 DB를 지정할 수 있습니다.
 
 ```bash

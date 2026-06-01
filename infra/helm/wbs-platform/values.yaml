@@ -21,6 +21,7 @@ api:
   openprojectTypeMapJson: "{}"
   openprojectSyncParentLinks: true
   portalOrigin: "https://wbs.example.com"
+  backupDir: "/app/backups/postgres"
   resources:
     requests:
       cpu: 100m
