@@ -1195,6 +1195,16 @@ async def fetch_import_job_for_update(connection: asyncpg.Connection, job_id: UU
     return normalize_record(record) if record else None
 
 
+def import_job_response(record: asyncpg.Record, *, include_rows: bool = False, row_limit: int = 50) -> dict[str, Any]:
+    job = normalize_record(record)
+    preview_rows = job.get("preview_rows") or []
+    job["preview_count"] = len(preview_rows)
+    if include_rows:
+        job["rows"] = preview_rows[:row_limit]
+    job.pop("preview_rows", None)
+    return job
+
+
 async def fetch_approval(connection: asyncpg.Connection, approval_id: UUID) -> dict[str, Any] | None:
     record = await connection.fetchrow(
         f"""
@@ -2589,6 +2599,63 @@ async def operations_health(request: Request) -> dict[str, Any]:
         },
         "checks": checks,
     }
+
+
+@app.get("/api/imports")
+async def list_import_jobs(
+    request: Request,
+    limit: int = 10,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(limit, 50))
+
+    async with get_pool(request).acquire() as connection:
+        if status:
+            records = await connection.fetch(
+                f"""
+                SELECT {IMPORT_JOB_RETURNING}
+                FROM wbs_import_jobs
+                WHERE status = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                status,
+                bounded_limit,
+            )
+        else:
+            records = await connection.fetch(
+                f"""
+                SELECT {IMPORT_JOB_RETURNING}
+                FROM wbs_import_jobs
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                bounded_limit,
+            )
+
+    return [import_job_response(record) for record in records]
+
+
+@app.get("/api/imports/{job_id}")
+async def get_import_job(job_id: str, request: Request) -> dict[str, Any]:
+    try:
+        import_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid import job id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        record = await connection.fetchrow(
+            f"""
+            SELECT {IMPORT_JOB_RETURNING}
+            FROM wbs_import_jobs
+            WHERE id = $1
+            """,
+            import_job_id,
+        )
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    return import_job_response(record, include_rows=True)
 
 
 @app.post("/api/imports/validate")

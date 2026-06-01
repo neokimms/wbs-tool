@@ -111,7 +111,9 @@ const state = {
     },
   },
   importPreview: [],
+  importJobs: [],
   pendingImportJobId: null,
+  selectedImportJobId: null,
   pmPreflight: fallbackPreflight,
   syncDetail: null,
   syncRuns: [],
@@ -519,10 +521,10 @@ function renderImportPreview() {
         .map(
           (row) => `
             <tr>
-              <td>${row.code || ""}</td>
-              <td>${row.parent_code || ""}</td>
-              <td>${row.name || ""}</td>
-              <td>${row.weight ?? ""}</td>
+              <td>${escapeHtml(row.code || "")}</td>
+              <td>${escapeHtml(row.parent_code || "")}</td>
+              <td>${escapeHtml(row.name || "")}</td>
+              <td>${escapeHtml(row.weight ?? "")}</td>
             </tr>
           `,
         )
@@ -537,6 +539,55 @@ function renderImportPreview() {
 function renderApplyButton() {
   const applyButton = document.querySelector("#applyImportButton");
   applyButton.disabled = !state.pendingImportJobId;
+}
+
+function upsertImportJob(job) {
+  if (!job?.id) return;
+  state.importJobs = [
+    job,
+    ...state.importJobs.filter((item) => item.id !== job.id),
+  ].slice(0, 8);
+}
+
+function importJobSubline(job) {
+  const template = job.template_name || job.template_key || "Validation";
+  const createdAt = formatTimestamp(job.applied_at || job.created_at);
+  return `${template} · ${createdAt}`;
+}
+
+function renderImportHistory() {
+  document.querySelector("#importHistoryCount").textContent = state.importJobs.length;
+  document.querySelector("#importHistoryList").innerHTML = state.importJobs.length
+    ? state.importJobs
+        .map((job) => {
+          const selected = job.id === state.selectedImportJobId;
+          const rowCount = job.preview_count ?? job.total_rows ?? 0;
+          return `
+            <button
+              class="import-job ${selected ? "selected-import-job" : ""}"
+              type="button"
+              data-import-job-id="${escapeHtml(job.id)}"
+            >
+              <span>
+                <strong>${escapeHtml(job.source_file || "Excel import")}</strong>
+                <small>${escapeHtml(importJobSubline(job))}</small>
+              </span>
+              <span class="import-job-meta">
+                <span class="status-pill ${statusClass(job.status)}">${escapeHtml(job.status)}</span>
+                <small>${escapeHtml(job.accepted_rows ?? 0)}/${escapeHtml(rowCount)} rows</small>
+              </span>
+            </button>
+          `;
+        })
+        .join("")
+    : `
+      <article class="import-job empty-import-job">
+        <span>
+          <strong>No imports</strong>
+          <small>업로드 이력 없음</small>
+        </span>
+      </article>
+    `;
 }
 
 function renderProjectTemplateSelect(preserveSelection = true) {
@@ -697,6 +748,7 @@ function renderAll() {
   renderApprovals();
   renderImportPreview();
   renderApplyButton();
+  renderImportHistory();
   renderProjectTemplateSelect();
   renderSyncProjectSelect();
   renderSyncPanel();
@@ -706,13 +758,14 @@ function renderAll() {
 
 async function loadData() {
   try {
-    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth] = await Promise.all([
+    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
       request("/api/approvals"),
       request("/api/pm-engine/preflight"),
       request("/api/operations/health"),
+      request("/api/imports?limit=8"),
     ]);
 
     state.dashboard = dashboard;
@@ -721,6 +774,10 @@ async function loadData() {
     state.approvals = approvals;
     state.pmPreflight = pmPreflight;
     state.operationsHealth = operationsHealth;
+    state.importJobs = importJobs;
+    state.selectedImportJobId = importJobs.some((job) => job.id === state.selectedImportJobId)
+      ? state.selectedImportJobId
+      : null;
     state.apiConnected = true;
     state.selectedProjectId = projects.some((project) => project.id === state.selectedProjectId)
       ? state.selectedProjectId
@@ -751,6 +808,7 @@ async function loadData() {
       checks: [{ key: "operations", label: "Operations health", status: "fail", message: error.message }],
     };
     state.syncRuns = [];
+    state.importJobs = [];
   }
 
   renderAll();
@@ -910,6 +968,24 @@ async function decideApproval(approvalId, action) {
   }
 }
 
+async function loadImportJob(jobId) {
+  if (!jobId) return;
+
+  try {
+    const result = await request(`/api/imports/${encodeURIComponent(jobId)}`);
+    renderImportResult(result);
+  } catch (error) {
+    renderImportResult({
+      status: "Rejected",
+      accepted_rows: 0,
+      rejected_rows: 1,
+      errors: [{ message: error.message }],
+      warnings: [],
+      rows: [],
+    });
+  }
+}
+
 function selectedTemplate() {
   const selectedKey = document.querySelector("#templateSelect").value;
   return state.templates.find((template) => template.key === selectedKey) || state.templates[0] || fallbackTemplates[0];
@@ -917,6 +993,8 @@ function selectedTemplate() {
 
 function renderImportResult(result) {
   state.pendingImportJobId = result.status === "Preview" && result.id ? result.id : null;
+  state.selectedImportJobId = result.id || null;
+  upsertImportJob(result);
   document.querySelector("#importStatus").textContent = result.status;
   document.querySelector("#importStatus").className = `status-pill ${statusClass(result.status)}`;
   document.querySelector("#acceptedRows").textContent = result.accepted_rows;
@@ -930,6 +1008,7 @@ function renderImportResult(result) {
   state.importPreview = result.rows || [];
   renderImportPreview();
   renderApplyButton();
+  renderImportHistory();
 }
 
 function downloadTemplateExcel() {
@@ -1149,6 +1228,11 @@ document.querySelector("#approvalList").addEventListener("click", (event) => {
   const button = event.target.closest("[data-approval-action]");
   if (!button || button.disabled) return;
   decideApproval(button.dataset.approvalId, button.dataset.approvalAction);
+});
+document.querySelector("#importHistoryList").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-import-job-id]");
+  if (!button) return;
+  loadImportJob(button.dataset.importJobId);
 });
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;

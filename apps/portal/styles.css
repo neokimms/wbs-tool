@@ -658,6 +658,72 @@ tr:last-child td {
   grid-template-columns: 1fr;
 }
 
+.import-history {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.import-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.import-job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+button.import-job {
+  cursor: pointer;
+}
+
+button.import-job:hover,
+.selected-import-job {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.import-job strong,
+.import-job small {
+  display: block;
+  min-width: 0;
+}
+
+.import-job strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-job small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.import-job-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.empty-import-job {
+  grid-template-columns: 1fr;
+}
+
 .import-summary div {
   min-height: 76px;
   padding: 14px;
