@@ -31,7 +31,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -376,6 +377,35 @@ tr:last-child td {
   margin-bottom: 14px;
 }
 
+.import-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.import-controls select {
+  min-width: 0;
+  height: 38px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.import-controls input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.file-button {
+  min-width: 112px;
+}
+
 .import-summary div {
   min-height: 76px;
   padding: 14px;
@@ -403,7 +433,7 @@ tr:last-child td {
   display: grid;
   gap: 8px;
   min-height: 40px;
-  margin: 0;
+  margin: 0 0 14px;
   padding: 0;
   list-style: none;
 }
@@ -414,6 +444,20 @@ tr:last-child td {
   background: #fff7ed;
   color: #7c2d12;
   font-size: 13px;
+}
+
+.compact-table {
+  max-height: 238px;
+}
+
+.compact-table table {
+  min-width: 520px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 10px 12px;
+  font-size: 12px;
 }
 
 .status-pill {
@@ -548,5 +592,9 @@ dd {
   .primary-button,
   .secondary-button {
     flex: 1 1 134px;
+  }
+
+  .import-controls {
+    grid-template-columns: 1fr;
   }
 }

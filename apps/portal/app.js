@@ -60,19 +60,30 @@ const state = {
       database: "PostgreSQL 17",
     },
   },
+  importPreview: [],
+  userSelectedTemplate: false,
 };
 
 async function request(path, options = {}) {
+  const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    let detail = `Request failed: ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      detail = errorBody.detail || detail;
+    } catch (error) {
+      detail = response.statusText || detail;
+    }
+    throw new Error(detail);
   }
 
-  return response.json();
+  const contentType = response.headers.get("content-type") || "";
+  return contentType.includes("application/json") ? response.json() : response;
 }
 
 function renderMetrics() {
@@ -89,7 +100,7 @@ function renderTemplates() {
       (template) => `
         <article class="template-item">
           <strong>${template.name}</strong>
-          <span>${template.project_type}</span>
+          <span>${template.project_type}${template.item_count ? ` · ${template.item_count} items` : ""}</span>
           <p>${template.description}</p>
         </article>
       `,
@@ -97,9 +108,24 @@ function renderTemplates() {
     .join("");
 }
 
+function defaultTemplateKey() {
+  return state.templates.find((template) => template.key === "si-standard")?.key || state.templates[0]?.key || fallbackTemplates[0].key;
+}
+
+function renderTemplateSelect() {
+  const selector = document.querySelector("#templateSelect");
+  const selectedValue = state.userSelectedTemplate && selector.value ? selector.value : defaultTemplateKey();
+  selector.innerHTML = state.templates
+    .map((template) => `<option value="${template.key}">${template.name}</option>`)
+    .join("");
+  selector.value = state.templates.some((template) => template.key === selectedValue)
+    ? selectedValue
+    : defaultTemplateKey();
+}
+
 function statusClass(status) {
   const lowered = String(status).toLowerCase();
-  if (lowered.includes("done") || lowered.includes("approved")) return "stable";
+  if (lowered.includes("done") || lowered.includes("approved") || lowered.includes("accepted")) return "stable";
   if (lowered.includes("reject") || lowered.includes("critical")) return "critical";
   return "attention";
 }
@@ -121,10 +147,34 @@ function renderProjects() {
     .join("");
 }
 
+function renderImportPreview() {
+  const rows = state.importPreview.slice(0, 8);
+  document.querySelector("#importPreviewRows").innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${row.code || ""}</td>
+              <td>${row.parent_code || ""}</td>
+              <td>${row.name || ""}</td>
+              <td>${row.weight ?? ""}</td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `
+      <tr>
+        <td colspan="4">업로드 대기</td>
+      </tr>
+    `;
+}
+
 function renderAll() {
   renderMetrics();
   renderTemplates();
+  renderTemplateSelect();
   renderProjects();
+  renderImportPreview();
 }
 
 async function loadData() {
@@ -171,52 +221,12 @@ async function createProject() {
   renderAll();
 }
 
-async function validateImport() {
-  const sampleRows = [
-    {
-      code: "1",
-      name: "착수",
-      weight: 50,
-      start_date: "2026-06-01",
-      finish_date: "2026-06-05",
-    },
-    {
-      code: "1.1",
-      name: "킥오프",
-      parent_code: "1",
-      weight: 60,
-      start_date: "2026-06-01",
-      finish_date: "2026-06-02",
-    },
-    {
-      code: "1.2",
-      name: "수행계획서",
-      parent_code: "1",
-      weight: 40,
-      start_date: "2026-06-03",
-      finish_date: "2026-06-05",
-    },
-  ];
+function selectedTemplate() {
+  const selectedKey = document.querySelector("#templateSelect").value;
+  return state.templates.find((template) => template.key === selectedKey) || state.templates[0] || fallbackTemplates[0];
+}
 
-  let result;
-  try {
-    result = await request("/api/imports/validate", {
-      method: "POST",
-      body: JSON.stringify({
-        source_file: "sample-wbs.xlsx",
-        rows: sampleRows,
-      }),
-    });
-  } catch (error) {
-    result = {
-      status: "Accepted",
-      accepted_rows: sampleRows.length,
-      rejected_rows: 0,
-      errors: [],
-      warnings: [{ message: "API offline: sample validation rendered locally" }],
-    };
-  }
-
+function renderImportResult(result) {
   document.querySelector("#importStatus").textContent = result.status;
   document.querySelector("#importStatus").className = `status-pill ${statusClass(result.status)}`;
   document.querySelector("#acceptedRows").textContent = result.accepted_rows;
@@ -226,10 +236,59 @@ async function validateImport() {
   document.querySelector("#importIssues").innerHTML = issues.length
     ? issues.map((issue) => `<li>${issue.message}</li>`).join("")
     : "<li>계층, 일정, 가중치 검증 통과</li>";
+
+  state.importPreview = result.rows || [];
+  renderImportPreview();
+}
+
+function downloadTemplateExcel() {
+  const template = selectedTemplate();
+  window.location.href = `${API_BASE}/api/templates/${encodeURIComponent(template.key)}/excel`;
+}
+
+async function uploadTemplateExcel(event) {
+  const [file] = event.target.files;
+  if (!file) return;
+
+  const template = selectedTemplate();
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("template_key", template.key);
+  formData.append("template_name", template.name);
+  formData.append("project_type", template.project_type);
+  formData.append("description", template.description);
+
+  document.querySelector("#importStatus").textContent = "Running";
+  document.querySelector("#importStatus").className = "status-pill attention";
+
+  try {
+    const result = await request("/api/templates/import", {
+      method: "POST",
+      body: formData,
+    });
+    renderImportResult(result);
+    await loadData();
+  } catch (error) {
+    renderImportResult({
+      status: "Rejected",
+      accepted_rows: 0,
+      rejected_rows: 1,
+      errors: [{ message: error.message }],
+      warnings: [],
+      rows: [],
+    });
+  } finally {
+    event.target.value = "";
+  }
 }
 
 document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#createProjectButton").addEventListener("click", createProject);
-document.querySelector("#validateButton").addEventListener("click", validateImport);
+document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
+document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
+document.querySelector("#templateSelect").addEventListener("change", () => {
+  state.userSelectedTemplate = true;
+});
+document.querySelector("#excelFileInput").addEventListener("change", uploadTemplateExcel);
 
 loadData();

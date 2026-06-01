@@ -50,6 +50,13 @@ bash scripts/bootstrap-openproject-wbs.sh
 bash scripts/bootstrap-openproject-si-template.sh
 ```
 
+계층형 WBS Excel 템플릿은 포털의 `Excel 다운로드` 버튼으로 내려받고, 같은 화면의 `Excel 업로드`로 다시 반영할 수 있습니다. API로 직접 사용할 때는 다음 엔드포인트를 사용합니다.
+
+```bash
+GET  /api/templates/{template_key}/excel
+POST /api/templates/import
+```
+
 서비스 기본 주소:
 
 - 포털: http://localhost:3010

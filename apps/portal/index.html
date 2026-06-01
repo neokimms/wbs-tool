@@ -34,7 +34,7 @@
           </div>
           <div class="toolbar" aria-label="Page actions">
             <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh dashboard" title="Refresh">↻</button>
-            <button class="secondary-button" id="validateButton" type="button">Import 검증</button>
+            <button class="secondary-button" id="downloadTemplateButton" type="button">Excel 다운로드</button>
             <button class="primary-button" id="createProjectButton" type="button">프로젝트 생성</button>
           </div>
         </header>
@@ -106,7 +106,7 @@
                 <p class="eyebrow">Templates</p>
                 <h2>표준 WBS</h2>
               </div>
-              <button class="icon-button" type="button" aria-label="Download template" title="Download">↓</button>
+              <button class="icon-button" id="templateDownloadButton" type="button" aria-label="Download template" title="Download">↓</button>
             </div>
             <div class="template-list" id="templateList"></div>
           </article>
@@ -119,6 +119,11 @@
               </div>
               <span class="status-pill attention" id="importStatus">Queued</span>
             </div>
+            <div class="import-controls">
+              <select id="templateSelect" aria-label="Template"></select>
+              <label class="secondary-button file-button" for="excelFileInput">Excel 업로드</label>
+              <input id="excelFileInput" type="file" accept=".xlsx" />
+            </div>
             <div class="import-summary">
               <div>
                 <strong id="acceptedRows">0</strong>
@@ -130,6 +135,19 @@
               </div>
             </div>
             <ul class="issue-list" id="importIssues"></ul>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>WBS</th>
+                    <th>Parent</th>
+                    <th>Name</th>
+                    <th>Weight</th>
+                  </tr>
+                </thead>
+                <tbody id="importPreviewRows"></tbody>
+              </table>
+            </div>
           </article>
 
           <article class="panel" id="sync">
