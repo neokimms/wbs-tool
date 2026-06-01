@@ -1405,9 +1405,12 @@ def build_openproject_sync_plan(
                 "parent_code": row.get("parent_code"),
                 "name": row["name"],
                 "item_type": row.get("item_type") or "작업",
+                "owner": row.get("owner"),
+                "weight": row.get("weight"),
                 "subject": f"{row['code']} {row['name']}"[:255],
                 "start_date": row.get("start_date"),
                 "finish_date": row.get("finish_date"),
+                "metadata": normalize_metadata(row.get("metadata")),
                 "already_synced": row["code"] in synced_work_packages,
             }
         )

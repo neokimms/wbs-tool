@@ -747,8 +747,60 @@ tr:last-child td {
   white-space: nowrap;
 }
 
+.detail-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 0.45fr) minmax(120px, 0.35fr);
+  gap: 8px;
+}
+
+.detail-controls input,
+.detail-controls select {
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.detail-controls input:disabled,
+.detail-controls select:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 .detail-table {
-  max-height: 218px;
+  max-height: 360px;
+}
+
+.detail-table table {
+  min-width: 760px;
+}
+
+.wbs-subject {
+  display: block;
+  overflow: hidden;
+  padding-left: calc(var(--depth) * 18px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.sync-dot.stable {
+  background: var(--green);
+}
+
+.sync-dot.attention {
+  background: var(--amber);
 }
 
 .status-pill {
@@ -1014,6 +1066,10 @@ dd {
   }
 
   .detail-definitions {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-controls {
     grid-template-columns: 1fr;
   }
 

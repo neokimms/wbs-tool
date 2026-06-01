@@ -127,14 +127,25 @@
                   <dd id="projectDetailSync">-</dd>
                 </div>
               </dl>
+              <div class="detail-controls" aria-label="WBS tree filters">
+                <input id="projectWbsSearchInput" type="search" placeholder="WBS 검색" aria-label="Search WBS tree" />
+                <select id="projectPhaseFilter" aria-label="Phase filter">
+                  <option value="">전체 단계</option>
+                </select>
+                <select id="projectTypeFilter" aria-label="Type filter">
+                  <option value="">전체 유형</option>
+                </select>
+              </div>
               <div class="table-wrap compact-table detail-table">
                 <table>
                   <thead>
                     <tr>
                       <th>WBS</th>
-                      <th>Parent</th>
                       <th>Subject</th>
                       <th>Type</th>
+                      <th>Owner</th>
+                      <th>Weight</th>
+                      <th>Sync</th>
                     </tr>
                   </thead>
                   <tbody id="projectPlanRows"></tbody>

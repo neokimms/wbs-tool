@@ -118,6 +118,9 @@ const state = {
   operationsHealth: fallbackOperationsHealth,
   selectedProjectId: null,
   projectPlan: null,
+  projectWbsSearch: "",
+  projectPhaseFilter: "",
+  projectTypeFilter: "",
   userSelectedTemplate: false,
   userSelectedSyncProject: false,
 };
@@ -255,6 +258,117 @@ function statusClass(status) {
   return "attention";
 }
 
+function projectPlanRows() {
+  return state.projectPlan?.rows || [];
+}
+
+function projectRowMap(rows) {
+  return new Map(rows.map((row) => [row.code, row]));
+}
+
+function projectRootCode(rows) {
+  return rows.find((row) => !row.parent_code)?.code || rows[0]?.code || "";
+}
+
+function rowDepth(row, rowByCode) {
+  let depth = 1;
+  let parentCode = row.parent_code;
+  const seen = new Set([row.code]);
+
+  while (parentCode && !seen.has(parentCode)) {
+    seen.add(parentCode);
+    depth += 1;
+    parentCode = rowByCode.get(parentCode)?.parent_code;
+  }
+
+  return depth;
+}
+
+function phaseCodeForRow(row, rowByCode, rootCode) {
+  if (!rootCode || row.code === rootCode) return "";
+  let current = row;
+  const seen = new Set([row.code]);
+
+  while (current?.parent_code && !seen.has(current.parent_code)) {
+    if (current.parent_code === rootCode) return current.code;
+    seen.add(current.parent_code);
+    current = rowByCode.get(current.parent_code);
+  }
+
+  return "";
+}
+
+function rowSearchText(row) {
+  return [
+    row.code,
+    row.parent_code,
+    row.name,
+    row.subject,
+    row.item_type,
+    row.owner,
+    row.weight,
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .join(" ")
+    .toLowerCase();
+}
+
+function filteredProjectPlanRows() {
+  const rows = projectPlanRows();
+  const rowByCode = projectRowMap(rows);
+  const rootCode = projectRootCode(rows);
+  const query = state.projectWbsSearch.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    const matchesSearch = !query || rowSearchText(row).includes(query);
+    const matchesType = !state.projectTypeFilter || row.item_type === state.projectTypeFilter;
+    const matchesPhase = !state.projectPhaseFilter
+      || row.code === state.projectPhaseFilter
+      || phaseCodeForRow(row, rowByCode, rootCode) === state.projectPhaseFilter;
+    return matchesSearch && matchesType && matchesPhase;
+  });
+}
+
+function resetProjectPlanFilters() {
+  state.projectWbsSearch = "";
+  state.projectPhaseFilter = "";
+  state.projectTypeFilter = "";
+}
+
+function renderProjectPlanFilters() {
+  const rows = projectPlanRows();
+  const rootCode = projectRootCode(rows);
+  const phases = rows.filter((row) => row.parent_code === rootCode);
+  const types = [...new Set(rows.map((row) => row.item_type).filter(Boolean))];
+
+  if (!phases.some((phase) => phase.code === state.projectPhaseFilter)) {
+    state.projectPhaseFilter = "";
+  }
+  if (!types.includes(state.projectTypeFilter)) {
+    state.projectTypeFilter = "";
+  }
+
+  const searchInput = document.querySelector("#projectWbsSearchInput");
+  searchInput.value = state.projectWbsSearch;
+  searchInput.disabled = !rows.length;
+
+  const phaseFilter = document.querySelector("#projectPhaseFilter");
+  phaseFilter.innerHTML = [
+    '<option value="">전체 단계</option>',
+    ...phases.map((phase) => `<option value="${escapeHtml(phase.code)}">${escapeHtml(phase.name)}</option>`),
+  ].join("");
+  phaseFilter.value = state.projectPhaseFilter;
+  phaseFilter.disabled = !rows.length;
+
+  const typeFilter = document.querySelector("#projectTypeFilter");
+  typeFilter.innerHTML = [
+    '<option value="">전체 유형</option>',
+    ...types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`),
+  ].join("");
+  typeFilter.value = state.projectTypeFilter;
+  typeFilter.disabled = !rows.length;
+}
+
 function renderProjects() {
   const rows = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
   document.querySelector("#projectRows").innerHTML = rows.length
@@ -324,23 +438,35 @@ function renderProjectPlan() {
       ? "Not synced"
       : "-";
 
-  const rows = plan?.rows?.slice(0, 8) || [];
+  renderProjectPlanFilters();
+
+  const allRows = projectPlanRows();
+  const rows = filteredProjectPlanRows();
+  const rowByCode = projectRowMap(allRows);
+  const isFiltered = Boolean(state.projectWbsSearch || state.projectPhaseFilter || state.projectTypeFilter);
   document.querySelector("#projectPlanRows").innerHTML = rows.length
     ? rows
         .map(
-          (row) => `
+          (row) => {
+            const depth = Math.max(0, rowDepth(row, rowByCode) - 1);
+            return `
             <tr>
               <td>${escapeHtml(row.code)}</td>
-              <td>${escapeHtml(row.parent_code || "")}</td>
-              <td>${escapeHtml(row.subject || row.name)}</td>
+              <td>
+                <span class="wbs-subject" style="--depth: ${depth}">${escapeHtml(row.name || row.subject)}</span>
+              </td>
               <td>${escapeHtml(row.item_type)}</td>
+              <td>${escapeHtml(row.owner || "-")}</td>
+              <td>${row.weight ?? "-"}</td>
+              <td><span class="sync-dot ${row.already_synced ? "stable" : "attention"}"></span>${row.already_synced ? "Synced" : "Pending"}</td>
             </tr>
-          `,
+          `;
+          },
         )
         .join("")
     : `
       <tr class="empty-row">
-        <td colspan="4">프로젝트 행의 계획 버튼을 선택하세요</td>
+        <td colspan="6">${isFiltered ? "조건에 맞는 WBS 항목 없음" : "프로젝트 행의 계획 버튼을 선택하세요"}</td>
       </tr>
     `;
 }
@@ -671,6 +797,9 @@ async function createProject(event) {
 async function loadProjectPlan(projectId, options = {}) {
   if (!projectId) return;
   const shouldRender = options.render !== false;
+  if (state.selectedProjectId && state.selectedProjectId !== projectId) {
+    resetProjectPlanFilters();
+  }
   state.selectedProjectId = projectId;
 
   try {
@@ -1014,6 +1143,18 @@ document.querySelector("#approvalList").addEventListener("click", (event) => {
 });
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;
+});
+document.querySelector("#projectWbsSearchInput").addEventListener("input", (event) => {
+  state.projectWbsSearch = event.target.value;
+  renderProjectPlan();
+});
+document.querySelector("#projectPhaseFilter").addEventListener("change", (event) => {
+  state.projectPhaseFilter = event.target.value;
+  renderProjectPlan();
+});
+document.querySelector("#projectTypeFilter").addEventListener("change", (event) => {
+  state.projectTypeFilter = event.target.value;
+  renderProjectPlan();
 });
 document.querySelector("#syncProjectSelect").addEventListener("change", () => {
   state.userSelectedSyncProject = true;
