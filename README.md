@@ -12,11 +12,28 @@ GitHub 저장소: https://github.com/neokimms/wbs-tool
 - `wbs-api`: 회사 표준 WBS, 템플릿, Excel 왕복 검증, PMO 대시보드용 확장 API
 - `wbs-portal`: Apple 스타일 `design.md`를 따르는 운영 포털
 
-## 실행
+## 실행 모드
 
 ```bash
 cp .env.example .env
+```
+
+포털 UI만 가볍게 확인할 때는 PostgreSQL과 OpenProject를 켜지 않습니다.
+
+```bash
 docker compose up --build
+```
+
+WBS 확장 API와 PostgreSQL까지 확인할 때만 `api` 프로필을 사용합니다.
+
+```bash
+docker compose --profile api up --build
+```
+
+OpenProject 엔진까지 포함한 전체 스택은 `api`, `openproject` 프로필을 함께 사용합니다.
+
+```bash
+docker compose --profile api --profile openproject up --build
 ```
 
 서비스 기본 주소:
@@ -24,6 +41,18 @@ docker compose up --build
 - 포털: http://localhost:3000
 - 확장 API: http://localhost:8000
 - OpenProject: http://localhost:8080
+
+리소스를 내리고 싶을 때:
+
+```bash
+docker compose stop
+```
+
+컨테이너까지 제거하고 데이터 볼륨은 유지할 때:
+
+```bash
+docker compose down
+```
 
 ## 개발 원칙
 

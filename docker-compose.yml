@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16
+    profiles: ["api", "openproject"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-wbs_platform}
       POSTGRES_USER: ${POSTGRES_USER:-wbs}
@@ -18,10 +19,12 @@ services:
 
   memcached:
     image: memcached:1.6-alpine
+    profiles: ["openproject"]
     command: ["memcached", "-m", "128"]
 
   openproject:
     image: openproject/openproject:17
+    profiles: ["openproject"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,6 +47,7 @@ services:
   wbs-api:
     build:
       context: ./services/wbs-api
+    profiles: ["api"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,8 +61,6 @@ services:
   wbs-portal:
     build:
       context: ./apps/portal
-    depends_on:
-      - wbs-api
     ports:
       - "${WBS_PORTAL_PORT:-3000}:80"
 
