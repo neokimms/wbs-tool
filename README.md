@@ -139,6 +139,29 @@ docker compose --profile api --profile monitoring up -d --build
 REQUIRE_MONITORING=1 bash scripts/status-check.sh
 ```
 
+## Kubernetes 배포
+
+고객사 Kubernetes 환경에는 Helm chart 초안을 사용할 수 있습니다. Chart는 WBS API, 포털, 선택형 PostgreSQL StatefulSet, Ingress, Prometheus scrape annotation을 포함합니다.
+
+```bash
+helm template wbs-platform ./infra/helm/wbs-platform
+helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
+  --namespace wbs --create-namespace \
+  --set postgresql.auth.password='replace-me' \
+  --set api.portalOrigin='https://wbs.example.com' \
+  --set portal.apiBaseUrl='https://wbs-api.example.com'
+```
+
+운영 DB를 별도로 쓰는 경우:
+
+```bash
+helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
+  --namespace wbs --create-namespace \
+  --set postgresql.enabled=false \
+  --set externalPostgresql.host='postgres.internal' \
+  --set externalPostgresql.password='replace-me'
+```
+
 ## 개발 원칙
 
 1. OpenProject 코어 수정은 최소화하고, 설정/플러그인/API 확장으로 제품화합니다.

@@ -1,0 +1,94 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+api:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/neokimms/wbs-api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  openprojectBaseUrl: "http://openproject"
+  portalOrigin: "https://wbs.example.com"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+portal:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/neokimms/wbs-portal
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  apiBaseUrl: "https://wbs-api.example.com"
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17"
+    pullPolicy: IfNotPresent
+  auth:
+    database: wbs_platform
+    username: wbs
+    password: "change-me"
+    existingSecret: ""
+  service:
+    port: 5432
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+externalPostgresql:
+  host: ""
+  port: 5432
+  database: wbs_platform
+  username: wbs
+  password: "change-me"
+  existingSecret: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: wbs.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: portal
+    - host: wbs-api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api
+  tls: []
+
+monitoring:
+  prometheusAnnotations: true
