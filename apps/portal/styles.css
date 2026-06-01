@@ -367,6 +367,10 @@ tr:last-child td {
   border-bottom: 0;
 }
 
+.selected-row td {
+  background: #f5f9ff;
+}
+
 .empty-row td {
   color: var(--text-muted);
   text-align: center;
@@ -380,6 +384,12 @@ tr:last-child td {
   background: var(--surface);
   color: var(--text);
   white-space: nowrap;
+}
+
+.table-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .table-action:disabled {
@@ -637,6 +647,45 @@ tr:last-child td {
 .compact-table td {
   padding: 10px 12px;
   font-size: 12px;
+}
+
+.project-detail {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.compact-header {
+  min-height: 34px;
+  margin-bottom: 0;
+}
+
+.detail-definitions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.detail-definitions,
+.detail-definitions div {
+  display: grid;
+}
+
+.detail-definitions div {
+  gap: 4px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.detail-definitions dd {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-table {
+  max-height: 218px;
 }
 
 .status-pill {
@@ -899,6 +948,10 @@ dd {
 
   .approval-meta {
     justify-items: start;
+  }
+
+  .detail-definitions {
+    grid-template-columns: 1fr;
   }
 
   .form-grid {

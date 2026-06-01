@@ -115,6 +115,8 @@ const state = {
   pmPreflight: fallbackPreflight,
   syncDetail: null,
   operationsHealth: fallbackOperationsHealth,
+  selectedProjectId: null,
+  projectPlan: null,
   userSelectedTemplate: false,
   userSelectedSyncProject: false,
 };
@@ -243,22 +245,35 @@ function renderProjects() {
     ? rows
         .map((project) => {
           const canRequestApproval = project.id && ["Draft", "Rejected"].includes(project.status);
+          const isSelected = project.id && project.id === state.selectedProjectId;
           return `
-        <tr>
-          <td>${project.name}</td>
-          <td>${project.owner}</td>
+        <tr class="${isSelected ? "selected-row" : ""}">
+          <td>${escapeHtml(project.name)}</td>
+          <td>${escapeHtml(project.owner)}</td>
           <td><span class="status-pill ${statusClass(project.status)}">${project.status}</span></td>
-          <td>${project.template_key}</td>
-          <td>${project.start_date}</td>
+          <td>${escapeHtml(project.template_key)}</td>
+          <td>${escapeHtml(project.start_date)}</td>
           <td>
-            <button
-              class="table-action"
-              type="button"
-              data-project-id="${project.id || ""}"
-              ${canRequestApproval ? "" : "disabled"}
-            >
-              승인 요청
-            </button>
+            <div class="table-actions">
+              <button
+                class="table-action"
+                type="button"
+                data-project-action="plan"
+                data-project-id="${project.id || ""}"
+                ${project.id ? "" : "disabled"}
+              >
+                계획
+              </button>
+              <button
+                class="table-action"
+                type="button"
+                data-project-action="approval"
+                data-project-id="${project.id || ""}"
+                ${canRequestApproval ? "" : "disabled"}
+              >
+                승인 요청
+              </button>
+            </div>
           </td>
         </tr>
       `;
@@ -267,6 +282,44 @@ function renderProjects() {
     : `
       <tr class="empty-row">
         <td colspan="6">등록된 프로젝트 없음</td>
+      </tr>
+    `;
+}
+
+function renderProjectPlan() {
+  const plan = state.projectPlan;
+  const project = plan?.project;
+  document.querySelector("#projectDetailTitle").textContent = project?.name || "프로젝트 계획";
+  const status = document.querySelector("#projectDetailStatus");
+  status.textContent = project?.status || "Select";
+  status.className = `status-pill ${project ? statusClass(project.status) : "attention"}`;
+  document.querySelector("#projectDetailTemplate").textContent = plan?.template?.name || "-";
+  document.querySelector("#projectDetailRows").textContent = plan?.summary
+    ? `${plan.summary.pending_work_packages}/${plan.summary.total_rows} pending`
+    : "-";
+  document.querySelector("#projectDetailSync").textContent = plan?.openproject?.project_already_synced
+    ? `Synced #${plan.openproject.project_id}`
+    : plan
+      ? "Not synced"
+      : "-";
+
+  const rows = plan?.rows?.slice(0, 8) || [];
+  document.querySelector("#projectPlanRows").innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.code)}</td>
+              <td>${escapeHtml(row.parent_code || "")}</td>
+              <td>${escapeHtml(row.subject || row.name)}</td>
+              <td>${escapeHtml(row.item_type)}</td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `
+      <tr class="empty-row">
+        <td colspan="4">프로젝트 행의 계획 버튼을 선택하세요</td>
       </tr>
     `;
 }
@@ -455,6 +508,7 @@ function renderAll() {
   renderTemplates();
   renderTemplateSelect();
   renderProjects();
+  renderProjectPlan();
   renderApprovals();
   renderImportPreview();
   renderApplyButton();
@@ -482,6 +536,14 @@ async function loadData() {
     state.pmPreflight = pmPreflight;
     state.operationsHealth = operationsHealth;
     state.apiConnected = true;
+    state.selectedProjectId = projects.some((project) => project.id === state.selectedProjectId)
+      ? state.selectedProjectId
+      : projects[0]?.id || null;
+    if (state.selectedProjectId) {
+      await loadProjectPlan(state.selectedProjectId, { render: false });
+    } else {
+      state.projectPlan = null;
+    }
   } catch (error) {
     state.apiConnected = false;
     state.projects = state.projects.length ? state.projects : fallbackProjects;
@@ -533,6 +595,7 @@ async function createProject(event) {
     });
     state.projects = [project, ...state.projects.filter((item) => item.name !== project.name)];
     state.dashboard.metrics.projects += 1;
+    state.selectedProjectId = project.id;
     state.userSelectedSyncProject = false;
     document.querySelector("#projectForm").reset();
     closeProjectDialog();
@@ -542,6 +605,27 @@ async function createProject(event) {
   } finally {
     submitButton.disabled = false;
   }
+}
+
+async function loadProjectPlan(projectId, options = {}) {
+  if (!projectId) return;
+  const shouldRender = options.render !== false;
+  state.selectedProjectId = projectId;
+
+  try {
+    state.projectPlan = await request(`/api/projects/${encodeURIComponent(projectId)}/sync-plan`);
+    state.syncDetail = state.syncDetail?.project?.id === projectId ? state.syncDetail : null;
+  } catch (error) {
+    state.projectPlan = {
+      project: state.projects.find((project) => project.id === projectId),
+      rows: [],
+      summary: null,
+      openproject: null,
+      error: error.message,
+    };
+  }
+
+  if (shouldRender) renderAll();
 }
 
 async function requestProjectApproval(projectId) {
@@ -822,8 +906,12 @@ document.querySelector("#syncPreflightButton").addEventListener("click", loadPro
 document.querySelector("#syncDryRunButton").addEventListener("click", dryRunProjectSync);
 document.querySelector("#syncRunButton").addEventListener("click", runProjectSync);
 document.querySelector("#projectRows").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-project-id]");
+  const button = event.target.closest("[data-project-action]");
   if (!button || button.disabled) return;
+  if (button.dataset.projectAction === "plan") {
+    loadProjectPlan(button.dataset.projectId);
+    return;
+  }
   requestProjectApproval(button.dataset.projectId);
 });
 document.querySelector("#approvalList").addEventListener("click", (event) => {
