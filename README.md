@@ -44,6 +44,12 @@ OpenProject에 회사 표준 WBS 타입, 상태, 커스텀 필드, 기본 워크
 bash scripts/bootstrap-openproject-wbs.sh
 ```
 
+회사 표준 SI WBS 템플릿 프로젝트를 생성하거나 갱신합니다.
+
+```bash
+bash scripts/bootstrap-openproject-si-template.sh
+```
+
 서비스 기본 주소:
 
 - 포털: http://localhost:3010
