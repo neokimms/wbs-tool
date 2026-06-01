@@ -75,6 +75,8 @@ spec:
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
             - name: OPENPROJECT_BASE_URL
               value: {{ .Values.api.openprojectBaseUrl | quote }}
+            - name: OPENPROJECT_HOST_HEADER
+              value: {{ .Values.api.openprojectHostHeader | quote }}
             - name: OPENPROJECT_SYNC_ENABLED
               value: {{ .Values.api.openprojectSyncEnabled | quote }}
             - name: OPENPROJECT_API_TOKEN

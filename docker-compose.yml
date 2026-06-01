@@ -56,6 +56,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/${POSTGRES_DB:-wbs_platform}
       OPENPROJECT_BASE_URL: http://openproject
+      OPENPROJECT_HOST_HEADER: ${OPENPROJECT_HOST_HEADER:-localhost:8080}
       OPENPROJECT_SYNC_ENABLED: ${OPENPROJECT_SYNC_ENABLED:-false}
       OPENPROJECT_API_TOKEN: ${OPENPROJECT_API_TOKEN:-}
       OPENPROJECT_AUTH_MODE: ${OPENPROJECT_AUTH_MODE:-bearer}

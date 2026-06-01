@@ -25,6 +25,7 @@ DATABASE_URL = os.getenv(
     "postgresql://wbs:wbs_dev_password@localhost:5432/wbs_platform",
 )
 OPENPROJECT_BASE_URL = os.getenv("OPENPROJECT_BASE_URL", "http://localhost:8080")
+OPENPROJECT_HOST_HEADER = os.getenv("OPENPROJECT_HOST_HEADER", "")
 OPENPROJECT_SYNC_ENABLED = os.getenv("OPENPROJECT_SYNC_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 OPENPROJECT_API_TOKEN = os.getenv("OPENPROJECT_API_TOKEN", "")
 OPENPROJECT_AUTH_MODE = os.getenv("OPENPROJECT_AUTH_MODE", "bearer").lower()
@@ -197,6 +198,7 @@ class ProjectSyncRequest(BaseModel):
     dry_run: bool = True
     create_work_packages: bool = True
     force_project_create: bool = False
+    validate_payloads: bool = True
 
 
 def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
@@ -963,40 +965,56 @@ async def fetch_approval_for_update(connection: asyncpg.Connection, approval_id:
 
 
 class OpenProjectClient:
-    def __init__(self, base_url: str, api_token: str, auth_mode: str = "bearer") -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_token: str,
+        auth_mode: str = "bearer",
+        host_header: str = OPENPROJECT_HOST_HEADER,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token
         self.auth_mode = auth_mode
+        self.host_header = host_header
 
     def request_options(self) -> dict[str, Any]:
         headers = {"Accept": "application/hal+json", "Content-Type": "application/json"}
+        if self.host_header:
+            headers["Host"] = self.host_header
         options: dict[str, Any] = {"headers": headers}
-        if self.auth_mode == "basic":
-            options["auth"] = ("apikey", self.api_token)
-        else:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        if self.api_token:
+            if self.auth_mode == "basic":
+                options["auth"] = ("apikey", self.api_token)
+            else:
+                headers["Authorization"] = f"Bearer {self.api_token}"
         return options
 
     async def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
-            response = await client.request(
-                method,
-                f"{self.base_url}{path}",
-                json=payload,
-                **self.request_options(),
-            )
+        try:
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+                response = await client.request(
+                    method,
+                    f"{self.base_url}{path}",
+                    json=payload,
+                    **self.request_options(),
+                )
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "OpenProject API is unreachable",
+                    "base_url": self.base_url,
+                    "error": str(exc),
+                },
+            ) from exc
 
         if response.status_code >= 400:
-            try:
-                detail = response.json()
-            except ValueError:
-                detail = response.text
             raise HTTPException(
                 status_code=502,
                 detail={
                     "message": "OpenProject API request failed",
                     "status_code": response.status_code,
-                    "response": detail,
+                    "response": self.response_detail(response),
                 },
             )
         if not response.content:
@@ -1005,6 +1023,70 @@ class OpenProjectClient:
             return response.json()
         except ValueError as exc:
             raise HTTPException(status_code=502, detail="OpenProject API returned invalid JSON") from exc
+
+    @staticmethod
+    def response_detail(response: httpx.Response) -> Any:
+        try:
+            return response.json()
+        except ValueError:
+            return response.text[:1000]
+
+    async def probe(
+        self,
+        *,
+        name: str,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        accepted_error_statuses: set[int] | None = None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "name": name,
+            "method": method,
+            "path": path,
+            "base_url": self.base_url,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                response = await client.request(
+                    method,
+                    f"{self.base_url}{path}",
+                    json=payload,
+                    **self.request_options(),
+                )
+        except httpx.RequestError as exc:
+            return {
+                **result,
+                "ok": False,
+                "status": "fail",
+                "message": "OpenProject endpoint is unreachable",
+                "error": str(exc),
+            }
+
+        result["status_code"] = response.status_code
+        accepted_error_statuses = accepted_error_statuses or set()
+        if 200 <= response.status_code < 400 or response.status_code in accepted_error_statuses:
+            result.update({"ok": True, "status": "pass"})
+            if response.content:
+                detail = self.response_detail(response)
+                if isinstance(detail, dict):
+                    result["resource_type"] = detail.get("_type")
+                    if detail.get("id"):
+                        result["resource_id"] = detail["id"]
+                    if detail.get("name"):
+                        result["resource_name"] = detail["name"]
+                    if response.status_code >= 400:
+                        result["message"] = detail.get("message", "Endpoint is reachable")
+                        result["response"] = detail
+            return result
+
+        return {
+            **result,
+            "ok": False,
+            "status": "fail",
+            "message": "OpenProject endpoint returned an error",
+            "response": self.response_detail(response),
+        }
 
     async def create_project(self, project: dict[str, Any], identifier: str) -> dict[str, Any]:
         return await self.request(
@@ -1018,7 +1100,7 @@ class OpenProjectClient:
             },
         )
 
-    async def create_work_package(
+    def build_work_package_payload(
         self,
         *,
         openproject_project_id: str,
@@ -1061,19 +1143,132 @@ class OpenProjectClient:
         if row.get("finish_date"):
             payload["dueDate"] = row["finish_date"]
 
+        return payload
+
+    async def validate_work_package_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        response = await self.request("POST", "/api/v3/work_packages/form", payload)
+        embedded = normalize_metadata(response.get("_embedded"))
+        validation_errors = normalize_metadata(embedded.get("validationErrors"))
+        if validation_errors:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "OpenProject rejected the work package payload during form validation",
+                    "validation_errors": validation_errors,
+                },
+            )
+        return response
+
+    async def create_work_package_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self.request("POST", "/api/v3/work_packages?notify=false", payload)
+
+    async def create_work_package(
+        self,
+        *,
+        openproject_project_id: str,
+        row: dict[str, Any],
+        parent_href: str | None = None,
+    ) -> dict[str, Any]:
+        payload = self.build_work_package_payload(
+            openproject_project_id=openproject_project_id,
+            row=row,
+            parent_href=parent_href,
+        )
+        return await self.create_work_package_from_payload(payload)
 
 
 def openproject_engine_status() -> dict[str, Any]:
     return {
         "adapter": "openproject",
         "base_url": OPENPROJECT_BASE_URL,
+        "host_header_configured": bool(OPENPROJECT_HOST_HEADER),
         "enabled": OPENPROJECT_SYNC_ENABLED,
         "token_configured": bool(OPENPROJECT_API_TOKEN),
         "auth_mode": OPENPROJECT_AUTH_MODE,
         "default_type_configured": bool(OPENPROJECT_DEFAULT_TYPE_ID),
         "type_map_configured": bool(parse_json_object(OPENPROJECT_TYPE_MAP_JSON)),
         "parent_links": OPENPROJECT_SYNC_PARENT_LINKS,
+    }
+
+
+def openproject_preflight_check(name: str, status: str, message: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": status,
+        "ok": status == "pass",
+        "message": message,
+        **extra,
+    }
+
+
+async def run_openproject_preflight() -> dict[str, Any]:
+    client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
+    checks: list[dict[str, Any]] = []
+
+    api_root_check = await client.probe(
+        name="api_root",
+        method="GET",
+        path="/api/v3",
+        accepted_error_statuses={401, 403},
+    )
+    checks.append(api_root_check)
+    checks.append(
+        openproject_preflight_check(
+            "sync_enabled",
+            "pass" if OPENPROJECT_SYNC_ENABLED else "warn",
+            "Actual OpenProject sync is enabled"
+            if OPENPROJECT_SYNC_ENABLED
+            else "Actual OpenProject sync is disabled; dry-run and planning endpoints remain available",
+        )
+    )
+    checks.append(
+        openproject_preflight_check(
+            "api_token",
+            "pass" if OPENPROJECT_API_TOKEN else "warn",
+            "OPENPROJECT_API_TOKEN is configured"
+            if OPENPROJECT_API_TOKEN
+            else "OPENPROJECT_API_TOKEN is not configured; actual sync will be blocked",
+        )
+    )
+
+    if OPENPROJECT_API_TOKEN:
+        checks.append(await client.probe(name="authenticated_user", method="GET", path="/api/v3/users/me"))
+    else:
+        checks.append(
+            openproject_preflight_check(
+                "authenticated_user",
+                "skip",
+                "Skipped because OPENPROJECT_API_TOKEN is not configured",
+            )
+        )
+
+    failed = any(check.get("status") == "fail" for check in checks)
+    api_root_failed = any(check.get("name") == "api_root" and check.get("status") == "fail" for check in checks)
+    auth_failed = any(
+        check.get("name") == "authenticated_user" and check.get("status") == "fail" for check in checks
+    )
+    ready = (
+        not failed
+        and OPENPROJECT_SYNC_ENABLED
+        and bool(OPENPROJECT_API_TOKEN)
+        and any(check.get("name") == "authenticated_user" and check.get("ok") for check in checks)
+    )
+    if api_root_failed:
+        state = "offline"
+    elif auth_failed:
+        state = "auth_failed"
+    elif failed:
+        state = "blocked"
+    elif ready:
+        state = "ready"
+    else:
+        state = "dry_run_only"
+
+    return {
+        "engine": openproject_engine_status(),
+        "state": state,
+        "ready_for_actual_sync": ready,
+        "checks": checks,
     }
 
 
@@ -1124,6 +1319,39 @@ def build_openproject_sync_plan(
     }
 
 
+def build_openproject_payload_sample(
+    project: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    metadata = normalize_metadata(project.get("metadata"))
+    engine_metadata = normalize_metadata(metadata.get("pm_engine"))
+    work_packages = normalize_metadata(engine_metadata.get("work_packages"))
+    openproject_project_id = project.get("openproject_project_id") or engine_metadata.get("project_id")
+    sample_project_id = openproject_project_id or "OPENPROJECT_PROJECT_ID"
+    href_by_code = {
+        code: item.get("href")
+        for code, item in work_packages.items()
+        if isinstance(item, dict) and item.get("href")
+    }
+    sample_row = next((row for row in rows if row.get("code") not in work_packages), rows[0] if rows else None)
+    if not sample_row:
+        return None
+
+    client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
+    payload = client.build_work_package_payload(
+        openproject_project_id=str(sample_project_id),
+        row=sample_row,
+        parent_href=href_by_code.get(sample_row.get("parent_code")),
+    )
+    return {
+        "row_code": sample_row["code"],
+        "project_id_source": "stored" if openproject_project_id else "placeholder",
+        "form_endpoint": "/api/v3/work_packages/form",
+        "create_endpoint": "/api/v3/work_packages?notify=false",
+        "payload": payload,
+    }
+
+
 def template_rows_or_phases(template: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if rows:
         return rows
@@ -1141,6 +1369,22 @@ def template_rows_or_phases(template: dict[str, Any], rows: list[dict[str, Any]]
         }
         for phase in template.get("phases", [])
     ]
+
+
+async def fetch_project_sync_context(
+    request: Request,
+    project_id: UUID,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    async with get_pool(request).acquire() as connection:
+        project = await fetch_project(connection, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        template = await fetch_template(connection, project["template_key"])
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        rows = await fetch_template_items(connection, project["template_key"])
+
+    return project, template, template_rows_or_phases(template, rows)
 
 
 def prometheus_escape(value: str) -> str:
@@ -1328,6 +1572,11 @@ async def pm_engine() -> dict[str, Any]:
     return openproject_engine_status()
 
 
+@app.get("/api/pm-engine/preflight")
+async def pm_engine_preflight() -> dict[str, Any]:
+    return await run_openproject_preflight()
+
+
 @app.get("/api/projects/{project_id}/sync-plan")
 async def project_sync_plan(project_id: str, request: Request) -> dict[str, Any]:
     try:
@@ -1335,17 +1584,28 @@ async def project_sync_plan(project_id: str, request: Request) -> dict[str, Any]
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid project id") from exc
 
-    async with get_pool(request).acquire() as connection:
-        project = await fetch_project(connection, parsed_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-        template = await fetch_template(connection, project["template_key"])
-        if not template:
-            raise HTTPException(status_code=404, detail="Template not found")
-        rows = await fetch_template_items(connection, project["template_key"])
+    project, template, rows = await fetch_project_sync_context(request, parsed_id)
 
-    rows = template_rows_or_phases(template, rows)
     return build_openproject_sync_plan(project, template, rows)
+
+
+@app.get("/api/projects/{project_id}/sync-preflight")
+async def project_sync_preflight(project_id: str, request: Request) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+
+    project, template, rows = await fetch_project_sync_context(request, parsed_id)
+    plan = build_openproject_sync_plan(project, template, rows)
+    preflight = await run_openproject_preflight()
+
+    return {
+        "status": "Preflight",
+        "preflight": preflight,
+        **plan,
+        "payload_sample": build_openproject_payload_sample(project, rows),
+    }
 
 
 @app.post("/api/projects/{project_id}/sync")
@@ -1359,16 +1619,7 @@ async def sync_project_to_engine(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid project id") from exc
 
-    async with get_pool(request).acquire() as connection:
-        project = await fetch_project(connection, parsed_id)
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-        template = await fetch_template(connection, project["template_key"])
-        if not template:
-            raise HTTPException(status_code=404, detail="Template not found")
-        rows = await fetch_template_items(connection, project["template_key"])
-
-    rows = template_rows_or_phases(template, rows)
+    project, template, rows = await fetch_project_sync_context(request, parsed_id)
     plan = build_openproject_sync_plan(project, template, rows)
     if payload.dry_run:
         return {"status": "DryRun", **plan}
@@ -1407,11 +1658,14 @@ async def sync_project_to_engine(
             if code in work_packages:
                 continue
             parent_href = href_by_code.get(row.get("parent_code"))
-            created_work_package = await client.create_work_package(
+            work_package_payload = client.build_work_package_payload(
                 openproject_project_id=openproject_project_id,
                 row=row,
                 parent_href=parent_href,
             )
+            if payload.validate_payloads:
+                await client.validate_work_package_payload(work_package_payload)
+            created_work_package = await client.create_work_package_from_payload(work_package_payload)
             work_package_id = str(created_work_package.get("id") or "").strip()
             work_package_href = normalize_metadata(created_work_package.get("_links")).get("self", {}).get("href")
             work_packages[code] = {
@@ -1467,6 +1721,7 @@ async def sync_project_to_engine(
             "created_work_packages": len(created_work_packages),
             "known_work_packages": len(work_packages),
             "total_rows": len(rows),
+            "payload_validation": payload.validate_payloads,
         },
         "created_work_packages": created_work_packages,
     }
