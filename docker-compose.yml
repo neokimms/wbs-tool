@@ -42,6 +42,7 @@ services:
       OPENPROJECT_CACHE__MEMCACHE__SERVER: memcached:11211
     volumes:
       - openproject_assets:/var/openproject/assets
+      - ./infra/openproject/scripts:/opt/wbs/openproject:ro
     ports:
       - "8080:80"
 
