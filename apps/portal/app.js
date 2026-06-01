@@ -57,7 +57,7 @@ const state = {
       projects: fallbackProjects.length,
       templates: fallbackTemplates.length,
       openproject_sync: "ready",
-      database: "PostgreSQL 16",
+      database: "PostgreSQL 17",
     },
   },
 };

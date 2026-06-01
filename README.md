@@ -1,13 +1,13 @@
 # wbs-tool
 
-OpenProject Community Edition을 WBS/PM 엔진으로 사용하고, 회사 표준 WBS 기능은 별도 API와 포털로 확장하는 온프레미스 플랫폼 스캐폴드입니다. 데이터베이스는 PostgreSQL 16을 기본으로 사용합니다.
+OpenProject Community Edition을 WBS/PM 엔진으로 사용하고, 회사 표준 WBS 기능은 별도 API와 포털로 확장하는 온프레미스 플랫폼 스캐폴드입니다. 데이터베이스는 PostgreSQL 17을 기본으로 사용합니다.
 
 GitHub 저장소: https://github.com/neokimms/wbs-tool
 
 ## 구성
 
 - `openproject`: WBS/PM 코어 엔진
-- `postgres`: OpenProject와 회사 확장 API가 함께 쓰는 PostgreSQL 16
+- `postgres`: OpenProject와 회사 확장 API가 함께 쓰는 PostgreSQL 17
 - `memcached`: OpenProject 캐시
 - `wbs-api`: 회사 표준 WBS, 템플릿, Excel 왕복 검증, PMO 대시보드용 확장 API
 - `wbs-portal`: Apple 스타일 `design.md`를 따르는 운영 포털
@@ -16,6 +16,8 @@ GitHub 저장소: https://github.com/neokimms/wbs-tool
 
 ```bash
 cp .env.example .env
+OPENPROJECT_SECRET_KEY_BASE=$(openssl rand -hex 64)
+sed -i.bak "s/^OPENPROJECT_SECRET_KEY_BASE=.*/OPENPROJECT_SECRET_KEY_BASE=${OPENPROJECT_SECRET_KEY_BASE}/" .env
 ```
 
 포털 UI만 가볍게 확인할 때는 PostgreSQL과 OpenProject를 켜지 않습니다.

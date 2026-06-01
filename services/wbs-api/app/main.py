@@ -201,7 +201,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "projects": project_count,
             "templates": template_count,
             "openproject_sync": "ready",
-            "database": "PostgreSQL 16",
+            "database": "PostgreSQL 17",
         },
         "status_distribution": [normalize_record(row) for row in status_rows],
         "latest_projects": [normalize_record(row) for row in latest_projects],

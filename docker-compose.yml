@@ -1,13 +1,13 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:17
     profiles: ["api", "openproject"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-wbs_platform}
       POSTGRES_USER: ${POSTGRES_USER:-wbs}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wbs_dev_password}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres17_data:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wbs} -d ${POSTGRES_DB:-wbs_platform}"]
@@ -33,6 +33,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/openproject
       OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:-change-me-development-secret-key-base-please-replace-before-production-2026-06-01-wbs-platform-openproject}
+      SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:-change-me-development-secret-key-base-please-replace-before-production-2026-06-01-wbs-platform-openproject}
       OPENPROJECT_HOST__NAME: ${OPENPROJECT_HOST_NAME:-localhost:8080}
       OPENPROJECT_HTTPS: "false"
       OPENPROJECT_DEFAULT__LANGUAGE: ko
@@ -65,5 +66,5 @@ services:
       - "${WBS_PORTAL_PORT:-3010}:80"
 
 volumes:
-  postgres_data:
+  postgres17_data:
   openproject_assets:
