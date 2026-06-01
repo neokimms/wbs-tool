@@ -36,6 +36,11 @@ select {
   font: inherit;
 }
 
+input,
+select {
+  min-width: 0;
+}
+
 button {
   cursor: pointer;
 }
@@ -360,6 +365,11 @@ td {
 
 tr:last-child td {
   border-bottom: 0;
+}
+
+.empty-row td {
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .table-action {
@@ -740,6 +750,77 @@ dd {
   line-height: 1.45;
 }
 
+.dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: rgba(29, 29, 31, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.dialog-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(216, 220, 226, 0.95);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.dialog-header,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.form-grid span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.form-grid input,
+.form-grid select {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.form-status {
+  min-height: 18px;
+  margin: 0;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @media (max-width: 1080px) {
   .metric-grid,
   .content-grid {
@@ -818,5 +899,9 @@ dd {
 
   .approval-meta {
     justify-items: start;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }

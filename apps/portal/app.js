@@ -100,6 +100,7 @@ const state = {
   templates: fallbackTemplates,
   projects: fallbackProjects,
   approvals: [],
+  apiConnected: false,
   dashboard: {
     metrics: {
       projects: fallbackProjects.length,
@@ -237,12 +238,12 @@ function statusClass(status) {
 }
 
 function renderProjects() {
-  const rows = state.projects.length ? state.projects : fallbackProjects;
-  document.querySelector("#projectRows").innerHTML = rows
-    .map(
-      (project) => {
-        const canRequestApproval = project.id && ["Draft", "Rejected"].includes(project.status);
-        return `
+  const rows = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
+  document.querySelector("#projectRows").innerHTML = rows.length
+    ? rows
+        .map((project) => {
+          const canRequestApproval = project.id && ["Draft", "Rejected"].includes(project.status);
+          return `
         <tr>
           <td>${project.name}</td>
           <td>${project.owner}</td>
@@ -261,9 +262,13 @@ function renderProjects() {
           </td>
         </tr>
       `;
-      },
-    )
-    .join("");
+        })
+        .join("")
+    : `
+      <tr class="empty-row">
+        <td colspan="6">등록된 프로젝트 없음</td>
+      </tr>
+    `;
 }
 
 function renderApprovals() {
@@ -323,6 +328,17 @@ function renderImportPreview() {
 function renderApplyButton() {
   const applyButton = document.querySelector("#applyImportButton");
   applyButton.disabled = !state.pendingImportJobId;
+}
+
+function renderProjectTemplateSelect(preserveSelection = true) {
+  const selector = document.querySelector("#projectTemplateSelect");
+  const selectedValue = preserveSelection && selector.value ? selector.value : defaultTemplateKey();
+  selector.innerHTML = state.templates
+    .map((template) => `<option value="${template.key}">${escapeHtml(template.name)}</option>`)
+    .join("");
+  selector.value = state.templates.some((template) => template.key === selectedValue)
+    ? selectedValue
+    : defaultTemplateKey();
 }
 
 function renderSyncProjectSelect() {
@@ -442,6 +458,7 @@ function renderAll() {
   renderApprovals();
   renderImportPreview();
   renderApplyButton();
+  renderProjectTemplateSelect();
   renderSyncProjectSelect();
   renderSyncPanel();
   renderOperationsPanel();
@@ -460,11 +477,14 @@ async function loadData() {
 
     state.dashboard = dashboard;
     state.templates = templates;
-    state.projects = projects.length ? projects : fallbackProjects;
+    state.projects = projects;
     state.approvals = approvals;
     state.pmPreflight = pmPreflight;
     state.operationsHealth = operationsHealth;
+    state.apiConnected = true;
   } catch (error) {
+    state.apiConnected = false;
+    state.projects = state.projects.length ? state.projects : fallbackProjects;
     state.dashboard.metrics.projects = state.projects.length;
     state.dashboard.metrics.templates = state.templates.length;
     state.dashboard.metrics.pending_approvals = state.approvals.filter((approval) => approval.status === "Pending").length;
@@ -478,15 +498,33 @@ async function loadData() {
   renderAll();
 }
 
-async function createProject() {
-  const template = state.templates[0] || fallbackTemplates[0];
-  const suffix = String(Math.floor(Math.random() * 900) + 100);
+function openProjectDialog() {
+  const dialog = document.querySelector("#projectDialog");
+  document.querySelector("#projectForm").reset();
+  document.querySelector("#projectFormStatus").textContent = "";
+  document.querySelector("#projectStartInput").value = new Date().toISOString().slice(0, 10);
+  renderProjectTemplateSelect(false);
+  dialog.showModal();
+  document.querySelector("#projectNameInput").focus();
+}
+
+function closeProjectDialog() {
+  document.querySelector("#projectDialog").close();
+}
+
+async function createProject(event) {
+  event.preventDefault();
+  const submitButton = document.querySelector("#projectSubmitButton");
+  const status = document.querySelector("#projectFormStatus");
   const payload = {
-    name: `표준 WBS 프로젝트 ${suffix}`,
-    template_key: template.key,
-    owner: "PMO",
-    start_date: new Date().toISOString().slice(0, 10),
+    name: document.querySelector("#projectNameInput").value.trim(),
+    template_key: document.querySelector("#projectTemplateSelect").value,
+    owner: document.querySelector("#projectOwnerInput").value.trim(),
+    start_date: document.querySelector("#projectStartInput").value,
   };
+
+  submitButton.disabled = true;
+  status.textContent = "";
 
   try {
     const project = await request("/api/projects", {
@@ -496,12 +534,14 @@ async function createProject() {
     state.projects = [project, ...state.projects.filter((item) => item.name !== project.name)];
     state.dashboard.metrics.projects += 1;
     state.userSelectedSyncProject = false;
+    document.querySelector("#projectForm").reset();
+    closeProjectDialog();
+    await loadData();
   } catch (error) {
-    state.projects = [payload, ...state.projects];
-    state.dashboard.metrics.projects = state.projects.length;
+    status.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
   }
-
-  renderAll();
 }
 
 async function requestProjectApproval(projectId) {
@@ -769,7 +809,10 @@ async function runProjectSync() {
 }
 
 document.querySelector("#refreshButton").addEventListener("click", loadData);
-document.querySelector("#createProjectButton").addEventListener("click", createProject);
+document.querySelector("#createProjectButton").addEventListener("click", openProjectDialog);
+document.querySelector("#projectDialogClose").addEventListener("click", closeProjectDialog);
+document.querySelector("#projectCancelButton").addEventListener("click", closeProjectDialog);
+document.querySelector("#projectForm").addEventListener("submit", createProject);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
