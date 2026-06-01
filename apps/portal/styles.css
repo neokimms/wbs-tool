@@ -221,7 +221,7 @@ h2 {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -235,6 +235,7 @@ h2 {
 }
 
 .metric-panel {
+  grid-column: span 2;
   min-height: 124px;
   padding: 18px;
 }
@@ -258,7 +259,7 @@ h2 {
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -269,7 +270,22 @@ h2 {
 }
 
 .panel.wide {
+  grid-column: span 8;
   grid-row: span 2;
+}
+
+#templates,
+#approvals {
+  grid-column: span 4;
+}
+
+#imports,
+#sync {
+  grid-column: span 6;
+}
+
+#admin {
+  grid-column: 1 / -1;
 }
 
 .panel-header {
@@ -1051,8 +1067,19 @@ dd {
   line-height: 1.45;
 }
 
-@media (max-width: 1080px) {
-  .metric-grid,
+@media (max-width: 1280px) {
+  .metric-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .metric-panel {
+    grid-column: span 2;
+  }
+
+  .metric-panel:nth-last-child(-n + 2) {
+    grid-column: span 3;
+  }
+
   .content-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1060,6 +1087,17 @@ dd {
   .panel.wide {
     grid-column: 1 / -1;
     grid-row: auto;
+  }
+
+  #templates,
+  #approvals,
+  #imports,
+  #sync {
+    grid-column: auto;
+  }
+
+  #admin {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1103,6 +1141,17 @@ dd {
   .metric-grid,
   .content-grid {
     grid-template-columns: 1fr;
+  }
+
+  .metric-panel,
+  .metric-panel:nth-last-child(-n + 2),
+  .panel.wide,
+  #templates,
+  #approvals,
+  #imports,
+  #sync,
+  #admin {
+    grid-column: auto;
   }
 
   .primary-button,
