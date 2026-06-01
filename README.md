@@ -70,7 +70,15 @@ API는 `/api/auth/login`을 제외한 `/api/*` 요청에 Bearer 세션 토큰을
 POST /api/auth/login
 GET  /api/auth/me
 POST /api/auth/logout
+GET  /api/users
+POST /api/users
+PATCH /api/users/{user_id}
+GET  /api/audit-events
+GET  /api/settings
+PUT  /api/settings/{setting_key}
 ```
+
+포털의 `Users` 메뉴는 `admin`만 사용할 수 있고, 계정 생성, 역할 변경, 상태 변경, 비밀번호 재설정을 처리합니다. `Audit`과 `Settings` 메뉴는 `admin`, `pmo`가 조회할 수 있으며 설정 저장은 `admin`만 가능합니다. 로그인, 로그아웃, 사용자/설정 변경, 프로젝트 생성, 승인, Excel 반영, PM 엔진 sync 시도는 `wbs_audit_events`에 감사 이력으로 저장됩니다.
 
 계층형 WBS Excel 템플릿은 포털의 `Excel 다운로드` 버튼으로 내려받고, 같은 화면의 `Excel 업로드`로 검증 미리보기를 확인한 뒤 `반영` 버튼으로 적용합니다. API로 직접 사용할 때는 다음 엔드포인트를 사용합니다.
 
@@ -96,7 +104,7 @@ POST /api/approvals/{approval_id}/reject
 GET  /api/projects/{project_id}/baseline
 ```
 
-OpenProject 실제 연동은 PM engine adapter 경계 뒤에 둡니다. 기본값은 dry-run/disabled라서 토큰을 넣기 전에는 외부 OpenProject API를 호출하지 않습니다.
+OpenProject 실제 연동은 PM engine adapter 경계 뒤에 둡니다. 기본값은 dry-run/disabled라서 토큰을 넣기 전에는 외부 OpenProject API를 호출하지 않습니다. 포털의 `Settings` 메뉴와 `/api/settings`는 `pm_engine` 설정을 노출하며, 실제 런타임 토큰/동기화 플래그는 환경변수로 제어합니다.
 
 ```bash
 GET  /api/pm-engine

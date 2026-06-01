@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WBS Control Portal</title>
-    <link rel="stylesheet" href="./styles.css?v=20260602-view-mode2" />
+    <link rel="stylesheet" href="./styles.css?v=20260602-admin-rbac" />
   </head>
   <body data-auth="pending">
     <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
@@ -42,6 +42,9 @@
           <a href="#imports">Excel Queue</a>
           <a href="#sync">OpenProject</a>
           <a href="#operations">Operations</a>
+          <a href="#users">Users</a>
+          <a href="#audit">Audit</a>
+          <a href="#settings">Settings</a>
         </nav>
       </aside>
 
@@ -298,6 +301,92 @@
             </div>
             <div class="check-list" id="operationsChecks"></div>
           </article>
+
+          <article class="panel" id="users">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Access</p>
+                <h2>사용자 관리</h2>
+              </div>
+              <span class="status-pill stable" id="userCount">0</span>
+            </div>
+            <form class="user-admin-form" id="userCreateForm">
+              <input id="userEmailInput" name="email" type="email" autocomplete="off" placeholder="email@company.com" required />
+              <input id="userNameInput" name="display_name" type="text" minlength="2" maxlength="120" placeholder="표시 이름" required />
+              <select id="userRoleInput" name="role" aria-label="User role">
+                <option value="viewer">viewer</option>
+                <option value="pmo">pmo</option>
+                <option value="admin">admin</option>
+              </select>
+              <input id="userPasswordInput" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="초기 비밀번호" required />
+              <button class="primary-button" id="userSubmitButton" type="submit">계정 생성</button>
+            </form>
+            <p class="form-status" id="userFormStatus"></p>
+            <div class="table-wrap user-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last login</th>
+                    <th>Sessions</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="userRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel" id="audit">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Audit</p>
+                <h2>운영 감사 로그</h2>
+              </div>
+              <div class="panel-actions">
+                <span class="status-pill stable" id="auditCount">0</span>
+                <button class="icon-button" id="auditRefreshButton" type="button" aria-label="Refresh audit log" title="Refresh">↻</button>
+              </div>
+            </div>
+            <div class="audit-list" id="auditList"></div>
+          </article>
+
+          <article class="panel" id="settings">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Settings</p>
+                <h2>플랫폼 설정</h2>
+              </div>
+              <span class="status-pill attention">Adapter</span>
+            </div>
+            <dl class="definition-list settings-engine">
+              <div>
+                <dt>Mode</dt>
+                <dd id="settingsEngineMode">PM Engine</dd>
+              </div>
+              <div>
+                <dt>Boundary</dt>
+                <dd id="settingsEngineBoundary">pm-engine-api</dd>
+              </div>
+              <div>
+                <dt>Runtime</dt>
+                <dd id="settingsEngineRuntime">Dry-run protected</dd>
+              </div>
+            </dl>
+            <div class="settings-layout">
+              <div class="settings-grid" id="settingsCards"></div>
+              <div class="settings-editor">
+                <select id="settingsKeySelect" aria-label="Setting key"></select>
+                <textarea id="settingsJsonInput" spellcheck="false" aria-label="Setting JSON"></textarea>
+                <div class="settings-actions">
+                  <p class="form-status" id="settingsStatus"></p>
+                  <button class="primary-button" id="settingsSaveButton" type="button">설정 저장</button>
+                </div>
+              </div>
+            </div>
+          </article>
         </section>
       </main>
     </div>
@@ -338,6 +427,6 @@
     </dialog>
 
     <script src="./config.js"></script>
-    <script src="./app.js?v=20260602-view-mode2"></script>
+    <script src="./app.js?v=20260602-admin-rbac"></script>
   </body>
 </html>

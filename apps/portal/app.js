@@ -115,12 +115,35 @@ const restrictedOperationsHealth = {
   ],
 };
 
+const fallbackSettings = {
+  settings: [
+    {
+      key: "pm_engine",
+      label: "PM Engine Adapter",
+      category: "integration",
+      description: "PM 엔진 구현체는 adapter 경계 뒤에서 연결됩니다.",
+      value: {
+        adapter: "openproject",
+        display_name: "OpenProject",
+        mode: "ce-api-adapter",
+        dependency_boundary: "pm-engine-api",
+      },
+    },
+  ],
+  pm_engine: fallbackPreflight.engine,
+};
+
 const state = {
   authToken: window.localStorage.getItem(AUTH_TOKEN_KEY),
   currentUser: null,
   templates: fallbackTemplates,
   projects: fallbackProjects,
   approvals: [],
+  users: [],
+  auditEvents: [],
+  settings: fallbackSettings,
+  selectedSettingKey: "pm_engine",
+  settingsStatus: "",
   apiConnected: false,
   dashboard: {
     metrics: {
@@ -233,6 +256,33 @@ function canAccessOperations() {
   return ["admin", "pmo"].includes(state.currentUser?.role);
 }
 
+function canManageUsers() {
+  return state.currentUser?.role === "admin";
+}
+
+function canViewAudit() {
+  return ["admin", "pmo"].includes(state.currentUser?.role);
+}
+
+function canViewSettings() {
+  return ["admin", "pmo"].includes(state.currentUser?.role);
+}
+
+function toggleNavAndPanel(hash, allowed) {
+  const link = document.querySelector(`.nav-list a[href="${hash}"]`);
+  const panel = document.querySelector(hash);
+  if (link) link.hidden = !allowed;
+  if (panel) panel.hidden = !allowed;
+}
+
+function canAccessView(viewId) {
+  if (viewId === "operations") return canAccessOperations();
+  if (viewId === "users") return canManageUsers();
+  if (viewId === "audit") return canViewAudit();
+  if (viewId === "settings") return canViewSettings();
+  return true;
+}
+
 function renderAuthState() {
   const isAuthenticated = Boolean(state.currentUser && state.authToken);
   document.body.dataset.auth = isAuthenticated ? "authenticated" : "login";
@@ -240,10 +290,11 @@ function renderAuthState() {
     ? `${state.currentUser.display_name} · ${state.currentUser.role}`
     : "-";
 
-  const operationsAllowed = canAccessOperations();
-  document.querySelector('a[href="#operations"]').hidden = !operationsAllowed;
-  document.querySelector("#operations").hidden = !operationsAllowed;
-  if (!operationsAllowed && document.body.dataset.portalView === "operations") {
+  toggleNavAndPanel("#operations", canAccessOperations());
+  toggleNavAndPanel("#users", canManageUsers());
+  toggleNavAndPanel("#audit", canViewAudit());
+  toggleNavAndPanel("#settings", canViewSettings());
+  if (!canAccessView(document.body.dataset.portalView)) {
     applyPortalView("#dashboard", { updateHistory: true, scrollToTop: false });
   }
 }
@@ -782,6 +833,137 @@ function renderOperationsPanel() {
     .join("");
 }
 
+function roleOptions(selectedRole) {
+  return ["admin", "pmo", "viewer"]
+    .map((role) => `<option value="${role}" ${role === selectedRole ? "selected" : ""}>${role}</option>`)
+    .join("");
+}
+
+function statusOptions(selectedStatus) {
+  return ["Active", "Suspended"]
+    .map((status) => `<option value="${status}" ${status === selectedStatus ? "selected" : ""}>${status}</option>`)
+    .join("");
+}
+
+function renderUsersPanel() {
+  const panel = document.querySelector("#users");
+  if (!panel) return;
+  document.querySelector("#userCount").textContent = state.users.length;
+  document.querySelector("#userRows").innerHTML = state.users.length
+    ? state.users
+        .map(
+          (user) => `
+            <tr data-user-id="${escapeHtml(user.id)}">
+              <td>
+                <strong>${escapeHtml(user.display_name)}</strong>
+                <small>${escapeHtml(user.email)}</small>
+              </td>
+              <td>
+                <select data-user-field="role" aria-label="Role for ${escapeHtml(user.email)}">
+                  ${roleOptions(user.role)}
+                </select>
+              </td>
+              <td>
+                <select data-user-field="status" aria-label="Status for ${escapeHtml(user.email)}">
+                  ${statusOptions(user.status)}
+                </select>
+              </td>
+              <td>${escapeHtml(user.last_login_at ? formatTimestamp(user.last_login_at) : "-")}</td>
+              <td>${escapeHtml(user.active_sessions ?? 0)}</td>
+              <td>
+                <div class="table-actions">
+                  <input data-user-field="password" type="password" minlength="8" placeholder="새 비밀번호" aria-label="New password for ${escapeHtml(user.email)}" />
+                  <button class="table-action" type="button" data-user-action="save">저장</button>
+                </div>
+              </td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `
+      <tr class="empty-row">
+        <td colspan="6">등록된 사용자 없음</td>
+      </tr>
+    `;
+}
+
+function renderAuditPanel() {
+  const panel = document.querySelector("#audit");
+  if (!panel) return;
+  document.querySelector("#auditCount").textContent = state.auditEvents.length;
+  document.querySelector("#auditList").innerHTML = state.auditEvents.length
+    ? state.auditEvents
+        .map(
+          (event) => `
+            <article class="audit-event">
+              <div>
+                <strong>${escapeHtml(event.summary)}</strong>
+                <small>${escapeHtml(event.event_type)} · ${escapeHtml(event.actor_email || "system")}</small>
+              </div>
+              <span>${escapeHtml(formatTimestamp(event.created_at))}</span>
+            </article>
+          `,
+        )
+        .join("")
+    : `
+      <article class="audit-event empty-run">
+        <div>
+          <strong>No audit events</strong>
+          <small>감사 이력 없음</small>
+        </div>
+      </article>
+    `;
+}
+
+function selectedSetting() {
+  const settings = state.settings?.settings || [];
+  return settings.find((setting) => setting.key === state.selectedSettingKey) || settings[0] || null;
+}
+
+function renderSettingsPanel() {
+  const panel = document.querySelector("#settings");
+  if (!panel) return;
+  const settings = state.settings?.settings || [];
+  const selector = document.querySelector("#settingsKeySelect");
+  if (!settings.some((setting) => setting.key === state.selectedSettingKey)) {
+    state.selectedSettingKey = settings[0]?.key || "pm_engine";
+  }
+  selector.innerHTML = settings.length
+    ? settings.map((setting) => `<option value="${escapeHtml(setting.key)}">${escapeHtml(setting.label)}</option>`).join("")
+    : '<option value="">설정 없음</option>';
+  selector.value = state.selectedSettingKey;
+  selector.disabled = !settings.length;
+
+  const setting = selectedSetting();
+  document.querySelector("#settingsCards").innerHTML = settings.length
+    ? settings
+        .map(
+          (item) => `
+            <button class="setting-card ${item.key === state.selectedSettingKey ? "selected-setting-card" : ""}" type="button" data-setting-key="${escapeHtml(item.key)}">
+              <strong>${escapeHtml(item.label)}</strong>
+              <span>${escapeHtml(item.category)} · ${escapeHtml(item.key)}</span>
+              <small>${escapeHtml(item.description)}</small>
+            </button>
+          `,
+        )
+        .join("")
+    : `
+      <article class="setting-card empty-run">
+        <strong>No settings</strong>
+        <span>설정 정보 없음</span>
+      </article>
+    `;
+
+  const engine = state.settings?.pm_engine || state.pmPreflight?.engine || {};
+  document.querySelector("#settingsEngineMode").textContent = `${engine.display_name || engine.adapter || "PM Engine"} · ${engine.mode || "adapter"}`;
+  document.querySelector("#settingsEngineBoundary").textContent = engine.dependency_boundary || "pm-engine-api";
+  document.querySelector("#settingsEngineRuntime").textContent = engine.enabled ? "Actual sync enabled" : "Dry-run protected";
+  document.querySelector("#settingsJsonInput").value = setting ? JSON.stringify(setting.value || {}, null, 2) : "{}";
+  document.querySelector("#settingsJsonInput").disabled = !setting || !canManageUsers();
+  document.querySelector("#settingsSaveButton").disabled = !setting || !canManageUsers();
+  document.querySelector("#settingsStatus").textContent = state.settingsStatus;
+}
+
 function renderAll() {
   renderAuthState();
   renderMetrics();
@@ -798,11 +980,14 @@ function renderAll() {
   renderSyncPanel();
   renderSyncRuns();
   renderOperationsPanel();
+  renderUsersPanel();
+  renderAuditPanel();
+  renderSettingsPanel();
 }
 
 async function loadData() {
   try {
-    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs] = await Promise.all([
+    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs, users, auditEvents, settings] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
@@ -810,6 +995,9 @@ async function loadData() {
       request("/api/pm-engine/preflight"),
       canAccessOperations() ? request("/api/operations/health") : Promise.resolve(restrictedOperationsHealth),
       request("/api/imports?limit=8"),
+      canManageUsers() ? request("/api/users") : Promise.resolve([]),
+      canViewAudit() ? request("/api/audit-events?limit=30") : Promise.resolve([]),
+      canViewSettings() ? request("/api/settings") : Promise.resolve(fallbackSettings),
     ]);
 
     state.dashboard = dashboard;
@@ -819,6 +1007,9 @@ async function loadData() {
     state.pmPreflight = pmPreflight;
     state.operationsHealth = operationsHealth;
     state.importJobs = importJobs;
+    state.users = users;
+    state.auditEvents = auditEvents;
+    state.settings = settings;
     state.selectedImportJobId = importJobs.some((job) => job.id === state.selectedImportJobId)
       ? state.selectedImportJobId
       : null;
@@ -853,6 +1044,9 @@ async function loadData() {
     };
     state.syncRuns = [];
     state.importJobs = [];
+    state.users = [];
+    state.auditEvents = [];
+    state.settings = fallbackSettings;
   }
 
   renderAll();
@@ -902,6 +1096,63 @@ async function createProject(event) {
     status.textContent = error.message;
   } finally {
     submitButton.disabled = false;
+  }
+}
+
+async function createPortalUser(event) {
+  event.preventDefault();
+  if (!canManageUsers()) return;
+
+  const submitButton = document.querySelector("#userSubmitButton");
+  const status = document.querySelector("#userFormStatus");
+  const payload = {
+    email: document.querySelector("#userEmailInput").value.trim(),
+    display_name: document.querySelector("#userNameInput").value.trim(),
+    role: document.querySelector("#userRoleInput").value,
+    password: document.querySelector("#userPasswordInput").value,
+    status: "Active",
+  };
+
+  submitButton.disabled = true;
+  status.textContent = "";
+
+  try {
+    await request("/api/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    document.querySelector("#userCreateForm").reset();
+    await loadData();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function updatePortalUser(row) {
+  if (!canManageUsers() || !row?.dataset.userId) return;
+
+  const status = document.querySelector("#userFormStatus");
+  const passwordInput = row.querySelector('[data-user-field="password"]');
+  const payload = {
+    role: row.querySelector('[data-user-field="role"]').value,
+    status: row.querySelector('[data-user-field="status"]').value,
+  };
+  if (passwordInput.value) {
+    payload.password = passwordInput.value;
+  }
+
+  status.textContent = "";
+  try {
+    await request(`/api/users/${encodeURIComponent(row.dataset.userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    passwordInput.value = "";
+    await loadData();
+  } catch (error) {
+    status.textContent = error.message;
   }
 }
 
@@ -1165,6 +1416,9 @@ async function refreshEnginePreflight() {
   try {
     state.pmPreflight = await request("/api/pm-engine/preflight");
     state.syncDetail = null;
+    if (canViewSettings()) {
+      state.settings = await request("/api/settings");
+    }
   } catch (error) {
     state.pmPreflight = {
       ...fallbackPreflight,
@@ -1175,6 +1429,44 @@ async function refreshEnginePreflight() {
   }
 
   renderAll();
+}
+
+async function saveSelectedSetting() {
+  if (!canManageUsers()) return;
+  const setting = selectedSetting();
+  const status = document.querySelector("#settingsStatus");
+  if (!setting) return;
+
+  let value;
+  try {
+    value = JSON.parse(document.querySelector("#settingsJsonInput").value || "{}");
+  } catch (error) {
+    status.textContent = "JSON 형식을 확인하세요";
+    return;
+  }
+
+  document.querySelector("#settingsSaveButton").disabled = true;
+  state.settingsStatus = "";
+  try {
+    const result = await request(`/api/settings/${encodeURIComponent(setting.key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    });
+    state.settings = await request("/api/settings");
+    if (result.pm_engine) {
+      state.pmPreflight = {
+        ...state.pmPreflight,
+        engine: result.pm_engine,
+      };
+    }
+    state.settingsStatus = "저장되었습니다";
+    await loadData();
+  } catch (error) {
+    state.settingsStatus = error.message;
+  } finally {
+    document.querySelector("#settingsSaveButton").disabled = false;
+    renderAll();
+  }
 }
 
 async function loadProjectSyncPreflight() {
@@ -1279,7 +1571,7 @@ function updateActiveNavigation(viewId = "dashboard") {
 function applyPortalView(hash = "", options = {}) {
   const rawId = rawViewId(hash);
   let viewId = normalizedViewId(hash);
-  if (viewId === "operations" && !canAccessOperations()) {
+  if (!canAccessView(viewId)) {
     viewId = "dashboard";
   }
   const nextHash = `#${viewId}`;
@@ -1379,6 +1671,7 @@ document.querySelector("#createProjectButton").addEventListener("click", openPro
 document.querySelector("#projectDialogClose").addEventListener("click", closeProjectDialog);
 document.querySelector("#projectCancelButton").addEventListener("click", closeProjectDialog);
 document.querySelector("#projectForm").addEventListener("submit", createProject);
+document.querySelector("#userCreateForm").addEventListener("submit", createPortalUser);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
@@ -1401,12 +1694,31 @@ document.querySelector("#approvalList").addEventListener("click", (event) => {
   if (!button || button.disabled) return;
   decideApproval(button.dataset.approvalId, button.dataset.approvalAction);
 });
+document.querySelector("#userRows").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-user-action='save']");
+  if (!button || button.disabled) return;
+  updatePortalUser(button.closest("tr"));
+});
 document.querySelector(".nav-list").addEventListener("click", (event) => {
   const link = event.target.closest("a[href^='#']");
   if (!link) return;
   event.preventDefault();
   applyPortalView(link.hash, { behavior: "smooth" });
 });
+document.querySelector("#auditRefreshButton").addEventListener("click", loadData);
+document.querySelector("#settingsCards").addEventListener("click", (event) => {
+  const card = event.target.closest("[data-setting-key]");
+  if (!card) return;
+  state.selectedSettingKey = card.dataset.settingKey;
+  state.settingsStatus = "";
+  renderSettingsPanel();
+});
+document.querySelector("#settingsKeySelect").addEventListener("change", (event) => {
+  state.selectedSettingKey = event.target.value;
+  state.settingsStatus = "";
+  renderSettingsPanel();
+});
+document.querySelector("#settingsSaveButton").addEventListener("click", saveSelectedSetting);
 document.querySelector("#importHistoryList").addEventListener("click", (event) => {
   const button = event.target.closest("[data-import-job-id]");
   if (!button) return;

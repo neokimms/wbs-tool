@@ -39,8 +39,15 @@ MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_in
 SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ALLOWED_USER_ROLES = {"admin", "pmo", "viewer"}
+ALLOWED_USER_STATUSES = {"Active", "Suspended"}
 USER_SELECT = "id, email, display_name, role, status, last_login_at, created_at"
 USER_SELECT_U = "u.id, u.email, u.display_name, u.role, u.status, u.last_login_at, u.created_at"
+SETTING_SELECT = "key, label, category, description, value, is_sensitive, updated_by, created_at, updated_at"
+AUDIT_SELECT = """
+id, actor_user_id, actor_email, actor_role, event_type, entity_type, entity_id,
+summary, metadata, created_at
+"""
 IMPORT_JOB_RETURNING = """
 id, source_file, template_key, template_name, project_type, description, status,
 total_rows, accepted_rows, rejected_rows, errors, warnings, preview_rows,
@@ -225,6 +232,25 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
 
 
+class UserCreate(BaseModel):
+    email: str = Field(..., min_length=3, max_length=160)
+    display_name: str = Field(..., min_length=2, max_length=120)
+    role: str = Field("viewer", min_length=3, max_length=20)
+    password: str = Field(..., min_length=8, max_length=200)
+    status: str = Field("Active", min_length=5, max_length=20)
+
+
+class UserUpdate(BaseModel):
+    display_name: str | None = Field(None, min_length=2, max_length=120)
+    role: str | None = Field(None, min_length=3, max_length=20)
+    password: str | None = Field(None, min_length=8, max_length=200)
+    status: str | None = Field(None, min_length=5, max_length=20)
+
+
+class SettingUpdate(BaseModel):
+    value: dict[str, Any] = Field(default_factory=dict)
+
+
 def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
     data = dict(record)
     for key, value in data.items():
@@ -277,6 +303,15 @@ def user_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def managed_user_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
+    user = normalize_record(record) if isinstance(record, asyncpg.Record) else dict(record)
+    return {
+        **user_response(user),
+        "updated_at": user.get("updated_at"),
+        "active_sessions": int(user.get("active_sessions") or 0),
+    }
+
+
 async def fetch_user_by_token(connection: asyncpg.Connection, token: str) -> dict[str, Any] | None:
     record = await connection.fetchrow(
         f"""
@@ -299,6 +334,79 @@ def require_roles(request: Request, allowed_roles: set[str]) -> dict[str, Any]:
     if user["role"] not in allowed_roles:
         raise HTTPException(status_code=403, detail="Insufficient role")
     return user
+
+
+def safe_uuid(value: Any) -> UUID | None:
+    if not value:
+        return None
+    try:
+        return value if isinstance(value, UUID) else UUID(str(value))
+    except ValueError:
+        return None
+
+
+def validate_user_role(role: str) -> str:
+    normalized_role = role.strip().lower()
+    if normalized_role not in ALLOWED_USER_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid user role")
+    return normalized_role
+
+
+def validate_user_status(status: str) -> str:
+    normalized_status = status.strip().title()
+    if normalized_status not in ALLOWED_USER_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid user status")
+    return normalized_status
+
+
+def setting_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
+    setting = normalize_record(record) if isinstance(record, asyncpg.Record) else dict(record)
+    if setting.get("is_sensitive"):
+        setting["value"] = {"masked": True}
+    return setting
+
+
+def audit_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
+    event = normalize_record(record) if isinstance(record, asyncpg.Record) else dict(record)
+    if event.get("actor_user_id"):
+        event["actor_user_id"] = str(event["actor_user_id"])
+    return event
+
+
+async def insert_audit_event(
+    connection: asyncpg.Connection,
+    *,
+    request: Request | None = None,
+    event_type: str,
+    summary: str,
+    entity_type: str | None = None,
+    entity_id: Any = None,
+    metadata: dict[str, Any] | None = None,
+    actor: dict[str, Any] | None = None,
+    actor_email: str | None = None,
+    actor_role: str | None = None,
+) -> None:
+    request_user = getattr(request.state, "user", None) if request else None
+    resolved_actor = actor or request_user or {}
+    email = actor_email or resolved_actor.get("email")
+    role = actor_role or resolved_actor.get("role")
+    await connection.execute(
+        """
+        INSERT INTO wbs_audit_events
+          (actor_user_id, actor_email, actor_role, event_type, entity_type,
+           entity_id, summary, metadata)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+        """,
+        safe_uuid(resolved_actor.get("id")),
+        email,
+        role,
+        event_type,
+        entity_type,
+        str(entity_id) if entity_id is not None else None,
+        summary,
+        metadata or {},
+    )
 
 
 @app.middleware("http")
@@ -1238,7 +1346,7 @@ async def record_project_sync_run(
 ) -> dict[str, Any]:
     summary = normalize_metadata(plan.get("summary"))
     async with get_pool(request).acquire() as connection:
-        return await insert_sync_run(
+        sync_run = await insert_sync_run(
             connection,
             project_id=project_id,
             mode=mode,
@@ -1255,6 +1363,21 @@ async def record_project_sync_run(
             metadata=metadata,
             error=error,
         )
+        await insert_audit_event(
+            connection,
+            request=request,
+            event_type="pm_engine.sync_recorded",
+            entity_type="project",
+            entity_id=project_id,
+            summary=f"PM engine sync {status}",
+            metadata={
+                "mode": mode,
+                "dry_run": payload.dry_run,
+                "engine": sync_run.get("engine"),
+                "sync_run_id": str(sync_run.get("id")) if sync_run.get("id") else None,
+            },
+        )
+        return sync_run
 
 
 async def fetch_import_job_for_update(connection: asyncpg.Connection, job_id: UUID) -> dict[str, Any] | None:
@@ -1534,6 +1657,30 @@ def openproject_engine_status() -> dict[str, Any]:
     }
 
 
+def pm_engine_status(setting_value: dict[str, Any] | None = None) -> dict[str, Any]:
+    setting_value = setting_value or {}
+    runtime = openproject_engine_status()
+    adapter = setting_value.get("adapter") or runtime["adapter"]
+    display_name = setting_value.get("display_name") or "OpenProject"
+    return {
+        **runtime,
+        "adapter": adapter,
+        "display_name": display_name,
+        "provider": runtime["adapter"],
+        "mode": setting_value.get("mode") or "ce-api-adapter",
+        "dependency_boundary": setting_value.get("dependency_boundary") or "pm-engine-api",
+        "actual_sync_control": setting_value.get("actual_sync_control") or "OPENPROJECT_SYNC_ENABLED",
+        "capabilities": {
+            "preflight": True,
+            "dry_run": True,
+            "actual_sync": runtime["enabled"] and bool(OPENPROJECT_API_TOKEN),
+            "work_package_payload_validation": True,
+            "hierarchy_parent_links": runtime["parent_links"],
+        },
+        "runtime": runtime,
+    }
+
+
 def openproject_preflight_check(name: str, status: str, message: str, **extra: Any) -> dict[str, Any]:
     return {
         "name": name,
@@ -1608,7 +1755,7 @@ async def run_openproject_preflight() -> dict[str, Any]:
         state = "dry_run_only"
 
     return {
-        "engine": openproject_engine_status(),
+        "engine": pm_engine_status(),
         "state": state,
         "ready_for_actual_sync": ready,
         "checks": checks,
@@ -1649,7 +1796,7 @@ def build_openproject_sync_plan(
         )
 
     return {
-        "engine": openproject_engine_status(),
+        "engine": pm_engine_status(),
         "project": project,
         "template": template,
         "openproject": {
@@ -1824,6 +1971,15 @@ async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
                 payload.password,
             )
             if not user_record:
+                await insert_audit_event(
+                    connection,
+                    event_type="auth.login_failed",
+                    entity_type="user",
+                    entity_id=normalized_email,
+                    summary="Login failed",
+                    metadata={"email": normalized_email},
+                    actor_email=normalized_email,
+                )
                 raise HTTPException(status_code=401, detail="Invalid email or password")
 
             await connection.execute(
@@ -1842,6 +1998,14 @@ async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
             updated_user = await connection.fetchrow(
                 f"SELECT {USER_SELECT} FROM wbs_users WHERE id = $1",
                 user_record["id"],
+            )
+            await insert_audit_event(
+                connection,
+                event_type="auth.login",
+                entity_type="user",
+                entity_id=user_record["id"],
+                summary="User logged in",
+                actor=user_response(updated_user),
             )
 
     return {
@@ -1862,7 +2026,246 @@ async def logout(request: Request) -> dict[str, str]:
     if token:
         async with get_pool(request).acquire() as connection:
             await connection.execute("DELETE FROM wbs_user_sessions WHERE token = $1", token)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="auth.logout",
+                entity_type="user",
+                entity_id=request.state.user["id"],
+                summary="User logged out",
+            )
     return {"status": "ok"}
+
+
+@app.get("/api/users")
+async def list_users(request: Request) -> list[dict[str, Any]]:
+    require_roles(request, {"admin"})
+    async with get_pool(request).acquire() as connection:
+        records = await connection.fetch(
+            """
+            SELECT u.id, u.email, u.display_name, u.role, u.status,
+                   u.last_login_at, u.created_at, u.updated_at,
+                   count(s.token)::integer AS active_sessions
+            FROM wbs_users u
+            LEFT JOIN wbs_user_sessions s
+              ON s.user_id = u.id
+             AND s.expires_at > now()
+            GROUP BY u.id
+            ORDER BY
+              CASE u.role WHEN 'admin' THEN 0 WHEN 'pmo' THEN 1 ELSE 2 END,
+              u.email
+            """
+        )
+    return [managed_user_response(record) for record in records]
+
+
+@app.post("/api/users", status_code=201)
+async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
+    require_roles(request, {"admin"})
+    normalized_email = payload.email.strip().lower()
+    role = validate_user_role(payload.role)
+    status = validate_user_status(payload.status)
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            email_exists = await connection.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM wbs_users WHERE email = $1)",
+                normalized_email,
+            )
+            if email_exists:
+                raise HTTPException(status_code=409, detail="User email already exists")
+            record = await connection.fetchrow(
+                """
+                INSERT INTO wbs_users (email, display_name, role, password_hash, status)
+                VALUES ($1, $2, $3, crypt($4, gen_salt('bf')), $5)
+                RETURNING id, email, display_name, role, status, last_login_at, created_at, updated_at,
+                          0::integer AS active_sessions
+                """,
+                normalized_email,
+                payload.display_name.strip(),
+                role,
+                payload.password,
+                status,
+            )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="user.created",
+                entity_type="user",
+                entity_id=record["id"],
+                summary=f"User created: {normalized_email}",
+                metadata={"role": role, "status": status},
+            )
+
+    return managed_user_response(record)
+
+
+@app.patch("/api/users/{user_id}")
+async def update_user(user_id: str, payload: UserUpdate, request: Request) -> dict[str, Any]:
+    current = require_roles(request, {"admin"})
+    parsed_id = safe_uuid(user_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    role = validate_user_role(payload.role) if payload.role is not None else None
+    status = validate_user_status(payload.status) if payload.status is not None else None
+    display_name = payload.display_name.strip() if payload.display_name is not None else None
+
+    if parsed_id == safe_uuid(current["id"]):
+        if role and role != "admin":
+            raise HTTPException(status_code=400, detail="Cannot remove your own admin role")
+        if status and status != "Active":
+            raise HTTPException(status_code=400, detail="Cannot suspend your own account")
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            existing = await connection.fetchrow(
+                "SELECT id, email, display_name, role, status FROM wbs_users WHERE id = $1 FOR UPDATE",
+                parsed_id,
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            record = await connection.fetchrow(
+                """
+                UPDATE wbs_users
+                SET display_name = COALESCE($2, display_name),
+                    role = COALESCE($3, role),
+                    status = COALESCE($4, status),
+                    password_hash = CASE
+                      WHEN $5::text IS NULL THEN password_hash
+                      ELSE crypt($5, gen_salt('bf'))
+                    END,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING id, email, display_name, role, status, last_login_at, created_at, updated_at,
+                          0::integer AS active_sessions
+                """,
+                parsed_id,
+                display_name,
+                role,
+                status,
+                payload.password,
+            )
+            if status and status != "Active":
+                await connection.execute("DELETE FROM wbs_user_sessions WHERE user_id = $1", parsed_id)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="user.updated",
+                entity_type="user",
+                entity_id=parsed_id,
+                summary=f"User updated: {existing['email']}",
+                metadata={
+                    "display_name_changed": display_name is not None and display_name != existing["display_name"],
+                    "role_changed": role is not None and role != existing["role"],
+                    "status_changed": status is not None and status != existing["status"],
+                    "password_changed": payload.password is not None,
+                },
+            )
+
+    return managed_user_response(record)
+
+
+@app.get("/api/audit-events")
+async def list_audit_events(
+    request: Request,
+    limit: int = 50,
+    event_type: str | None = None,
+) -> list[dict[str, Any]]:
+    require_roles(request, {"admin", "pmo"})
+    bounded_limit = max(1, min(limit, 100))
+
+    async with get_pool(request).acquire() as connection:
+        if event_type:
+            records = await connection.fetch(
+                f"""
+                SELECT {AUDIT_SELECT}
+                FROM wbs_audit_events
+                WHERE event_type = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                event_type,
+                bounded_limit,
+            )
+        else:
+            records = await connection.fetch(
+                f"""
+                SELECT {AUDIT_SELECT}
+                FROM wbs_audit_events
+                ORDER BY created_at DESC
+                LIMIT $1
+                """,
+                bounded_limit,
+            )
+
+    return [audit_response(record) for record in records]
+
+
+@app.get("/api/settings")
+async def list_settings(request: Request) -> dict[str, Any]:
+    require_roles(request, {"admin", "pmo"})
+    async with get_pool(request).acquire() as connection:
+        records = await connection.fetch(
+            f"""
+            SELECT {SETTING_SELECT}
+            FROM wbs_system_settings
+            ORDER BY category, key
+            """
+        )
+
+    settings = [setting_response(record) for record in records]
+    pm_engine_setting = next((setting for setting in settings if setting["key"] == "pm_engine"), None)
+    return {
+        "settings": settings,
+        "pm_engine": pm_engine_status(pm_engine_setting.get("value") if pm_engine_setting else None),
+    }
+
+
+@app.put("/api/settings/{setting_key}")
+async def update_setting(setting_key: str, payload: SettingUpdate, request: Request) -> dict[str, Any]:
+    current = require_roles(request, {"admin"})
+    key = setting_key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Setting key is required")
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            existing = await connection.fetchrow(
+                f"SELECT {SETTING_SELECT} FROM wbs_system_settings WHERE key = $1 FOR UPDATE",
+                key,
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail="Setting not found")
+            record = await connection.fetchrow(
+                f"""
+                UPDATE wbs_system_settings
+                SET value = $2::jsonb,
+                    updated_by = $3,
+                    updated_at = now()
+                WHERE key = $1
+                RETURNING {SETTING_SELECT}
+                """,
+                key,
+                payload.value,
+                safe_uuid(current["id"]),
+            )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="setting.updated",
+                entity_type="setting",
+                entity_id=key,
+                summary=f"Setting updated: {key}",
+                metadata={"category": existing["category"]},
+            )
+
+    setting = setting_response(record)
+    return {
+        "setting": setting,
+        "pm_engine": pm_engine_status(setting["value"]) if key == "pm_engine" else None,
+    }
 
 
 @app.get("/metrics", response_class=PlainTextResponse)
@@ -2059,13 +2462,22 @@ async def create_project(payload: ProjectCreate, request: Request) -> dict[str, 
             start_date,
             metadata,
         )
+        await insert_audit_event(
+            connection,
+            request=request,
+            event_type="project.created",
+            entity_type="project",
+            entity_id=record["id"],
+            summary=f"Project created: {payload.name}",
+            metadata={"template_key": payload.template_key, "owner": payload.owner},
+        )
 
     return normalize_record(record)
 
 
 @app.get("/api/pm-engine")
 async def pm_engine() -> dict[str, Any]:
-    return openproject_engine_status()
+    return pm_engine_status()
 
 
 @app.get("/api/pm-engine/preflight")
@@ -2319,7 +2731,7 @@ async def sync_project_to_engine(
     )
     return {
         "status": "Synced",
-        "engine": openproject_engine_status(),
+        "engine": pm_engine_status(),
         "project": updated_project,
         "openproject": {
             "project_id": openproject_project_id,
@@ -2440,6 +2852,20 @@ async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str
                     },
                 )
                 approval["baseline"] = baseline_summary(baseline)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="approval.created",
+                entity_type="approval",
+                entity_id=record["id"],
+                summary=f"Approval {approval_status}: {title}",
+                metadata={
+                    "project_id": str(payload.project_id),
+                    "approval_mode": approval_metadata["approval_mode"],
+                    "status": approval_status,
+                    "baseline_locked": bool(approval.get("baseline", {}).get("locked")),
+                },
+            )
 
     return approval
 
@@ -2495,6 +2921,18 @@ async def approve_approval(approval_id: str, payload: ApprovalDecision, request:
                 },
             )
             updated["baseline"] = baseline_summary(baseline)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="approval.approved",
+                entity_type="approval",
+                entity_id=parsed_id,
+                summary=f"Approval approved: {approval['title']}",
+                metadata={
+                    "project_id": str(approval["project_id"]),
+                    "baseline_locked": bool(updated["baseline"].get("locked")),
+                },
+            )
 
     return updated
 
@@ -2538,6 +2976,15 @@ async def reject_approval(approval_id: str, payload: ApprovalDecision, request: 
                 approval["project_id"],
             )
             updated = await fetch_approval(connection, parsed_id)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="approval.rejected",
+                entity_type="approval",
+                entity_id=parsed_id,
+                summary=f"Approval rejected: {approval['title']}",
+                metadata={"project_id": str(approval["project_id"])},
+            )
 
     return updated
 
@@ -2616,6 +3063,9 @@ async def operations_health(request: Request) -> dict[str, Any]:
         )
         sync_run_count = await connection.fetchval("SELECT count(*) FROM wbs_sync_runs")
         baseline_count = await connection.fetchval("SELECT count(*) FROM wbs_project_baselines")
+        user_count = await connection.fetchval("SELECT count(*) FROM wbs_users")
+        audit_count = await connection.fetchval("SELECT count(*) FROM wbs_audit_events")
+        setting_count = await connection.fetchval("SELECT count(*) FROM wbs_system_settings")
         existing_tables = await connection.fetch(
             """
             SELECT table_name
@@ -2633,6 +3083,8 @@ async def operations_health(request: Request) -> dict[str, Any]:
                 "wbs_project_baselines",
                 "wbs_users",
                 "wbs_user_sessions",
+                "wbs_system_settings",
+                "wbs_audit_events",
             ],
         )
 
@@ -2647,6 +3099,8 @@ async def operations_health(request: Request) -> dict[str, Any]:
         "wbs_project_baselines",
         "wbs_users",
         "wbs_user_sessions",
+        "wbs_system_settings",
+        "wbs_audit_events",
     }
     missing_tables = sorted(required_tables - table_names)
     preflight = await run_openproject_preflight()
@@ -2717,6 +3171,27 @@ async def operations_health(request: Request) -> dict[str, Any]:
             "pass",
             f"{baseline_count} locked WBS baselines",
             {"baselines": baseline_count},
+        ),
+        operation_check(
+            "access_control",
+            "Access control",
+            "pass" if user_count else "fail",
+            f"{user_count} portal users configured",
+            {"users": user_count},
+        ),
+        operation_check(
+            "settings_registry",
+            "Settings registry",
+            "pass" if setting_count >= 3 else "warn",
+            f"{setting_count} settings registered",
+            {"settings": setting_count},
+        ),
+        operation_check(
+            "audit_log",
+            "Audit log",
+            "pass",
+            f"{audit_count} audit events recorded",
+            {"audit_events": audit_count},
         ),
         backup_health_check(),
         operation_check(
@@ -2916,6 +3391,20 @@ async def preview_template_excel(
                 warnings=warnings,
                 preview_rows=serialized_rows,
             )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="import.previewed",
+                entity_type="import_job",
+                entity_id=record["id"],
+                summary=f"Excel import preview: {file.filename or 'wbs-upload.xlsx'}",
+                metadata={
+                    "template_key": normalized_key,
+                    "status": status,
+                    "accepted_rows": 0 if errors else len(rows),
+                    "rejected_rows": len(errors),
+                },
+            )
             template = await fetch_template(connection, normalized_key)
 
     response = normalize_record(record)
@@ -2972,6 +3461,21 @@ async def import_template_excel(
                     description=description,
                     rows=rows,
                 )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="import.created",
+                entity_type="import_job",
+                entity_id=record["id"],
+                summary=f"Excel import {'accepted' if not errors else 'rejected'}: {file.filename or 'wbs-upload.xlsx'}",
+                metadata={
+                    "template_key": normalized_key,
+                    "status": status,
+                    "accepted_rows": 0 if errors else len(rows),
+                    "rejected_rows": len(errors),
+                    "applied": not errors,
+                },
+            )
 
             template = await fetch_template(connection, normalized_key)
 
@@ -3028,6 +3532,18 @@ async def apply_import_preview(job_id: str, request: Request) -> dict[str, Any]:
                 import_job_id,
             )
             template = await fetch_template(connection, template_key)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="import.applied",
+                entity_type="import_job",
+                entity_id=import_job_id,
+                summary=f"Excel import applied: {job['source_file']}",
+                metadata={
+                    "template_key": template_key,
+                    "accepted_rows": record["accepted_rows"],
+                },
+            )
 
     response = normalize_record(record)
     response["template"] = template
@@ -3061,6 +3577,15 @@ async def resequence_template_codes(template_key: str, request: Request) -> dict
                 rows=renumbered_rows,
             )
             updated_template = await fetch_template(connection, normalized_key)
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="template.resequenced",
+                entity_type="template",
+                entity_id=normalized_key,
+                summary=f"WBS codes resequenced: {normalized_key}",
+                metadata={"changed_rows": len(changes)},
+            )
 
     return {
         "template": updated_template,
@@ -3076,5 +3601,6 @@ async def openproject_connection() -> dict[str, str]:
     return {
         "mode": "community-edition-engine",
         "base_url": OPENPROJECT_BASE_URL,
-        "integration": "api-v3-or-plugin",
+        "integration": "pm-engine-adapter",
+        "adapter": "openproject",
     }

@@ -59,6 +59,31 @@ CREATE TABLE IF NOT EXISTS wbs_user_sessions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS wbs_system_settings (
+  key text PRIMARY KEY,
+  label text NOT NULL,
+  category text NOT NULL DEFAULT 'general',
+  description text NOT NULL DEFAULT '',
+  value jsonb NOT NULL DEFAULT '{}'::jsonb,
+  is_sensitive boolean NOT NULL DEFAULT false,
+  updated_by uuid REFERENCES wbs_users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS wbs_audit_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_user_id uuid REFERENCES wbs_users(id) ON DELETE SET NULL,
+  actor_email citext,
+  actor_role text,
+  event_type text NOT NULL,
+  entity_type text,
+  entity_id text,
+  summary text NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS wbs_import_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_file text NOT NULL,
@@ -149,6 +174,10 @@ CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_status ON wbs_approval_requ
 CREATE INDEX IF NOT EXISTS idx_wbs_users_role ON wbs_users(role, status);
 CREATE INDEX IF NOT EXISTS idx_wbs_user_sessions_user ON wbs_user_sessions(user_id, expires_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_user_sessions_expires ON wbs_user_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_wbs_system_settings_category ON wbs_system_settings(category, key);
+CREATE INDEX IF NOT EXISTS idx_wbs_audit_events_created ON wbs_audit_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_audit_events_type ON wbs_audit_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_audit_events_actor ON wbs_audit_events(actor_email, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_status ON wbs_import_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_template ON wbs_import_jobs(template_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_template ON wbs_template_items(template_key, sort_order);
@@ -165,6 +194,47 @@ VALUES
   ('pmo@wbs.local', 'PMO Lead', 'pmo', crypt('pmopmo', gen_salt('bf')), 'Active'),
   ('viewer@wbs.local', 'Project Viewer', 'viewer', crypt('viewonly', gen_salt('bf')), 'Active')
 ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO wbs_system_settings (key, label, category, description, value)
+VALUES
+  (
+    'pm_engine',
+    'PM Engine Adapter',
+    'integration',
+    'OpenProject 같은 PM 엔진 구현체를 포털/API의 어댑터 경계 뒤에 둡니다.',
+    '{
+      "adapter": "openproject",
+      "display_name": "OpenProject",
+      "mode": "ce-api-adapter",
+      "dependency_boundary": "pm-engine-api",
+      "actual_sync_control": "OPENPROJECT_SYNC_ENABLED",
+      "notes": "OpenProject 전용 API 호출은 PM engine adapter 내부에서만 수행합니다."
+    }'::jsonb
+  ),
+  (
+    'approval_policy',
+    'Approval Policy',
+    'workflow',
+    '내부 PMO 승인은 기본 자동 승인하고 승인 시 baseline을 잠급니다.',
+    '{
+      "internal_auto_approve": true,
+      "baseline_lock": true,
+      "manual_external_required": false
+    }'::jsonb
+  ),
+  (
+    'portal_access',
+    'Portal Access',
+    'security',
+    '포털 메뉴와 운영 기능에 적용하는 역할 기준입니다.',
+    '{
+      "operations_roles": ["admin", "pmo"],
+      "audit_roles": ["admin", "pmo"],
+      "settings_roles": ["admin", "pmo"],
+      "user_admin_roles": ["admin"]
+    }'::jsonb
+  )
+ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO wbs_templates (key, name, project_type, description, phases)
 VALUES
