@@ -89,6 +89,29 @@ docker compose stop
 docker compose down
 ```
 
+## 운영 점검과 백업
+
+고객사 온프레미스 배포에서는 API 프로필을 기준으로 PostgreSQL, 확장 API, 포털 상태를 먼저 점검합니다. OpenProject까지 필수로 확인해야 하면 `REQUIRE_OPENPROJECT=1`을 함께 지정합니다.
+
+```bash
+bash scripts/status-check.sh
+REQUIRE_OPENPROJECT=1 bash scripts/status-check.sh
+```
+
+PostgreSQL 백업은 `backups/postgres` 아래에 custom dump 형식으로 생성됩니다. 기본 대상은 `.env`의 `POSTGRES_DB`이며, 인자로 다른 DB를 지정할 수 있습니다.
+
+```bash
+bash scripts/backup-postgres.sh
+bash scripts/backup-postgres.sh openproject
+```
+
+복구는 대상 DB를 재생성하는 파괴적 작업이므로 명시 확인값이 필요합니다. 운영 복구 전에는 현재 볼륨과 최신 백업 파일을 별도로 보존해 두세요.
+
+```bash
+CONFIRM_RESTORE=YES bash scripts/restore-postgres.sh backups/postgres/wbs_platform_YYYYMMDD-HHMMSS.dump wbs_platform
+CONFIRM_RESTORE=YES bash scripts/restore-postgres.sh backups/postgres/openproject_YYYYMMDD-HHMMSS.dump openproject
+```
+
 ## 개발 원칙
 
 1. OpenProject 코어 수정은 최소화하고, 설정/플러그인/API 확장으로 제품화합니다.
