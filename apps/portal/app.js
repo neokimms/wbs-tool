@@ -1,4 +1,5 @@
 const API_BASE = window.WBS_API_BASE_URL || "http://localhost:8000";
+const AUTH_TOKEN_KEY = "wbs.portal.authToken";
 
 const fallbackTemplates = [
   {
@@ -96,7 +97,27 @@ const fallbackOperationsHealth = {
   ],
 };
 
+const restrictedOperationsHealth = {
+  status: "watch",
+  summary: {
+    checks: 1,
+    failures: 0,
+    warnings: 1,
+    passes: 0,
+  },
+  checks: [
+    {
+      key: "operations_access",
+      label: "Operations access",
+      status: "warn",
+      message: "PMO 또는 admin 권한 필요",
+    },
+  ],
+};
+
 const state = {
+  authToken: window.localStorage.getItem(AUTH_TOKEN_KEY),
+  currentUser: null,
   templates: fallbackTemplates,
   projects: fallbackProjects,
   approvals: [],
@@ -129,6 +150,9 @@ const state = {
 
 async function request(path, options = {}) {
   const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
+  if (state.authToken) {
+    headers.Authorization = `Bearer ${state.authToken}`;
+  }
   const response = await fetch(`${API_BASE}${path}`, {
     headers,
     ...options,
@@ -203,6 +227,25 @@ function operationStatusClass(value) {
   if (value === "pass" || value === "stable") return "stable";
   if (value === "fail" || value === "critical") return "critical";
   return "attention";
+}
+
+function canAccessOperations() {
+  return ["admin", "pmo"].includes(state.currentUser?.role);
+}
+
+function renderAuthState() {
+  const isAuthenticated = Boolean(state.currentUser && state.authToken);
+  document.body.dataset.auth = isAuthenticated ? "authenticated" : "login";
+  document.querySelector("#userBadge").textContent = isAuthenticated
+    ? `${state.currentUser.display_name} · ${state.currentUser.role}`
+    : "-";
+
+  const operationsAllowed = canAccessOperations();
+  document.querySelector('a[href="#operations"]').hidden = !operationsAllowed;
+  document.querySelector("#operations").hidden = !operationsAllowed;
+  if (!operationsAllowed && document.body.dataset.portalView === "operations") {
+    applyPortalView("#dashboard", { updateHistory: true, scrollToTop: false });
+  }
 }
 
 function renderMetrics() {
@@ -740,6 +783,7 @@ function renderOperationsPanel() {
 }
 
 function renderAll() {
+  renderAuthState();
   renderMetrics();
   renderTemplates();
   renderTemplateSelect();
@@ -764,7 +808,7 @@ async function loadData() {
       request("/api/projects"),
       request("/api/approvals"),
       request("/api/pm-engine/preflight"),
-      request("/api/operations/health"),
+      canAccessOperations() ? request("/api/operations/health") : Promise.resolve(restrictedOperationsHealth),
       request("/api/imports?limit=8"),
     ]);
 
@@ -1234,7 +1278,10 @@ function updateActiveNavigation(viewId = "dashboard") {
 
 function applyPortalView(hash = "", options = {}) {
   const rawId = rawViewId(hash);
-  const viewId = normalizedViewId(hash);
+  let viewId = normalizedViewId(hash);
+  if (viewId === "operations" && !canAccessOperations()) {
+    viewId = "dashboard";
+  }
   const nextHash = `#${viewId}`;
   document.body.dataset.portalView = viewId;
   updateActiveNavigation(viewId);
@@ -1250,7 +1297,84 @@ function applyPortalView(hash = "", options = {}) {
   }
 }
 
+function clearSession(message = "") {
+  state.authToken = null;
+  state.currentUser = null;
+  window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  document.body.dataset.auth = "login";
+  document.querySelector("#loginStatus").textContent = message;
+  document.querySelector("#loginPasswordInput").value = "";
+  renderAuthState();
+}
+
+async function activateSession(session) {
+  state.authToken = session.token || state.authToken;
+  state.currentUser = session.user;
+  if (session.token) {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, session.token);
+  }
+  document.querySelector("#loginStatus").textContent = "";
+  renderAuthState();
+  applyPortalView(window.location.hash || "#dashboard", {
+    updateHistory: false,
+    scrollToTop: false,
+  });
+  await loadData();
+}
+
+async function restoreSession() {
+  if (!state.authToken) {
+    clearSession();
+    return;
+  }
+
+  try {
+    const session = await request("/api/auth/me");
+    await activateSession(session);
+  } catch (error) {
+    clearSession("세션이 만료되었습니다");
+  }
+}
+
+async function loginUser(event) {
+  event.preventDefault();
+  const submitButton = document.querySelector("#loginSubmitButton");
+  const status = document.querySelector("#loginStatus");
+  const payload = {
+    email: document.querySelector("#loginEmailInput").value.trim(),
+    password: document.querySelector("#loginPasswordInput").value,
+  };
+
+  submitButton.disabled = true;
+  status.textContent = "";
+  state.authToken = null;
+
+  try {
+    const session = await request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    await activateSession(session);
+  } catch (error) {
+    clearSession(error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function logoutUser() {
+  try {
+    await request("/api/auth/logout", { method: "POST" });
+  } catch (error) {
+    // Local session cleanup is still valid even if the server session expired.
+  } finally {
+    clearSession();
+  }
+}
+
 document.querySelector("#refreshButton").addEventListener("click", loadData);
+document.querySelector("#loginForm").addEventListener("submit", loginUser);
+document.querySelector("#logoutButton").addEventListener("click", logoutUser);
 document.querySelector("#createProjectButton").addEventListener("click", openProjectDialog);
 document.querySelector("#projectDialogClose").addEventListener("click", closeProjectDialog);
 document.querySelector("#projectCancelButton").addEventListener("click", closeProjectDialog);
@@ -1312,9 +1436,5 @@ document.querySelector("#excelFileInput").addEventListener("change", uploadTempl
 window.addEventListener("popstate", () => applyPortalView(window.location.hash, {
   updateHistory: false,
 }));
-applyPortalView(window.location.hash || "#dashboard", {
-  updateHistory: false,
-  scrollToTop: false,
-});
 
-loadData();
+restoreSession();

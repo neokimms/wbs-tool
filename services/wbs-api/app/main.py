@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 import json
 import os
 from pathlib import Path
 import re
+import secrets
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +14,7 @@ import asyncpg
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -35,8 +36,11 @@ OPENPROJECT_SYNC_PARENT_LINKS = os.getenv("OPENPROJECT_SYNC_PARENT_LINKS", "true
 PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/app/backups/postgres"))
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
+SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+USER_SELECT = "id, email, display_name, role, status, last_login_at, created_at"
+USER_SELECT_U = "u.id, u.email, u.display_name, u.role, u.status, u.last_login_at, u.created_at"
 IMPORT_JOB_RETURNING = """
 id, source_file, template_key, template_name, project_type, description, status,
 total_rows, accepted_rows, rejected_rows, errors, warnings, preview_rows,
@@ -157,7 +161,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[PORTAL_ORIGIN, "http://localhost:3010", "http://127.0.0.1:3010"],
+    allow_origins=[PORTAL_ORIGIN, "http://localhost:3010", "http://127.0.0.1:3010", "null"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -216,6 +220,11 @@ class ProjectSyncRequest(BaseModel):
     actor: str = Field("PMO", min_length=1, max_length=80)
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=160)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
 def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
     data = dict(record)
     for key, value in data.items():
@@ -245,6 +254,72 @@ def normalize_metadata(value: Any) -> dict[str, Any]:
 
 def get_pool(request: Request) -> asyncpg.Pool:
     return request.app.state.pool
+
+
+def auth_token_from_request(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token.strip()
+
+
+def user_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
+    user = normalize_record(record) if isinstance(record, asyncpg.Record) else dict(record)
+    return {
+        "id": str(user["id"]),
+        "email": user["email"],
+        "display_name": user["display_name"],
+        "role": user["role"],
+        "status": user["status"],
+        "last_login_at": user.get("last_login_at"),
+        "created_at": user.get("created_at"),
+    }
+
+
+async def fetch_user_by_token(connection: asyncpg.Connection, token: str) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        f"""
+        SELECT {USER_SELECT_U}
+        FROM wbs_user_sessions s
+        JOIN wbs_users u ON u.id = s.user_id
+        WHERE s.token = $1
+          AND s.expires_at > now()
+          AND u.status = 'Active'
+        """,
+        token,
+    )
+    return user_response(record) if record else None
+
+
+def require_roles(request: Request, allowed_roles: set[str]) -> dict[str, Any]:
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if user["role"] not in allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient role")
+    return user
+
+
+@app.middleware("http")
+async def authenticate_api_requests(request: Request, call_next):
+    path = request.url.path
+    public_paths = {"/api/auth/login"}
+    if request.method == "OPTIONS" or not path.startswith("/api/") or path in public_paths:
+        return await call_next(request)
+
+    token = auth_token_from_request(request)
+    if not token:
+        return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+
+    async with get_pool(request).acquire() as connection:
+        user = await fetch_user_by_token(connection, token)
+
+    if not user:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or expired session"})
+
+    request.state.user = user
+    return await call_next(request)
 
 
 def parse_json_object(value: str, *, default: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1728,6 +1803,68 @@ async def health(request: Request) -> dict[str, str]:
     }
 
 
+@app.post("/api/auth/login")
+async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
+    normalized_email = payload.email.strip().lower()
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)
+    token = secrets.token_urlsafe(32)
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            await connection.execute("DELETE FROM wbs_user_sessions WHERE expires_at <= now()")
+            user_record = await connection.fetchrow(
+                f"""
+                SELECT {USER_SELECT}
+                FROM wbs_users
+                WHERE email = $1
+                  AND password_hash = crypt($2, password_hash)
+                  AND status = 'Active'
+                """,
+                normalized_email,
+                payload.password,
+            )
+            if not user_record:
+                raise HTTPException(status_code=401, detail="Invalid email or password")
+
+            await connection.execute(
+                "UPDATE wbs_users SET last_login_at = now(), updated_at = now() WHERE id = $1",
+                user_record["id"],
+            )
+            await connection.execute(
+                """
+                INSERT INTO wbs_user_sessions (token, user_id, expires_at)
+                VALUES ($1, $2, $3)
+                """,
+                token,
+                user_record["id"],
+                expires_at,
+            )
+            updated_user = await connection.fetchrow(
+                f"SELECT {USER_SELECT} FROM wbs_users WHERE id = $1",
+                user_record["id"],
+            )
+
+    return {
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "user": user_response(updated_user),
+    }
+
+
+@app.get("/api/auth/me")
+async def current_user(request: Request) -> dict[str, Any]:
+    return {"user": user_response(request.state.user)}
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request) -> dict[str, str]:
+    token = auth_token_from_request(request)
+    if token:
+        async with get_pool(request).acquire() as connection:
+            await connection.execute("DELETE FROM wbs_user_sessions WHERE token = $1", token)
+    return {"status": "ok"}
+
+
 @app.get("/metrics", response_class=PlainTextResponse)
 async def metrics(request: Request) -> PlainTextResponse:
     pool = get_pool(request)
@@ -2464,6 +2601,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
 
 @app.get("/api/operations/health")
 async def operations_health(request: Request) -> dict[str, Any]:
+    require_roles(request, {"admin", "pmo"})
+
     async with get_pool(request).acquire() as connection:
         database_version = await connection.fetchval("SHOW server_version")
         project_count = await connection.fetchval("SELECT count(*) FROM wbs_projects")
@@ -2492,6 +2631,8 @@ async def operations_health(request: Request) -> dict[str, Any]:
                 "wbs_approval_requests",
                 "wbs_sync_runs",
                 "wbs_project_baselines",
+                "wbs_users",
+                "wbs_user_sessions",
             ],
         )
 
@@ -2504,6 +2645,8 @@ async def operations_health(request: Request) -> dict[str, Any]:
         "wbs_approval_requests",
         "wbs_sync_runs",
         "wbs_project_baselines",
+        "wbs_users",
+        "wbs_user_sessions",
     }
     missing_tables = sorted(required_tables - table_names)
     preflight = await run_openproject_preflight()

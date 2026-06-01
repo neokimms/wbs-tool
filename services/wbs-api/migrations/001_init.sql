@@ -40,6 +40,25 @@ CREATE TABLE IF NOT EXISTS wbs_approval_requests (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS wbs_users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email citext UNIQUE NOT NULL,
+  display_name text NOT NULL,
+  role text NOT NULL DEFAULT 'viewer',
+  password_hash text NOT NULL,
+  status text NOT NULL DEFAULT 'Active',
+  last_login_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS wbs_user_sessions (
+  token text PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES wbs_users(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS wbs_import_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_file text NOT NULL,
@@ -127,6 +146,9 @@ CREATE INDEX IF NOT EXISTS idx_wbs_projects_status ON wbs_projects(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_template ON wbs_projects(template_key);
 CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_project ON wbs_approval_requests(project_id);
 CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_status ON wbs_approval_requests(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_users_role ON wbs_users(role, status);
+CREATE INDEX IF NOT EXISTS idx_wbs_user_sessions_user ON wbs_user_sessions(user_id, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_user_sessions_expires ON wbs_user_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_status ON wbs_import_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_template ON wbs_import_jobs(template_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_template ON wbs_template_items(template_key, sort_order);
@@ -136,6 +158,13 @@ CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_status ON wbs_sync_runs(status, sta
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_mode ON wbs_sync_runs(mode, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_project_baselines_project ON wbs_project_baselines(project_id, version DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_project_baselines_status ON wbs_project_baselines(status, locked_at DESC);
+
+INSERT INTO wbs_users (email, display_name, role, password_hash, status)
+VALUES
+  ('admin@wbs.local', 'WBS Admin', 'admin', crypt('adminadmin', gen_salt('bf')), 'Active'),
+  ('pmo@wbs.local', 'PMO Lead', 'pmo', crypt('pmopmo', gen_salt('bf')), 'Active'),
+  ('viewer@wbs.local', 'Project Viewer', 'viewer', crypt('viewonly', gen_salt('bf')), 'Active')
+ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO wbs_templates (key, name, project_type, description, phases)
 VALUES

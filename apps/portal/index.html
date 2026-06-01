@@ -6,7 +6,25 @@
     <title>WBS Control Portal</title>
     <link rel="stylesheet" href="./styles.css?v=20260602-view-mode2" />
   </head>
-  <body>
+  <body data-auth="pending">
+    <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
+      <form class="login-panel" id="loginForm">
+        <div>
+          <p class="eyebrow">Secure access</p>
+          <h1 id="loginTitle">WBS Control 로그인</h1>
+        </div>
+        <label>
+          <span>계정</span>
+          <input id="loginEmailInput" name="email" type="email" autocomplete="username" required />
+        </label>
+        <label>
+          <span>비밀번호</span>
+          <input id="loginPasswordInput" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <p class="form-status" id="loginStatus"></p>
+        <button class="primary-button" id="loginSubmitButton" type="submit">로그인</button>
+      </form>
+    </section>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Primary navigation">
         <div class="brand">
@@ -34,9 +52,11 @@
             <h1>PMO 운영 콘솔</h1>
           </div>
           <div class="toolbar" aria-label="Page actions">
+            <span class="user-pill" id="userBadge">-</span>
             <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh dashboard" title="Refresh">↻</button>
             <button class="secondary-button" id="downloadTemplateButton" type="button">Excel 다운로드</button>
             <button class="primary-button" id="createProjectButton" type="button">프로젝트 생성</button>
+            <button class="secondary-button" id="logoutButton" type="button">로그아웃</button>
           </div>
         </header>
 

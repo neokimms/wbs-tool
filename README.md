@@ -56,6 +56,22 @@ bash scripts/bootstrap-openproject-wbs.sh
 bash scripts/bootstrap-openproject-si-template.sh
 ```
 
+포털은 로그인 후 사용할 수 있습니다. 개발용 기본 계정은 PostgreSQL migration에서 시드되며, 운영 배포 전 반드시 교체해야 합니다.
+
+```text
+admin@wbs.local  / adminadmin  / admin
+pmo@wbs.local    / pmopmo      / pmo
+viewer@wbs.local / viewonly    / viewer
+```
+
+API는 `/api/auth/login`을 제외한 `/api/*` 요청에 Bearer 세션 토큰을 요구합니다.
+
+```bash
+POST /api/auth/login
+GET  /api/auth/me
+POST /api/auth/logout
+```
+
 계층형 WBS Excel 템플릿은 포털의 `Excel 다운로드` 버튼으로 내려받고, 같은 화면의 `Excel 업로드`로 검증 미리보기를 확인한 뒤 `반영` 버튼으로 적용합니다. API로 직접 사용할 때는 다음 엔드포인트를 사용합니다.
 
 ```bash

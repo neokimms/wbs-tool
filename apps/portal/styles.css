@@ -30,6 +30,14 @@ body {
   letter-spacing: 0;
 }
 
+body:not([data-auth="authenticated"]) .app-shell {
+  display: none;
+}
+
+body[data-auth="authenticated"] .login-screen {
+  display: none;
+}
+
 button,
 input,
 select {
@@ -43,6 +51,48 @@ select {
 
 button {
   cursor: pointer;
+}
+
+.login-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-panel {
+  display: grid;
+  gap: 16px;
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid rgba(216, 220, 226, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.login-panel label {
+  display: grid;
+  gap: 7px;
+}
+
+.login-panel label span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.login-panel input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.login-panel .primary-button {
+  width: 100%;
 }
 
 .app-shell {
@@ -168,6 +218,19 @@ h2 {
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .primary-button,
