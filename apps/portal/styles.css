@@ -296,8 +296,31 @@ h2 {
   grid-column: span 6;
 }
 
-#admin {
+#operations {
   grid-column: 1 / -1;
+}
+
+body[data-portal-view]:not([data-portal-view="dashboard"]) .metric-grid {
+  display: none;
+}
+
+body[data-portal-view]:not([data-portal-view="dashboard"]) .content-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body[data-portal-view]:not([data-portal-view="dashboard"]) .content-grid > .panel {
+  display: none;
+  grid-column: 1 / -1;
+  grid-row: auto;
+}
+
+body[data-portal-view="portfolio"] #portfolio,
+body[data-portal-view="templates"] #templates,
+body[data-portal-view="approvals"] #approvals,
+body[data-portal-view="imports"] #imports,
+body[data-portal-view="sync"] #sync,
+body[data-portal-view="operations"] #operations {
+  display: block;
 }
 
 .panel-header {
@@ -1108,7 +1131,7 @@ dd {
     grid-column: auto;
   }
 
-  #admin {
+  #operations {
     grid-column: 1 / -1;
   }
 }
@@ -1162,7 +1185,7 @@ dd {
   #approvals,
   #imports,
   #sync,
-  #admin {
+  #operations {
     grid-column: auto;
   }
 

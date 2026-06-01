@@ -1203,16 +1203,26 @@ async function runProjectSync() {
 }
 
 const navLinks = [...document.querySelectorAll(".nav-list a[href^='#']")];
-const navSections = navLinks
-  .map((link) => document.getElementById(link.hash.slice(1)))
-  .filter(Boolean)
-  .sort((first, second) => first.offsetTop - second.offsetTop);
-let navScrollFrame = null;
+const viewAliases = {
+  admin: "operations",
+};
+const viewIds = new Set(navLinks.map((link) => link.hash.slice(1)));
 
-function updateActiveNavigation(hash = "") {
-  const activeHash = hash && hash !== "#" ? hash : "#dashboard";
+function rawViewId(hash = "") {
+  return String(hash || "")
+    .replace(/^#/, "")
+    .trim();
+}
+
+function normalizedViewId(hash = "") {
+  const rawId = rawViewId(hash);
+  const mappedId = viewAliases[rawId] || rawId || "dashboard";
+  return viewIds.has(mappedId) ? mappedId : "dashboard";
+}
+
+function updateActiveNavigation(viewId = "dashboard") {
   navLinks.forEach((link) => {
-    const isActive = link.hash === activeHash;
+    const isActive = normalizedViewId(link.hash) === viewId;
     link.classList.toggle("active", isActive);
     if (isActive) {
       link.setAttribute("aria-current", "page");
@@ -1222,34 +1232,22 @@ function updateActiveNavigation(hash = "") {
   });
 }
 
-function activeSectionHash() {
-  const threshold = Math.min(window.innerHeight * 0.32, 260);
-  let currentId = navSections[0]?.id || "dashboard";
+function applyPortalView(hash = "", options = {}) {
+  const rawId = rawViewId(hash);
+  const viewId = normalizedViewId(hash);
+  const nextHash = `#${viewId}`;
+  document.body.dataset.portalView = viewId;
+  updateActiveNavigation(viewId);
 
-  navSections.forEach((section) => {
-    if (section.getBoundingClientRect().top <= threshold) {
-      currentId = section.id;
-    }
-  });
+  if (viewAliases[rawId] && window.location.hash !== nextHash) {
+    window.history.replaceState(null, "", nextHash);
+  } else if (options.updateHistory !== false && window.location.hash !== nextHash) {
+    window.history.pushState(null, "", nextHash);
+  }
 
-  return `#${currentId}`;
-}
-
-function syncNavigationToScroll() {
-  if (navScrollFrame) return;
-  navScrollFrame = window.requestAnimationFrame(() => {
-    navScrollFrame = null;
-    updateActiveNavigation(activeSectionHash());
-  });
-}
-
-function scrollToNavigationTarget(hash) {
-  const target = document.getElementById(hash.slice(1));
-  if (!target) return;
-
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
-  window.history.pushState(null, "", hash);
-  updateActiveNavigation(hash);
+  if (options.scrollToTop !== false) {
+    window.scrollTo({ top: 0, behavior: options.behavior || "auto" });
+  }
 }
 
 document.querySelector("#refreshButton").addEventListener("click", loadData);
@@ -1283,7 +1281,7 @@ document.querySelector(".nav-list").addEventListener("click", (event) => {
   const link = event.target.closest("a[href^='#']");
   if (!link) return;
   event.preventDefault();
-  scrollToNavigationTarget(link.hash);
+  applyPortalView(link.hash, { behavior: "smooth" });
 });
 document.querySelector("#importHistoryList").addEventListener("click", (event) => {
   const button = event.target.closest("[data-import-job-id]");
@@ -1311,8 +1309,12 @@ document.querySelector("#syncProjectSelect").addEventListener("change", () => {
   loadSyncRuns(selectedSyncProjectId());
 });
 document.querySelector("#excelFileInput").addEventListener("change", uploadTemplateExcel);
-window.addEventListener("scroll", syncNavigationToScroll, { passive: true });
-window.addEventListener("hashchange", () => updateActiveNavigation(window.location.hash));
-updateActiveNavigation(window.location.hash || "#dashboard");
+window.addEventListener("popstate", () => applyPortalView(window.location.hash, {
+  updateHistory: false,
+}));
+applyPortalView(window.location.hash || "#dashboard", {
+  updateHistory: false,
+  scrollToTop: false,
+});
 
 loadData();
