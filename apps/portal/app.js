@@ -114,6 +114,7 @@ const state = {
   pendingImportJobId: null,
   pmPreflight: fallbackPreflight,
   syncDetail: null,
+  syncRuns: [],
   operationsHealth: fallbackOperationsHealth,
   selectedProjectId: null,
   projectPlan: null,
@@ -150,6 +151,18 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function formatTimestamp(value) {
+  if (!value) return "-";
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return "-";
+  return timestamp.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function syncStateLabel(value) {
@@ -231,11 +244,14 @@ function statusClass(status) {
     lowered.includes("approved") ||
     lowered.includes("accepted") ||
     lowered.includes("applied") ||
+    lowered.includes("synced") ||
     lowered.includes("updated")
   ) {
     return "stable";
   }
-  if (lowered.includes("reject") || lowered.includes("critical")) return "critical";
+  if (lowered.includes("reject") || lowered.includes("critical") || lowered.includes("failed") || lowered.includes("error")) {
+    return "critical";
+  }
   return "attention";
 }
 
@@ -478,6 +494,35 @@ function renderSyncPanel() {
   document.querySelector("#syncPayloadPreview").textContent = preview;
 }
 
+function renderSyncRuns() {
+  document.querySelector("#syncRunCount").textContent = state.syncRuns.length;
+  document.querySelector("#syncRunList").innerHTML = state.syncRuns.length
+    ? state.syncRuns
+        .map((run) => {
+          const countText = run.status === "Synced"
+            ? `${run.created_work_packages || 0} created`
+            : `${run.pending_work_packages || 0}/${run.total_rows || 0} pending`;
+          return `
+            <article class="sync-run">
+              <div>
+                <strong>${escapeHtml(run.status)}</strong>
+                <small>${escapeHtml(run.mode)} · ${formatTimestamp(run.completed_at || run.started_at)}</small>
+              </div>
+              <span class="status-pill ${statusClass(run.status)}">${escapeHtml(countText)}</span>
+            </article>
+          `;
+        })
+        .join("")
+    : `
+      <article class="sync-run empty-run">
+        <div>
+          <strong>No runs</strong>
+          <small>실행 이력 없음</small>
+        </div>
+      </article>
+    `;
+}
+
 function renderOperationsPanel() {
   const health = state.operationsHealth || fallbackOperationsHealth;
   const status = document.querySelector("#operationsStatus");
@@ -515,6 +560,7 @@ function renderAll() {
   renderProjectTemplateSelect();
   renderSyncProjectSelect();
   renderSyncPanel();
+  renderSyncRuns();
   renderOperationsPanel();
 }
 
@@ -544,6 +590,15 @@ async function loadData() {
     } else {
       state.projectPlan = null;
     }
+    const currentSyncProjectId = document.querySelector("#syncProjectSelect")?.value;
+    const syncProjectId = state.userSelectedSyncProject && projects.some((project) => project.id === currentSyncProjectId)
+      ? currentSyncProjectId
+      : projects[0]?.id || null;
+    if (syncProjectId) {
+      await loadSyncRuns(syncProjectId, { render: false });
+    } else {
+      state.syncRuns = [];
+    }
   } catch (error) {
     state.apiConnected = false;
     state.projects = state.projects.length ? state.projects : fallbackProjects;
@@ -555,6 +610,7 @@ async function loadData() {
       status: "critical",
       checks: [{ key: "operations", label: "Operations health", status: "fail", message: error.message }],
     };
+    state.syncRuns = [];
   }
 
   renderAll();
@@ -623,6 +679,32 @@ async function loadProjectPlan(projectId, options = {}) {
       openproject: null,
       error: error.message,
     };
+  }
+
+  if (shouldRender) renderAll();
+}
+
+async function loadSyncRuns(projectId, options = {}) {
+  if (!projectId) {
+    state.syncRuns = [];
+    return;
+  }
+  const shouldRender = options.render !== false;
+
+  try {
+    state.syncRuns = await request(`/api/projects/${encodeURIComponent(projectId)}/sync-runs?limit=6`);
+  } catch (error) {
+    state.syncRuns = [
+      {
+        status: "Error",
+        mode: "history",
+        total_rows: 0,
+        pending_work_packages: 0,
+        created_work_packages: 0,
+        completed_at: new Date().toISOString(),
+        error: { message: error.message },
+      },
+    ];
   }
 
   if (shouldRender) renderAll();
@@ -859,8 +941,10 @@ async function dryRunProjectSync() {
         dry_run: true,
         create_work_packages: true,
         validate_payloads: true,
+        actor: "PMO",
       }),
     });
+    await loadSyncRuns(projectId, { render: false });
   } catch (error) {
     state.syncDetail = { error: error.message };
   }
@@ -883,8 +967,10 @@ async function runProjectSync() {
         dry_run: false,
         create_work_packages: true,
         validate_payloads: true,
+        actor: "PMO",
       }),
     });
+    await loadSyncRuns(projectId, { render: false });
     await loadData();
   } catch (error) {
     state.syncDetail = { error: error.message };
@@ -925,7 +1011,7 @@ document.querySelector("#templateSelect").addEventListener("change", () => {
 document.querySelector("#syncProjectSelect").addEventListener("change", () => {
   state.userSelectedSyncProject = true;
   state.syncDetail = null;
-  renderSyncPanel();
+  loadSyncRuns(selectedSyncProjectId());
 });
 document.querySelector("#excelFileInput").addEventListener("change", uploadTemplateExcel);
 

@@ -47,6 +47,13 @@ a.id, a.project_id, p.name AS project_name, p.template_key, a.title,
 a.request_type, a.status, a.requester, a.reviewer, a.due_date,
 a.decision_comment, a.metadata, a.created_at, a.decided_at, a.updated_at
 """
+SYNC_RUN_SELECT = """
+s.id, s.project_id, p.name AS project_name, p.template_key, s.mode,
+s.status, s.actor, s.engine, s.dry_run, s.create_work_packages,
+s.validate_payloads, s.total_rows, s.pending_work_packages,
+s.synced_work_packages, s.created_work_packages, s.openproject_project_id,
+s.metadata, s.error, s.started_at, s.completed_at
+"""
 
 EXCEL_COLUMNS = [
     ("level", "레벨"),
@@ -200,6 +207,7 @@ class ProjectSyncRequest(BaseModel):
     create_work_packages: bool = True
     force_project_create: bool = False
     validate_payloads: bool = True
+    actor: str = Field("PMO", min_length=1, max_length=80)
 
 
 def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
@@ -209,7 +217,7 @@ def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
             data[key] = value.isoformat()
         if isinstance(value, Decimal):
             data[key] = float(value)
-        if key in {"errors", "warnings", "metadata", "phases", "preview_rows"} and isinstance(data[key], str):
+        if key in {"errors", "warnings", "metadata", "phases", "preview_rows", "error"} and isinstance(data[key], str):
             try:
                 data[key] = json.loads(data[key])
             except json.JSONDecodeError:
@@ -925,6 +933,107 @@ async def insert_import_job(
     )
 
 
+def sync_error_payload(error: Exception | HTTPException | str) -> dict[str, Any]:
+    if isinstance(error, HTTPException):
+        return {
+            "status_code": error.status_code,
+            "detail": error.detail,
+        }
+    if isinstance(error, str):
+        return {"message": error}
+    return {
+        "type": error.__class__.__name__,
+        "message": str(error),
+    }
+
+
+async def insert_sync_run(
+    connection: asyncpg.Connection,
+    *,
+    project_id: UUID,
+    mode: str,
+    status: str,
+    actor: str,
+    dry_run: bool,
+    create_work_packages: bool,
+    validate_payloads: bool,
+    total_rows: int = 0,
+    pending_work_packages: int = 0,
+    synced_work_packages: int = 0,
+    created_work_packages: int = 0,
+    openproject_project_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    record = await connection.fetchrow(
+        f"""
+        WITH inserted AS (
+          INSERT INTO wbs_sync_runs
+            (project_id, mode, status, actor, engine, dry_run,
+             create_work_packages, validate_payloads, total_rows,
+             pending_work_packages, synced_work_packages, created_work_packages,
+             openproject_project_id, metadata, error, completed_at)
+          VALUES
+            ($1, $2, $3, $4, 'openproject', $5, $6, $7, $8, $9, $10,
+             $11, $12, $13::jsonb, $14::jsonb, now())
+          RETURNING *
+        )
+        SELECT {SYNC_RUN_SELECT}
+        FROM inserted s
+        JOIN wbs_projects p ON p.id = s.project_id
+        """,
+        project_id,
+        mode,
+        status,
+        actor,
+        dry_run,
+        create_work_packages,
+        validate_payloads,
+        total_rows,
+        pending_work_packages,
+        synced_work_packages,
+        created_work_packages,
+        openproject_project_id,
+        metadata or {},
+        error,
+    )
+    return normalize_record(record)
+
+
+async def record_project_sync_run(
+    request: Request,
+    *,
+    project_id: UUID,
+    plan: dict[str, Any],
+    payload: ProjectSyncRequest,
+    mode: str,
+    status: str,
+    created_work_packages: int = 0,
+    openproject_project_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    error: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = normalize_metadata(plan.get("summary"))
+    async with get_pool(request).acquire() as connection:
+        return await insert_sync_run(
+            connection,
+            project_id=project_id,
+            mode=mode,
+            status=status,
+            actor=payload.actor,
+            dry_run=payload.dry_run,
+            create_work_packages=payload.create_work_packages,
+            validate_payloads=payload.validate_payloads,
+            total_rows=int(summary.get("total_rows") or 0),
+            pending_work_packages=int(summary.get("pending_work_packages") or 0),
+            synced_work_packages=int(summary.get("synced_work_packages") or 0),
+            created_work_packages=created_work_packages,
+            openproject_project_id=openproject_project_id or normalize_metadata(plan.get("openproject")).get("project_id"),
+            metadata=metadata,
+            error=error,
+        )
+
+
 async def fetch_import_job_for_update(connection: asyncpg.Connection, job_id: UUID) -> dict[str, Any] | None:
     record = await connection.fetchrow(
         f"""
@@ -1487,6 +1596,13 @@ async def metrics(request: Request) -> PlainTextResponse:
                 GROUP BY status
                 """
             )
+            sync_run_rows = await connection.fetch(
+                """
+                SELECT mode, status, count(*) AS count
+                FROM wbs_sync_runs
+                GROUP BY mode, status
+                """
+            )
     except Exception:
         database_up = 0
         project_count = 0
@@ -1494,6 +1610,7 @@ async def metrics(request: Request) -> PlainTextResponse:
         approval_rows = []
         import_rows = []
         project_status_rows = []
+        sync_run_rows = []
 
     lines = [
         "# HELP wbs_api_up WBS extension API availability.",
@@ -1539,6 +1656,20 @@ async def metrics(request: Request) -> PlainTextResponse:
     lines.extend(
         prometheus_metric("wbs_import_jobs_total", row["count"], {"status": row["status"]})
         for row in import_rows
+    )
+    lines.extend(
+        [
+            "# HELP wbs_sync_runs_total Number of OpenProject sync runs by mode and status.",
+            "# TYPE wbs_sync_runs_total gauge",
+        ]
+    )
+    lines.extend(
+        prometheus_metric(
+            "wbs_sync_runs_total",
+            row["count"],
+            {"mode": row["mode"], "status": row["status"]},
+        )
+        for row in sync_run_rows
     )
 
     return PlainTextResponse(
@@ -1636,6 +1767,38 @@ async def project_sync_plan(project_id: str, request: Request) -> dict[str, Any]
     return build_openproject_sync_plan(project, template, rows)
 
 
+@app.get("/api/projects/{project_id}/sync-runs")
+async def list_project_sync_runs(project_id: str, request: Request, limit: int = 10) -> list[dict[str, Any]]:
+    try:
+        parsed_id = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+
+    limit = max(1, min(limit, 50))
+    async with get_pool(request).acquire() as connection:
+        project_exists = await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM wbs_projects WHERE id = $1)",
+            parsed_id,
+        )
+        if not project_exists:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        records = await connection.fetch(
+            f"""
+            SELECT {SYNC_RUN_SELECT}
+            FROM wbs_sync_runs s
+            JOIN wbs_projects p ON p.id = s.project_id
+            WHERE s.project_id = $1
+            ORDER BY s.started_at DESC
+            LIMIT $2
+            """,
+            parsed_id,
+            limit,
+        )
+
+    return [normalize_record(record) for record in records]
+
+
 @app.get("/api/projects/{project_id}/sync-preflight")
 async def project_sync_preflight(project_id: str, request: Request) -> dict[str, Any]:
     try:
@@ -1669,12 +1832,49 @@ async def sync_project_to_engine(
     project, template, rows = await fetch_project_sync_context(request, parsed_id)
     plan = build_openproject_sync_plan(project, template, rows)
     if payload.dry_run:
-        return {"status": "DryRun", **plan}
+        audit_run = await record_project_sync_run(
+            request,
+            project_id=parsed_id,
+            plan=plan,
+            payload=payload,
+            mode="dry_run",
+            status="DryRun",
+            metadata={
+                "source": "api",
+                "ready_for_actual_sync": OPENPROJECT_SYNC_ENABLED and bool(OPENPROJECT_API_TOKEN),
+            },
+        )
+        return {"status": "DryRun", **plan, "audit": audit_run}
 
     if not OPENPROJECT_SYNC_ENABLED:
-        raise HTTPException(status_code=400, detail="OpenProject sync is disabled. Set OPENPROJECT_SYNC_ENABLED=true to execute.")
+        error = HTTPException(
+            status_code=400,
+            detail="OpenProject sync is disabled. Set OPENPROJECT_SYNC_ENABLED=true to execute.",
+        )
+        await record_project_sync_run(
+            request,
+            project_id=parsed_id,
+            plan=plan,
+            payload=payload,
+            mode="actual",
+            status="Blocked",
+            metadata={"source": "api", "blocked_reason": "sync_disabled"},
+            error=sync_error_payload(error),
+        )
+        raise error
     if not OPENPROJECT_API_TOKEN:
-        raise HTTPException(status_code=400, detail="OPENPROJECT_API_TOKEN is required for OpenProject sync.")
+        error = HTTPException(status_code=400, detail="OPENPROJECT_API_TOKEN is required for OpenProject sync.")
+        await record_project_sync_run(
+            request,
+            project_id=parsed_id,
+            plan=plan,
+            payload=payload,
+            mode="actual",
+            status="Blocked",
+            metadata={"source": "api", "blocked_reason": "missing_token"},
+            error=sync_error_payload(error),
+        )
+        raise error
 
     client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
     metadata = normalize_metadata(project.get("metadata"))
@@ -1755,6 +1955,22 @@ async def sync_project_to_engine(
         )
 
     updated_project = normalize_record(record)
+    audit_run = await record_project_sync_run(
+        request,
+        project_id=parsed_id,
+        plan=plan,
+        payload=payload,
+        mode="actual",
+        status="Synced",
+        created_work_packages=len(created_work_packages),
+        openproject_project_id=openproject_project_id,
+        metadata={
+            "source": "api",
+            "known_work_packages": len(work_packages),
+            "project_identifier": engine_metadata.get("project_identifier"),
+            "project_href": engine_metadata.get("project_href"),
+        },
+    )
     return {
         "status": "Synced",
         "engine": openproject_engine_status(),
@@ -1771,6 +1987,7 @@ async def sync_project_to_engine(
             "payload_validation": payload.validate_payloads,
         },
         "created_work_packages": created_work_packages,
+        "audit": audit_run,
     }
 
 
@@ -2012,6 +2229,7 @@ async def operations_health(request: Request) -> dict[str, Any]:
         preview_import_count = await connection.fetchval(
             "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'"
         )
+        sync_run_count = await connection.fetchval("SELECT count(*) FROM wbs_sync_runs")
         existing_tables = await connection.fetch(
             """
             SELECT table_name
@@ -2025,6 +2243,7 @@ async def operations_health(request: Request) -> dict[str, Any]:
                 "wbs_projects",
                 "wbs_import_jobs",
                 "wbs_approval_requests",
+                "wbs_sync_runs",
             ],
         )
 
@@ -2035,6 +2254,7 @@ async def operations_health(request: Request) -> dict[str, Any]:
         "wbs_projects",
         "wbs_import_jobs",
         "wbs_approval_requests",
+        "wbs_sync_runs",
     }
     missing_tables = sorted(required_tables - table_names)
     preflight = await run_openproject_preflight()
@@ -2091,6 +2311,13 @@ async def operations_health(request: Request) -> dict[str, Any]:
             openproject_status,
             f"Engine state: {preflight['state']}",
             {"state": preflight["state"], "ready_for_actual_sync": preflight["ready_for_actual_sync"]},
+        ),
+        operation_check(
+            "sync_audit",
+            "Sync audit trail",
+            "pass",
+            f"{sync_run_count} sync runs recorded",
+            {"sync_runs": sync_run_count},
         ),
         backup_health_check(),
         operation_check(

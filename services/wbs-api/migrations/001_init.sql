@@ -85,6 +85,27 @@ CREATE TABLE IF NOT EXISTS wbs_template_items (
   UNIQUE (template_key, code)
 );
 
+CREATE TABLE IF NOT EXISTS wbs_sync_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES wbs_projects(id) ON DELETE CASCADE,
+  mode text NOT NULL,
+  status text NOT NULL,
+  actor text NOT NULL DEFAULT 'PMO',
+  engine text NOT NULL DEFAULT 'openproject',
+  dry_run boolean NOT NULL DEFAULT true,
+  create_work_packages boolean NOT NULL DEFAULT true,
+  validate_payloads boolean NOT NULL DEFAULT true,
+  total_rows integer NOT NULL DEFAULT 0,
+  pending_work_packages integer NOT NULL DEFAULT 0,
+  synced_work_packages integer NOT NULL DEFAULT 0,
+  created_work_packages integer NOT NULL DEFAULT 0,
+  openproject_project_id text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  error jsonb,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz
+);
+
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_status ON wbs_projects(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_template ON wbs_projects(template_key);
 CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_project ON wbs_approval_requests(project_id);
@@ -93,6 +114,9 @@ CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_status ON wbs_import_jobs(status)
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_template ON wbs_import_jobs(template_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_template ON wbs_template_items(template_key, sort_order);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_parent ON wbs_template_items(template_key, parent_code);
+CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_project ON wbs_sync_runs(project_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_status ON wbs_sync_runs(status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_mode ON wbs_sync_runs(mode, started_at DESC);
 
 INSERT INTO wbs_templates (key, name, project_type, description, phases)
 VALUES

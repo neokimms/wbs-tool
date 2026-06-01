@@ -595,6 +595,69 @@ tr:last-child td {
   white-space: pre-wrap;
 }
 
+.sync-history {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.compact-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.compact-label small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sync-run-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.sync-run strong,
+.sync-run small {
+  display: block;
+  min-width: 0;
+}
+
+.sync-run strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-run small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.empty-run {
+  grid-template-columns: 1fr;
+}
+
 .import-summary div {
   min-height: 76px;
   padding: 14px;
