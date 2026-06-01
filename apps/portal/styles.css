@@ -97,20 +97,32 @@ button {
 }
 
 .nav-list a {
+  position: relative;
   display: flex;
   align-items: center;
   min-height: 38px;
-  padding: 0 12px;
+  padding: 0 12px 0 16px;
   border-radius: 8px;
   color: var(--text-muted);
+  font-weight: 600;
   text-decoration: none;
   transition: background 160ms ease, color 160ms ease;
 }
 
 .nav-list a:hover,
 .nav-list a.active {
-  background: var(--surface-muted);
+  background: #eaf3ff;
   color: var(--text);
+}
+
+.nav-list a.active::before {
+  position: absolute;
+  left: 7px;
+  width: 3px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--blue);
+  content: "";
 }
 
 .workspace {
@@ -261,7 +273,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .panel {

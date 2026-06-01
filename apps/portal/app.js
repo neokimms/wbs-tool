@@ -1202,6 +1202,56 @@ async function runProjectSync() {
   }
 }
 
+const navLinks = [...document.querySelectorAll(".nav-list a[href^='#']")];
+const navSections = navLinks
+  .map((link) => document.getElementById(link.hash.slice(1)))
+  .filter(Boolean)
+  .sort((first, second) => first.offsetTop - second.offsetTop);
+let navScrollFrame = null;
+
+function updateActiveNavigation(hash = "") {
+  const activeHash = hash && hash !== "#" ? hash : "#dashboard";
+  navLinks.forEach((link) => {
+    const isActive = link.hash === activeHash;
+    link.classList.toggle("active", isActive);
+    if (isActive) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+}
+
+function activeSectionHash() {
+  const threshold = Math.min(window.innerHeight * 0.32, 260);
+  let currentId = navSections[0]?.id || "dashboard";
+
+  navSections.forEach((section) => {
+    if (section.getBoundingClientRect().top <= threshold) {
+      currentId = section.id;
+    }
+  });
+
+  return `#${currentId}`;
+}
+
+function syncNavigationToScroll() {
+  if (navScrollFrame) return;
+  navScrollFrame = window.requestAnimationFrame(() => {
+    navScrollFrame = null;
+    updateActiveNavigation(activeSectionHash());
+  });
+}
+
+function scrollToNavigationTarget(hash) {
+  const target = document.getElementById(hash.slice(1));
+  if (!target) return;
+
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  window.history.pushState(null, "", hash);
+  updateActiveNavigation(hash);
+}
+
 document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#createProjectButton").addEventListener("click", openProjectDialog);
 document.querySelector("#projectDialogClose").addEventListener("click", closeProjectDialog);
@@ -1229,6 +1279,12 @@ document.querySelector("#approvalList").addEventListener("click", (event) => {
   if (!button || button.disabled) return;
   decideApproval(button.dataset.approvalId, button.dataset.approvalAction);
 });
+document.querySelector(".nav-list").addEventListener("click", (event) => {
+  const link = event.target.closest("a[href^='#']");
+  if (!link) return;
+  event.preventDefault();
+  scrollToNavigationTarget(link.hash);
+});
 document.querySelector("#importHistoryList").addEventListener("click", (event) => {
   const button = event.target.closest("[data-import-job-id]");
   if (!button) return;
@@ -1255,5 +1311,8 @@ document.querySelector("#syncProjectSelect").addEventListener("change", () => {
   loadSyncRuns(selectedSyncProjectId());
 });
 document.querySelector("#excelFileInput").addEventListener("change", uploadTemplateExcel);
+window.addEventListener("scroll", syncNavigationToScroll, { passive: true });
+window.addEventListener("hashchange", () => updateActiveNavigation(window.location.hash));
+updateActiveNavigation(window.location.hash || "#dashboard");
 
 loadData();
