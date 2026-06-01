@@ -55,7 +55,10 @@ bash scripts/bootstrap-openproject-si-template.sh
 ```bash
 GET  /api/templates/{template_key}/excel
 POST /api/templates/import
+POST /api/templates/{template_key}/codes/resequence
 ```
+
+Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 저장된 템플릿의 코드 체계를 다시 맞출 때는 포털의 `코드 정렬` 버튼을 사용합니다.
 
 서비스 기본 주소:
 

@@ -379,7 +379,7 @@ tr:last-child td {
 
 .import-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   margin-bottom: 12px;
 }

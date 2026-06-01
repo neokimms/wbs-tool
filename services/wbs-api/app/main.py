@@ -140,7 +140,8 @@ class ProjectCreate(BaseModel):
 
 
 class WbsImportRow(BaseModel):
-    code: str = Field(..., min_length=1, max_length=40)
+    level: int | None = Field(None, ge=1, le=20)
+    code: str | None = Field(None, min_length=1, max_length=40)
     name: str = Field(..., min_length=1, max_length=160)
     parent_code: str | None = Field(None, max_length=40)
     item_type: str = Field("작업", min_length=1, max_length=40)
@@ -150,6 +151,7 @@ class WbsImportRow(BaseModel):
     finish_date: date | None = None
     deliverable_type: str | None = Field(None, max_length=80)
     inspection_required: bool = False
+    progress_formula: str | None = Field(None, max_length=200)
     notes: str | None = Field(None, max_length=500)
 
 
@@ -171,6 +173,18 @@ def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
             except json.JSONDecodeError:
                 pass
     return data
+
+
+def normalize_metadata(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+    return {}
 
 
 def get_pool(request: Request) -> asyncpg.Pool:
@@ -244,6 +258,20 @@ def infer_parent_from_code(code: str) -> str | None:
     return code.rsplit(".", 1)[0]
 
 
+def template_code_prefix(template_key: str) -> str:
+    known_prefixes = {
+        "si-standard": "SI",
+        "migration-data": "MIG",
+        "maintenance": "OPS",
+    }
+    if template_key in known_prefixes:
+        return known_prefixes[template_key]
+    words = re.findall(r"[A-Z0-9]+", template_key.upper())
+    if not words:
+        return "WBS"
+    return "".join(word[0] for word in words)[:6]
+
+
 def parent_depth(code: str, parent_map: dict[str, str | None]) -> int:
     depth = 1
     seen = {code}
@@ -253,6 +281,152 @@ def parent_depth(code: str, parent_map: dict[str, str | None]) -> int:
         depth += 1
         parent = parent_map.get(parent)
     return depth
+
+
+def code_depth(code: str) -> int:
+    return len(code.split(".")) if code else 1
+
+
+def generated_child_code(parent_code: str, item_type: str, counters: dict[str, dict[str, int]], used_codes: set[str]) -> str:
+    bucket = counters.setdefault(parent_code, {"normal": 0, "milestone": 0})
+    if item_type == "마일스톤":
+        while True:
+            bucket["milestone"] += 1
+            candidate = f"{parent_code}.M{bucket['milestone']}"
+            if candidate not in used_codes:
+                return candidate
+
+    while True:
+        bucket["normal"] += 1
+        candidate = f"{parent_code}.{bucket['normal']}"
+        if candidate not in used_codes:
+            return candidate
+
+
+def assign_missing_wbs_codes(rows: list[dict[str, Any]], root_code: str) -> list[dict[str, Any]]:
+    assigned_rows = [dict(row) for row in rows]
+    used_codes = {row["code"] for row in assigned_rows if row.get("code")}
+    level_stack: dict[int, str] = {}
+    counters: dict[str, dict[str, int]] = {}
+    root_assigned = root_code in used_codes
+
+    for row in assigned_rows:
+        level = row.get("level")
+        code = normalize_code(row.get("code"))
+        parent_code = normalize_code(row.get("parent_code"))
+        item_type = row.get("item_type") or "작업"
+
+        if code:
+            if not parent_code and level and level > 1:
+                parent_code = level_stack.get(level - 1)
+            if not parent_code:
+                parent_code = infer_parent_from_code(code)
+            row["code"] = code
+            row["parent_code"] = parent_code
+            resolved_level = level or code_depth(code)
+            level_stack[resolved_level] = code
+            for stale_level in [key for key in level_stack if key > resolved_level]:
+                del level_stack[stale_level]
+            used_codes.add(code)
+            continue
+
+        if not parent_code and level and level > 1:
+            parent_code = level_stack.get(level - 1)
+
+        if not parent_code and not root_assigned:
+            code = root_code
+            root_assigned = True
+        elif parent_code:
+            code = generated_child_code(parent_code, item_type, counters, used_codes)
+        else:
+            code = generated_child_code(root_code, item_type, counters, used_codes)
+            parent_code = root_code if root_assigned else None
+
+        row["code"] = code
+        row["parent_code"] = parent_code
+        row["code_generated"] = True
+        used_codes.add(code)
+        resolved_level = level or (parent_depth(code, {item["code"]: item.get("parent_code") for item in assigned_rows if item.get("code")}))
+        level_stack[resolved_level] = code
+        for stale_level in [key for key in level_stack if key > resolved_level]:
+            del level_stack[stale_level]
+
+    return assigned_rows
+
+
+def auto_code_warnings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "row": row.get("row_number"),
+            "field": "code",
+            "message": f"WBS code was generated as {row['code']}",
+        }
+        for row in rows
+        if row.get("code_generated")
+    ]
+
+
+def root_code_from_rows(rows: list[dict[str, Any]]) -> str | None:
+    roots = [row for row in rows if row.get("code") and not row.get("parent_code")]
+    if len(roots) == 1:
+        return roots[0]["code"]
+    return None
+
+
+def renumber_wbs_rows(rows: list[dict[str, Any]], root_code: str | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not rows:
+        return [], []
+
+    ordered_rows = sorted(rows, key=lambda row: (row.get("sort_order") or 0, row.get("code") or ""))
+    children_by_parent: dict[str | None, list[dict[str, Any]]] = {}
+    for row in ordered_rows:
+        children_by_parent.setdefault(row.get("parent_code"), []).append(dict(row))
+
+    roots = children_by_parent.get(None, [])
+    if not roots:
+        roots = [ordered_rows[0]]
+        children_by_parent.setdefault(None, roots)
+
+    resolved_root_code = root_code or roots[0].get("code") or "WBS"
+    changes: list[dict[str, Any]] = []
+    renumbered_rows: list[dict[str, Any]] = []
+
+    def walk(row: dict[str, Any], new_code: str, new_parent_code: str | None) -> None:
+        old_code = row.get("code")
+        if old_code != new_code or row.get("parent_code") != new_parent_code:
+            changes.append(
+                {
+                    "name": row.get("name"),
+                    "old_code": old_code,
+                    "new_code": new_code,
+                    "old_parent_code": row.get("parent_code"),
+                    "new_parent_code": new_parent_code,
+                }
+            )
+
+        next_row = dict(row)
+        next_row["code"] = new_code
+        next_row["parent_code"] = new_parent_code
+        renumbered_rows.append(next_row)
+
+        counters = {"normal": 0, "milestone": 0}
+        for child in children_by_parent.get(old_code, []):
+            if child.get("item_type") == "마일스톤":
+                counters["milestone"] += 1
+                child_code = f"{new_code}.M{counters['milestone']}"
+            else:
+                counters["normal"] += 1
+                child_code = f"{new_code}.{counters['normal']}"
+            walk(child, child_code, new_code)
+
+    for index, root in enumerate(roots, start=1):
+        new_root_code = resolved_root_code if index == 1 else f"{resolved_root_code}.{index}"
+        walk(root, new_root_code, None)
+
+    for index, row in enumerate(renumbered_rows, start=1):
+        row["sort_order"] = index
+
+    return renumbered_rows, changes
 
 
 def parse_wbs_workbook(contents: bytes) -> list[dict[str, Any]]:
@@ -274,13 +448,13 @@ def parse_wbs_workbook(contents: bytes) -> list[dict[str, Any]]:
             header = HEADER_ALIASES.get(normalize_header(worksheet.cell(row_number, column_number).value))
             if header:
                 candidate[header] = column_number
-        if {"code", "name"}.issubset(candidate.keys()):
+        if "name" in candidate:
             header_row = row_number
             header_map = candidate
             break
 
     if not header_row:
-        raise HTTPException(status_code=400, detail="WBS 코드와 작업명 헤더를 찾을 수 없습니다")
+        raise HTTPException(status_code=400, detail="작업명 헤더를 찾을 수 없습니다")
 
     rows: list[dict[str, Any]] = []
     level_stack: dict[int, str] = {}
@@ -310,6 +484,7 @@ def parse_wbs_workbook(contents: bytes) -> list[dict[str, Any]]:
             rows.append(
                 {
                     "row_number": row_number,
+                    "level": level,
                     "code": code,
                     "name": normalize_text(raw.get("name")),
                     "parent_code": parent_code,
@@ -458,14 +633,7 @@ def build_template_workbook(template: dict[str, Any], rows: list[dict[str, Any]]
         cell.border = border
 
     for row in rows:
-        metadata = row.get("metadata") or {}
-        if isinstance(metadata, str):
-            try:
-                metadata = json.loads(metadata)
-            except json.JSONDecodeError:
-                metadata = {}
-        if not isinstance(metadata, dict):
-            metadata = {}
+        metadata = normalize_metadata(row.get("metadata"))
         start_date = row.get("start_date")
         finish_date = row.get("finish_date")
         worksheet.append(
@@ -514,7 +682,7 @@ def build_template_workbook(template: dict[str, Any], rows: list[dict[str, Any]]
     guide.append(["Template", template["name"]])
     guide.append(["Key", template["key"]])
     guide.append(["Project Type", template["project_type"]])
-    guide.append(["Rule", "WBS 코드와 작업명은 필수입니다. 상위 WBS 코드는 비워두면 코드 또는 레벨로 추론합니다."])
+    guide.append(["Rule", "작업명은 필수입니다. WBS 코드는 비워두면 레벨과 행 순서 기준으로 자동 생성합니다."])
     guide.column_dimensions["A"].width = 18
     guide.column_dimensions["B"].width = 96
     for row in guide.iter_rows():
@@ -582,12 +750,14 @@ async def replace_template_items(
     await connection.execute("DELETE FROM wbs_template_items WHERE template_key = $1", template_key)
 
     for index, row in enumerate(rows, start=1):
+        existing_metadata = normalize_metadata(row.get("metadata"))
         metadata = {
-            "deliverable_type": row.get("deliverable_type"),
-            "inspection_required": row.get("inspection_required", False),
+            "deliverable_type": row.get("deliverable_type", existing_metadata.get("deliverable_type")),
+            "inspection_required": row.get("inspection_required", existing_metadata.get("inspection_required", False)),
             "progress_formula": row.get("progress_formula")
+            or existing_metadata.get("progress_formula")
             or ("하위 단계 가중치 합산" if not row.get("parent_code") else "작업 완료율 x 가중치"),
-            "notes": row.get("notes"),
+            "notes": row.get("notes", existing_metadata.get("notes")),
         }
         await connection.execute(
             """
@@ -730,11 +900,12 @@ async def dashboard(request: Request) -> dict[str, Any]:
 
 @app.post("/api/imports/validate")
 async def validate_import(payload: WbsImportValidation, request: Request) -> dict[str, Any]:
-    rows = [
+    rows = assign_missing_wbs_codes([
         {"row_number": index, **row.model_dump()}
         for index, row in enumerate(payload.rows, start=1)
-    ]
+    ], "WBS")
     errors, warnings = validate_wbs_rows(rows)
+    warnings = [*warnings, *auto_code_warnings(rows)]
 
     status = "Rejected" if errors else "Accepted"
     async with get_pool(request).acquire() as connection:
@@ -757,6 +928,7 @@ async def validate_import(payload: WbsImportValidation, request: Request) -> dic
 
     response = normalize_record(record)
     response["warnings"] = warnings
+    response["rows"] = [serialize_wbs_row(row) for row in rows]
     return response
 
 
@@ -820,13 +992,18 @@ async def import_template_excel(
 ) -> dict[str, Any]:
     normalized_key = normalize_template_key(template_key)
     contents = await file.read()
-    rows = parse_wbs_workbook(contents)
-    errors, warnings = validate_wbs_rows(rows)
-    status = "Rejected" if errors else "Accepted"
-    serialized_rows = [serialize_wbs_row(row) for row in rows]
+    parsed_rows = parse_wbs_workbook(contents)
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
+            existing_rows = await fetch_template_items(connection, normalized_key)
+            root_code = root_code_from_rows(existing_rows) or template_code_prefix(normalized_key)
+            rows = assign_missing_wbs_codes(parsed_rows, root_code)
+            errors, warnings = validate_wbs_rows(rows)
+            warnings = [*warnings, *auto_code_warnings(rows)]
+            status = "Rejected" if errors else "Accepted"
+            serialized_rows = [serialize_wbs_row(row) for row in rows]
+
             record = await connection.fetchrow(
                 """
                 INSERT INTO wbs_import_jobs
@@ -861,6 +1038,41 @@ async def import_template_excel(
     response["warnings"] = warnings
     response["rows"] = serialized_rows[:50]
     return response
+
+
+@app.post("/api/templates/{template_key}/codes/resequence")
+async def resequence_template_codes(template_key: str, request: Request) -> dict[str, Any]:
+    normalized_key = normalize_template_key(template_key)
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            template = await fetch_template(connection, normalized_key)
+            if not template:
+                raise HTTPException(status_code=404, detail="Template not found")
+
+            rows = await fetch_template_items(connection, normalized_key)
+            if not rows:
+                raise HTTPException(status_code=404, detail="Template has no WBS rows")
+
+            root_code = root_code_from_rows(rows) or template_code_prefix(normalized_key)
+            renumbered_rows, changes = renumber_wbs_rows(rows, root_code)
+            await replace_template_items(
+                connection,
+                template_key=normalized_key,
+                template_name=template["name"],
+                project_type=template["project_type"],
+                description=template["description"],
+                rows=renumbered_rows,
+            )
+            updated_template = await fetch_template(connection, normalized_key)
+
+    return {
+        "template": updated_template,
+        "status": "Updated",
+        "changed_rows": len(changes),
+        "changes": changes[:50],
+        "rows": [serialize_wbs_row(row) for row in renumbered_rows[:50]],
+    }
 
 
 @app.get("/api/openproject")

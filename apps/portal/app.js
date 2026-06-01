@@ -246,6 +246,41 @@ function downloadTemplateExcel() {
   window.location.href = `${API_BASE}/api/templates/${encodeURIComponent(template.key)}/excel`;
 }
 
+async function renumberTemplateCodes() {
+  const template = selectedTemplate();
+  document.querySelector("#importStatus").textContent = "Running";
+  document.querySelector("#importStatus").className = "status-pill attention";
+
+  try {
+    const result = await request(`/api/templates/${encodeURIComponent(template.key)}/codes/resequence`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    renderImportResult({
+      status: result.status,
+      accepted_rows: result.rows?.length || 0,
+      rejected_rows: 0,
+      errors: [],
+      warnings: [
+        {
+          message: `WBS code resequence completed: ${result.changed_rows} rows changed`,
+        },
+      ],
+      rows: result.rows || [],
+    });
+    await loadData();
+  } catch (error) {
+    renderImportResult({
+      status: "Rejected",
+      accepted_rows: 0,
+      rejected_rows: 1,
+      errors: [{ message: error.message }],
+      warnings: [],
+      rows: [],
+    });
+  }
+}
+
 async function uploadTemplateExcel(event) {
   const [file] = event.target.files;
   if (!file) return;
@@ -286,6 +321,7 @@ document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#createProjectButton").addEventListener("click", createProject);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
+document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;
 });
