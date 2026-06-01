@@ -38,7 +38,7 @@ docker compose --profile api --profile openproject up --build
 
 서비스 기본 주소:
 
-- 포털: http://localhost:3000
+- 포털: http://localhost:3010
 - 확장 API: http://localhost:8000
 - OpenProject: http://localhost:8080
 

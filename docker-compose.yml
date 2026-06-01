@@ -54,7 +54,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/${POSTGRES_DB:-wbs_platform}
       OPENPROJECT_BASE_URL: http://openproject
-      PORTAL_ORIGIN: http://localhost:${WBS_PORTAL_PORT:-3000}
+      PORTAL_ORIGIN: http://localhost:${WBS_PORTAL_PORT:-3010}
     ports:
       - "${WBS_API_PORT:-8000}:8000"
 
@@ -62,7 +62,7 @@ services:
     build:
       context: ./apps/portal
     ports:
-      - "${WBS_PORTAL_PORT:-3000}:80"
+      - "${WBS_PORTAL_PORT:-3010}:80"
 
 volumes:
   postgres_data:

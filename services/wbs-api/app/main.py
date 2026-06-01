@@ -16,7 +16,7 @@ DATABASE_URL = os.getenv(
     "postgresql://wbs:wbs_dev_password@localhost:5432/wbs_platform",
 )
 OPENPROJECT_BASE_URL = os.getenv("OPENPROJECT_BASE_URL", "http://localhost:8080")
-PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3000")
+PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
 
 
@@ -58,7 +58,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[PORTAL_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[PORTAL_ORIGIN, "http://localhost:3010", "http://127.0.0.1:3010"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
