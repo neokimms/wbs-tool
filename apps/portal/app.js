@@ -339,8 +339,13 @@ function renderSyncProjectSelect() {
   selector.disabled = !projects.length;
 
   const hasProject = Boolean(selector.value);
+  const canActualSync = hasProject && Boolean(state.pmPreflight?.ready_for_actual_sync);
   document.querySelector("#syncPreflightButton").disabled = !hasProject;
   document.querySelector("#syncDryRunButton").disabled = !hasProject;
+  document.querySelector("#syncRunButton").disabled = !canActualSync;
+  document.querySelector("#syncRunButton").title = canActualSync
+    ? "Create or update work packages in OpenProject"
+    : "Actual sync is enabled only after OpenProject preflight is ready";
 }
 
 function selectedSyncProjectId() {
@@ -361,9 +366,12 @@ function renderSyncPanel() {
   document.querySelector("#syncState").textContent = preflight.ready_for_actual_sync ? "Actual sync ready" : "Safe dry-run mode";
 
   const summary = state.syncDetail?.summary;
-  document.querySelector("#syncPendingRows").textContent = summary
-    ? `${summary.pending_work_packages ?? 0}/${summary.total_rows ?? 0}`
-    : "-";
+  const rowSummary = summary?.pending_work_packages !== undefined
+    ? `${summary.pending_work_packages}/${summary.total_rows ?? 0} pending`
+    : summary?.created_work_packages !== undefined
+      ? `${summary.created_work_packages} created / ${summary.total_rows ?? 0}`
+      : "-";
+  document.querySelector("#syncPendingRows").textContent = rowSummary;
 
   const checks = preflight.checks?.length ? preflight.checks : fallbackPreflight.checks;
   document.querySelector("#syncChecks").innerHTML = state.syncDetail?.error
@@ -736,6 +744,30 @@ async function dryRunProjectSync() {
   renderAll();
 }
 
+async function runProjectSync() {
+  const projectId = selectedSyncProjectId();
+  if (!projectId || !state.pmPreflight?.ready_for_actual_sync) return;
+
+  document.querySelector("#syncEngineStatus").textContent = "Syncing";
+  document.querySelector("#syncEngineStatus").className = "status-pill attention";
+  document.querySelector("#syncRunButton").disabled = true;
+
+  try {
+    state.syncDetail = await request(`/api/projects/${encodeURIComponent(projectId)}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        dry_run: false,
+        create_work_packages: true,
+        validate_payloads: true,
+      }),
+    });
+    await loadData();
+  } catch (error) {
+    state.syncDetail = { error: error.message };
+    renderAll();
+  }
+}
+
 document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#createProjectButton").addEventListener("click", createProject);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
@@ -745,6 +777,7 @@ document.querySelector("#applyImportButton").addEventListener("click", applyImpo
 document.querySelector("#syncRefreshButton").addEventListener("click", refreshEnginePreflight);
 document.querySelector("#syncPreflightButton").addEventListener("click", loadProjectSyncPreflight);
 document.querySelector("#syncDryRunButton").addEventListener("click", dryRunProjectSync);
+document.querySelector("#syncRunButton").addEventListener("click", runProjectSync);
 document.querySelector("#projectRows").addEventListener("click", (event) => {
   const button = event.target.closest("[data-project-id]");
   if (!button || button.disabled) return;

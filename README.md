@@ -98,6 +98,7 @@ OPENPROJECT_DEFAULT_TYPE_ID=1
 ```
 
 Docker Compose에서는 API 컨테이너가 `http://openproject`로 OpenProject에 접근하므로, 로컬 개발 기본값은 `OPENPROJECT_HOST_HEADER=localhost:8080`입니다. 토큰 적용 후에는 먼저 preflight를 확인합니다. 이 단계는 OpenProject API root, 토큰 존재 여부, 현재 인증 사용자, 프로젝트별 샘플 Work Package payload를 보여주며 실제 데이터는 생성하지 않습니다.
+포털의 OpenProject 패널도 같은 preflight 결과를 사용하며, `ready_for_actual_sync=true`일 때만 실제 `Sync` 버튼이 활성화됩니다.
 
 ```bash
 curl http://localhost:8000/api/pm-engine/preflight
