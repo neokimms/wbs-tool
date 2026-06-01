@@ -75,6 +75,18 @@ spec:
               value: postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)
             - name: OPENPROJECT_BASE_URL
               value: {{ .Values.api.openprojectBaseUrl | quote }}
+            - name: OPENPROJECT_SYNC_ENABLED
+              value: {{ .Values.api.openprojectSyncEnabled | quote }}
+            - name: OPENPROJECT_API_TOKEN
+              value: {{ .Values.api.openprojectApiToken | quote }}
+            - name: OPENPROJECT_AUTH_MODE
+              value: {{ .Values.api.openprojectAuthMode | quote }}
+            - name: OPENPROJECT_DEFAULT_TYPE_ID
+              value: {{ .Values.api.openprojectDefaultTypeId | quote }}
+            - name: OPENPROJECT_TYPE_MAP_JSON
+              value: {{ .Values.api.openprojectTypeMapJson | quote }}
+            - name: OPENPROJECT_SYNC_PARENT_LINKS
+              value: {{ .Values.api.openprojectSyncParentLinks | quote }}
             - name: PORTAL_ORIGIN
               value: {{ .Values.api.portalOrigin | quote }}
           readinessProbe:

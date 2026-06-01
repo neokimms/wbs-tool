@@ -77,6 +77,31 @@ POST /api/approvals/{approval_id}/approve
 POST /api/approvals/{approval_id}/reject
 ```
 
+OpenProject 실제 연동은 PM engine adapter 경계 뒤에 둡니다. 기본값은 dry-run/disabled라서 토큰을 넣기 전에는 외부 OpenProject API를 호출하지 않습니다.
+
+```bash
+GET  /api/pm-engine
+GET  /api/projects/{project_id}/sync-plan
+POST /api/projects/{project_id}/sync
+```
+
+실제 실행이 필요하면 `.env`에 API 토큰과 실행 플래그를 지정합니다. OpenProject API v3는 bearer token 또는 `apikey:$API_KEY` Basic Auth를 지원합니다.
+
+```bash
+OPENPROJECT_SYNC_ENABLED=true
+OPENPROJECT_API_TOKEN=opapi-...
+OPENPROJECT_AUTH_MODE=bearer
+OPENPROJECT_DEFAULT_TYPE_ID=1
+```
+
+`POST /api/projects/{project_id}/sync`의 기본 요청은 dry-run입니다. 실제 생성 시에는 다음처럼 호출합니다.
+
+```bash
+curl -X POST http://localhost:8000/api/projects/{project_id}/sync \
+  -H 'Content-Type: application/json' \
+  -d '{"dry_run": false, "create_work_packages": true}'
+```
+
 서비스 기본 주소:
 
 - 포털: http://localhost:3010

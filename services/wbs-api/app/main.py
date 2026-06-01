@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from io import BytesIO
 import json
@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -24,6 +25,12 @@ DATABASE_URL = os.getenv(
     "postgresql://wbs:wbs_dev_password@localhost:5432/wbs_platform",
 )
 OPENPROJECT_BASE_URL = os.getenv("OPENPROJECT_BASE_URL", "http://localhost:8080")
+OPENPROJECT_SYNC_ENABLED = os.getenv("OPENPROJECT_SYNC_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+OPENPROJECT_API_TOKEN = os.getenv("OPENPROJECT_API_TOKEN", "")
+OPENPROJECT_AUTH_MODE = os.getenv("OPENPROJECT_AUTH_MODE", "bearer").lower()
+OPENPROJECT_DEFAULT_TYPE_ID = os.getenv("OPENPROJECT_DEFAULT_TYPE_ID", "")
+OPENPROJECT_TYPE_MAP_JSON = os.getenv("OPENPROJECT_TYPE_MAP_JSON", "{}")
+OPENPROJECT_SYNC_PARENT_LINKS = os.getenv("OPENPROJECT_SYNC_PARENT_LINKS", "true").lower() in {"1", "true", "yes", "on"}
 PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -186,6 +193,12 @@ class ApprovalDecision(BaseModel):
     comment: str | None = Field(None, max_length=500)
 
 
+class ProjectSyncRequest(BaseModel):
+    dry_run: bool = True
+    create_work_packages: bool = True
+    force_project_create: bool = False
+
+
 def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
     data = dict(record)
     for key, value in data.items():
@@ -217,6 +230,14 @@ def get_pool(request: Request) -> asyncpg.Pool:
     return request.app.state.pool
 
 
+def parse_json_object(value: str, *, default: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        decoded = json.loads(value or "{}")
+        return decoded if isinstance(decoded, dict) else (default or {})
+    except json.JSONDecodeError:
+        return default or {}
+
+
 def normalize_header(value: Any) -> str:
     return re.sub(r"[\s_./-]+", "", str(value or "").strip().lower())
 
@@ -239,6 +260,16 @@ def normalize_template_key(value: str) -> str:
     if not key:
         raise HTTPException(status_code=400, detail="Template key is required")
     return key[:80]
+
+
+def normalize_openproject_identifier(value: str, fallback: str) -> str:
+    identifier = re.sub(r"[^a-z0-9-]+", "-", value.strip().lower())
+    identifier = re.sub(r"-{2,}", "-", identifier).strip("-")
+    return (identifier or fallback)[:100]
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def as_float(value: Any) -> float | None:
@@ -745,6 +776,19 @@ async def fetch_template(connection: asyncpg.Connection, template_key: str) -> d
     return normalize_record(record) if record else None
 
 
+async def fetch_project(connection: asyncpg.Connection, project_id: UUID) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        """
+        SELECT id, name, template_key, owner, status, start_date,
+               openproject_project_id, metadata, created_at, updated_at
+        FROM wbs_projects
+        WHERE id = $1
+        """,
+        project_id,
+    )
+    return normalize_record(record) if record else None
+
+
 async def fetch_template_items(connection: asyncpg.Connection, template_key: str) -> list[dict[str, Any]]:
     records = await connection.fetch(
         """
@@ -916,6 +960,187 @@ async def fetch_approval_for_update(connection: asyncpg.Connection, approval_id:
         approval_id,
     )
     return normalize_record(record) if record else None
+
+
+class OpenProjectClient:
+    def __init__(self, base_url: str, api_token: str, auth_mode: str = "bearer") -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_token = api_token
+        self.auth_mode = auth_mode
+
+    def request_options(self) -> dict[str, Any]:
+        headers = {"Accept": "application/hal+json", "Content-Type": "application/json"}
+        options: dict[str, Any] = {"headers": headers}
+        if self.auth_mode == "basic":
+            options["auth"] = ("apikey", self.api_token)
+        else:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+        return options
+
+    async def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+            response = await client.request(
+                method,
+                f"{self.base_url}{path}",
+                json=payload,
+                **self.request_options(),
+            )
+
+        if response.status_code >= 400:
+            try:
+                detail = response.json()
+            except ValueError:
+                detail = response.text
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "OpenProject API request failed",
+                    "status_code": response.status_code,
+                    "response": detail,
+                },
+            )
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="OpenProject API returned invalid JSON") from exc
+
+    async def create_project(self, project: dict[str, Any], identifier: str) -> dict[str, Any]:
+        return await self.request(
+            "POST",
+            "/api/v3/projects",
+            {
+                "_type": "Project",
+                "name": project["name"],
+                "identifier": identifier,
+                "active": True,
+            },
+        )
+
+    async def create_work_package(
+        self,
+        *,
+        openproject_project_id: str,
+        row: dict[str, Any],
+        parent_href: str | None = None,
+    ) -> dict[str, Any]:
+        type_map = parse_json_object(OPENPROJECT_TYPE_MAP_JSON)
+        type_id = type_map.get(row.get("item_type") or "") or OPENPROJECT_DEFAULT_TYPE_ID
+        links: dict[str, Any] = {
+            "project": {"href": f"/api/v3/projects/{openproject_project_id}"},
+        }
+        if type_id:
+            links["type"] = {"href": f"/api/v3/types/{type_id}"}
+        if parent_href and OPENPROJECT_SYNC_PARENT_LINKS:
+            links["parent"] = {"href": parent_href}
+
+        metadata = normalize_metadata(row.get("metadata"))
+        description_lines = [
+            f"WBS code: {row['code']}",
+            f"Type: {row.get('item_type') or '작업'}",
+        ]
+        if row.get("owner"):
+            description_lines.append(f"Owner: {row['owner']}")
+        if row.get("weight") is not None:
+            description_lines.append(f"Weight: {row['weight']}")
+        if metadata.get("deliverable_type"):
+            description_lines.append(f"Deliverable: {metadata['deliverable_type']}")
+
+        payload: dict[str, Any] = {
+            "_type": "WorkPackage",
+            "subject": f"{row['code']} {row['name']}"[:255],
+            "description": {
+                "format": "markdown",
+                "raw": "\n".join(description_lines),
+            },
+            "_links": links,
+        }
+        if row.get("start_date"):
+            payload["startDate"] = row["start_date"]
+        if row.get("finish_date"):
+            payload["dueDate"] = row["finish_date"]
+
+        return await self.request("POST", "/api/v3/work_packages?notify=false", payload)
+
+
+def openproject_engine_status() -> dict[str, Any]:
+    return {
+        "adapter": "openproject",
+        "base_url": OPENPROJECT_BASE_URL,
+        "enabled": OPENPROJECT_SYNC_ENABLED,
+        "token_configured": bool(OPENPROJECT_API_TOKEN),
+        "auth_mode": OPENPROJECT_AUTH_MODE,
+        "default_type_configured": bool(OPENPROJECT_DEFAULT_TYPE_ID),
+        "type_map_configured": bool(parse_json_object(OPENPROJECT_TYPE_MAP_JSON)),
+        "parent_links": OPENPROJECT_SYNC_PARENT_LINKS,
+    }
+
+
+def build_openproject_sync_plan(
+    project: dict[str, Any],
+    template: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    project_uuid = str(project["id"])
+    identifier = normalize_openproject_identifier(
+        f"{project['name']}-{project_uuid[:8]}",
+        f"wbs-{project_uuid[:8]}",
+    )
+    metadata = normalize_metadata(project.get("metadata"))
+    engine_metadata = normalize_metadata(metadata.get("pm_engine"))
+    synced_work_packages = normalize_metadata(engine_metadata.get("work_packages"))
+
+    planned_rows = []
+    for row in rows:
+        planned_rows.append(
+            {
+                "code": row["code"],
+                "parent_code": row.get("parent_code"),
+                "name": row["name"],
+                "item_type": row.get("item_type") or "작업",
+                "subject": f"{row['code']} {row['name']}"[:255],
+                "start_date": row.get("start_date"),
+                "finish_date": row.get("finish_date"),
+                "already_synced": row["code"] in synced_work_packages,
+            }
+        )
+
+    return {
+        "engine": openproject_engine_status(),
+        "project": project,
+        "template": template,
+        "openproject": {
+            "project_id": project.get("openproject_project_id") or engine_metadata.get("project_id"),
+            "project_identifier": engine_metadata.get("project_identifier") or identifier,
+            "project_already_synced": bool(project.get("openproject_project_id") or engine_metadata.get("project_id")),
+        },
+        "rows": planned_rows,
+        "summary": {
+            "total_rows": len(planned_rows),
+            "pending_work_packages": len([row for row in planned_rows if not row["already_synced"]]),
+            "synced_work_packages": len([row for row in planned_rows if row["already_synced"]]),
+        },
+    }
+
+
+def template_rows_or_phases(template: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if rows:
+        return rows
+    return [
+        {
+            "code": phase["code"],
+            "parent_code": None,
+            "name": phase["name"],
+            "item_type": "단계",
+            "owner": "PMO",
+            "weight": phase.get("weight"),
+            "start_date": None,
+            "finish_date": None,
+            "metadata": {},
+        }
+        for phase in template.get("phases", [])
+    ]
 
 
 def prometheus_escape(value: str) -> str:
@@ -1096,6 +1321,155 @@ async def create_project(payload: ProjectCreate, request: Request) -> dict[str, 
         )
 
     return normalize_record(record)
+
+
+@app.get("/api/pm-engine")
+async def pm_engine() -> dict[str, Any]:
+    return openproject_engine_status()
+
+
+@app.get("/api/projects/{project_id}/sync-plan")
+async def project_sync_plan(project_id: str, request: Request) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        project = await fetch_project(connection, parsed_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        template = await fetch_template(connection, project["template_key"])
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        rows = await fetch_template_items(connection, project["template_key"])
+
+    rows = template_rows_or_phases(template, rows)
+    return build_openproject_sync_plan(project, template, rows)
+
+
+@app.post("/api/projects/{project_id}/sync")
+async def sync_project_to_engine(
+    project_id: str,
+    request: Request,
+    payload: ProjectSyncRequest = ProjectSyncRequest(),
+) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        project = await fetch_project(connection, parsed_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        template = await fetch_template(connection, project["template_key"])
+        if not template:
+            raise HTTPException(status_code=404, detail="Template not found")
+        rows = await fetch_template_items(connection, project["template_key"])
+
+    rows = template_rows_or_phases(template, rows)
+    plan = build_openproject_sync_plan(project, template, rows)
+    if payload.dry_run:
+        return {"status": "DryRun", **plan}
+
+    if not OPENPROJECT_SYNC_ENABLED:
+        raise HTTPException(status_code=400, detail="OpenProject sync is disabled. Set OPENPROJECT_SYNC_ENABLED=true to execute.")
+    if not OPENPROJECT_API_TOKEN:
+        raise HTTPException(status_code=400, detail="OPENPROJECT_API_TOKEN is required for OpenProject sync.")
+
+    client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
+    metadata = normalize_metadata(project.get("metadata"))
+    engine_metadata = normalize_metadata(metadata.get("pm_engine"))
+    work_packages = normalize_metadata(engine_metadata.get("work_packages"))
+    openproject_project_id = project.get("openproject_project_id") or engine_metadata.get("project_id")
+    project_identifier = engine_metadata.get("project_identifier") or plan["openproject"]["project_identifier"]
+
+    if payload.force_project_create or not openproject_project_id:
+        created_project = await client.create_project(project, project_identifier)
+        openproject_project_id = str(created_project.get("id") or "").strip()
+        if not openproject_project_id:
+            raise HTTPException(status_code=502, detail="OpenProject project response did not include an id")
+        engine_metadata["project_id"] = openproject_project_id
+        engine_metadata["project_identifier"] = created_project.get("identifier") or project_identifier
+        engine_metadata["project_href"] = normalize_metadata(created_project.get("_links")).get("self", {}).get("href")
+        engine_metadata["project_created_at"] = utc_now_iso()
+
+    created_work_packages: list[dict[str, Any]] = []
+    if payload.create_work_packages:
+        href_by_code = {
+            code: item.get("href")
+            for code, item in work_packages.items()
+            if isinstance(item, dict) and item.get("href")
+        }
+        for row in rows:
+            code = row["code"]
+            if code in work_packages:
+                continue
+            parent_href = href_by_code.get(row.get("parent_code"))
+            created_work_package = await client.create_work_package(
+                openproject_project_id=openproject_project_id,
+                row=row,
+                parent_href=parent_href,
+            )
+            work_package_id = str(created_work_package.get("id") or "").strip()
+            work_package_href = normalize_metadata(created_work_package.get("_links")).get("self", {}).get("href")
+            work_packages[code] = {
+                "id": work_package_id,
+                "href": work_package_href,
+                "subject": created_work_package.get("subject") or f"{code} {row['name']}",
+                "synced_at": utc_now_iso(),
+            }
+            if work_package_href:
+                href_by_code[code] = work_package_href
+            created_work_packages.append(
+                {
+                    "code": code,
+                    "id": work_package_id,
+                    "href": work_package_href,
+                    "subject": work_packages[code]["subject"],
+                }
+            )
+
+    engine_metadata["adapter"] = "openproject"
+    engine_metadata["base_url"] = OPENPROJECT_BASE_URL
+    engine_metadata["work_packages"] = work_packages
+    engine_metadata["last_sync_at"] = utc_now_iso()
+    metadata["pm_engine"] = engine_metadata
+
+    async with get_pool(request).acquire() as connection:
+        record = await connection.fetchrow(
+            """
+            UPDATE wbs_projects
+            SET openproject_project_id = $2,
+                metadata = $3::jsonb,
+                updated_at = now()
+            WHERE id = $1
+            RETURNING id, name, template_key, owner, status, start_date,
+                      openproject_project_id, metadata, created_at, updated_at
+            """,
+            parsed_id,
+            openproject_project_id,
+            metadata,
+        )
+
+    updated_project = normalize_record(record)
+    return {
+        "status": "Synced",
+        "engine": openproject_engine_status(),
+        "project": updated_project,
+        "openproject": {
+            "project_id": openproject_project_id,
+            "project_identifier": engine_metadata.get("project_identifier"),
+            "project_href": engine_metadata.get("project_href"),
+        },
+        "summary": {
+            "created_work_packages": len(created_work_packages),
+            "known_work_packages": len(work_packages),
+            "total_rows": len(rows),
+        },
+        "created_work_packages": created_work_packages,
+    }
 
 
 @app.get("/api/approvals")

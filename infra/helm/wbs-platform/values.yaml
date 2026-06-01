@@ -13,6 +13,12 @@ api:
     type: ClusterIP
     port: 8000
   openprojectBaseUrl: "http://openproject"
+  openprojectSyncEnabled: false
+  openprojectApiToken: ""
+  openprojectAuthMode: bearer
+  openprojectDefaultTypeId: ""
+  openprojectTypeMapJson: "{}"
+  openprojectSyncParentLinks: true
   portalOrigin: "https://wbs.example.com"
   resources:
     requests:
