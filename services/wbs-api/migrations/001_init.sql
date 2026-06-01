@@ -106,6 +106,23 @@ CREATE TABLE IF NOT EXISTS wbs_sync_runs (
   completed_at timestamptz
 );
 
+CREATE TABLE IF NOT EXISTS wbs_project_baselines (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES wbs_projects(id) ON DELETE CASCADE,
+  approval_id uuid UNIQUE REFERENCES wbs_approval_requests(id) ON DELETE SET NULL,
+  version integer NOT NULL,
+  status text NOT NULL DEFAULT 'Locked',
+  template_key citext NOT NULL,
+  template_name text NOT NULL,
+  item_count integer NOT NULL DEFAULT 0,
+  total_weight numeric(10, 2) NOT NULL DEFAULT 0,
+  snapshot_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  locked_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (project_id, version)
+);
+
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_status ON wbs_projects(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_template ON wbs_projects(template_key);
 CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_project ON wbs_approval_requests(project_id);
@@ -117,6 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_wbs_template_items_parent ON wbs_template_items(t
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_project ON wbs_sync_runs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_status ON wbs_sync_runs(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_mode ON wbs_sync_runs(mode, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_project_baselines_project ON wbs_project_baselines(project_id, version DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_project_baselines_status ON wbs_project_baselines(status, locked_at DESC);
 
 INSERT INTO wbs_templates (key, name, project_type, description, phases)
 VALUES

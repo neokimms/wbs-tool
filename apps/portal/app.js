@@ -247,6 +247,7 @@ function statusClass(status) {
     lowered.includes("approved") ||
     lowered.includes("accepted") ||
     lowered.includes("applied") ||
+    lowered.includes("locked") ||
     lowered.includes("synced") ||
     lowered.includes("updated")
   ) {
@@ -260,6 +261,13 @@ function statusClass(status) {
 
 function projectPlanRows() {
   return state.projectPlan?.rows || [];
+}
+
+function baselineText(baseline) {
+  if (!baseline?.locked) return "Unlocked";
+  const version = baseline.version ? `v${baseline.version}` : "Locked";
+  const rows = baseline.item_count !== undefined ? ` · ${baseline.item_count} rows` : "";
+  return `${version}${rows}`;
 }
 
 function projectRowMap(rows) {
@@ -437,6 +445,7 @@ function renderProjectPlan() {
     : plan
       ? "Not synced"
       : "-";
+  document.querySelector("#projectDetailBaseline").textContent = plan ? baselineText(plan.baseline) : "-";
 
   renderProjectPlanFilters();
 

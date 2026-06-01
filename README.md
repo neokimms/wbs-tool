@@ -68,13 +68,14 @@ POST /api/templates/{template_key}/codes/resequence
 
 Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 미리보기 상태에서는 PostgreSQL의 import job에 검증 결과와 계층형 rows만 저장되고, 실제 템플릿 교체는 승인 반영 시점에 수행됩니다. 저장된 템플릿의 코드 체계를 다시 맞출 때는 포털의 `코드 정렬` 버튼을 사용합니다.
 
-PMO 승인 워크플로우는 프로젝트별 승인 요청을 PostgreSQL에 감사 이력으로 남깁니다. 내부 WBS baseline 승인은 기본적으로 자동 승인되며, 포털의 `승인 이력`에서 처리 결과를 확인합니다. 수동 대기열이 필요한 요청은 `auto_approve_internal=false`로 생성합니다.
+PMO 승인 워크플로우는 프로젝트별 승인 요청을 PostgreSQL에 감사 이력으로 남깁니다. 내부 WBS baseline 승인은 기본적으로 자동 승인되며, 승인 시점의 WBS는 `wbs_project_baselines`에 `Locked` 스냅샷으로 저장됩니다. 포털의 `승인 이력`과 프로젝트 WBS 상세의 `Baseline` 상태에서 처리 결과를 확인합니다. 수동 대기열이 필요한 요청은 `auto_approve_internal=false`로 생성합니다.
 
 ```bash
 GET  /api/approvals
 POST /api/approvals
 POST /api/approvals/{approval_id}/approve
 POST /api/approvals/{approval_id}/reject
+GET  /api/projects/{project_id}/baseline
 ```
 
 OpenProject 실제 연동은 PM engine adapter 경계 뒤에 둡니다. 기본값은 dry-run/disabled라서 토큰을 넣기 전에는 외부 OpenProject API를 호출하지 않습니다.

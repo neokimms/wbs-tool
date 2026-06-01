@@ -54,6 +54,11 @@ s.validate_payloads, s.total_rows, s.pending_work_packages,
 s.synced_work_packages, s.created_work_packages, s.openproject_project_id,
 s.metadata, s.error, s.started_at, s.completed_at
 """
+BASELINE_SELECT = """
+b.id, b.project_id, p.name AS project_name, b.approval_id, b.version,
+b.status, b.template_key, b.template_name, b.item_count, b.total_weight,
+b.snapshot_rows, b.metadata, b.locked_at, b.created_at
+"""
 
 EXCEL_COLUMNS = [
     ("level", "레벨"),
@@ -218,7 +223,7 @@ def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
             data[key] = value.isoformat()
         if isinstance(value, Decimal):
             data[key] = float(value)
-        if key in {"errors", "warnings", "metadata", "phases", "preview_rows", "error"} and isinstance(data[key], str):
+        if key in {"errors", "warnings", "metadata", "phases", "preview_rows", "snapshot_rows", "error"} and isinstance(data[key], str):
             try:
                 data[key] = json.loads(data[key])
             except json.JSONDecodeError:
@@ -1001,6 +1006,148 @@ async def insert_sync_run(
     return normalize_record(record)
 
 
+def baseline_snapshot_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    snapshot_rows: list[dict[str, Any]] = []
+    for row in rows:
+        snapshot_rows.append(
+            serialize_wbs_row(
+                {
+                    "code": row.get("code"),
+                    "parent_code": row.get("parent_code"),
+                    "name": row.get("name"),
+                    "item_type": row.get("item_type") or "작업",
+                    "owner": row.get("owner"),
+                    "weight": row.get("weight"),
+                    "start_date": row.get("start_date"),
+                    "finish_date": row.get("finish_date"),
+                    "sort_order": row.get("sort_order"),
+                    "metadata": normalize_metadata(row.get("metadata")),
+                }
+            )
+        )
+    return snapshot_rows
+
+
+def baseline_total_weight(rows: list[dict[str, Any]]) -> float:
+    root_weight = next(
+        (row.get("weight") for row in rows if not row.get("parent_code") and row.get("weight") is not None),
+        None,
+    )
+    if root_weight is not None:
+        return float(root_weight)
+
+    top_level_weights = [
+        float(row["weight"])
+        for row in rows
+        if not row.get("parent_code") and row.get("weight") is not None
+    ]
+    if top_level_weights:
+        return sum(top_level_weights)
+
+    return sum(float(row["weight"]) for row in rows if row.get("weight") is not None)
+
+
+def baseline_summary(baseline: dict[str, Any] | None) -> dict[str, Any]:
+    if not baseline:
+        return {
+            "locked": False,
+            "status": "Unlocked",
+        }
+
+    return {
+        "locked": baseline.get("status") == "Locked",
+        "id": baseline.get("id"),
+        "approval_id": baseline.get("approval_id"),
+        "version": baseline.get("version"),
+        "status": baseline.get("status"),
+        "template_key": baseline.get("template_key"),
+        "template_name": baseline.get("template_name"),
+        "item_count": baseline.get("item_count"),
+        "total_weight": baseline.get("total_weight"),
+        "locked_at": baseline.get("locked_at"),
+        "metadata": normalize_metadata(baseline.get("metadata")),
+    }
+
+
+async def fetch_latest_project_baseline(
+    connection: asyncpg.Connection,
+    project_id: UUID,
+) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        f"""
+        SELECT {BASELINE_SELECT}
+        FROM wbs_project_baselines b
+        JOIN wbs_projects p ON p.id = b.project_id
+        WHERE b.project_id = $1
+        ORDER BY b.version DESC
+        LIMIT 1
+        """,
+        project_id,
+    )
+    return normalize_record(record) if record else None
+
+
+async def create_project_baseline(
+    connection: asyncpg.Connection,
+    *,
+    project_id: UUID,
+    approval_id: UUID,
+    template_key: str,
+    actor: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    existing = await connection.fetchrow(
+        f"""
+        SELECT {BASELINE_SELECT}
+        FROM wbs_project_baselines b
+        JOIN wbs_projects p ON p.id = b.project_id
+        WHERE b.approval_id = $1
+        """,
+        approval_id,
+    )
+    if existing:
+        return normalize_record(existing)
+
+    template = await fetch_template(connection, template_key)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found for baseline")
+    rows = template_rows_or_phases(template, await fetch_template_items(connection, template_key))
+    snapshot_rows = baseline_snapshot_rows(rows)
+    version = await connection.fetchval(
+        "SELECT COALESCE(max(version), 0) + 1 FROM wbs_project_baselines WHERE project_id = $1",
+        project_id,
+    )
+    record = await connection.fetchrow(
+        f"""
+        WITH inserted AS (
+          INSERT INTO wbs_project_baselines
+            (project_id, approval_id, version, status, template_key, template_name,
+             item_count, total_weight, snapshot_rows, metadata)
+          VALUES
+            ($1, $2, $3, 'Locked', $4, $5, $6, $7, $8::jsonb, $9::jsonb)
+          RETURNING *
+        )
+        SELECT {BASELINE_SELECT}
+        FROM inserted b
+        JOIN wbs_projects p ON p.id = b.project_id
+        """,
+        project_id,
+        approval_id,
+        version,
+        template["key"],
+        template["name"],
+        len(snapshot_rows),
+        baseline_total_weight(rows),
+        snapshot_rows,
+        {
+            "locked_by": actor,
+            "source": "approval",
+            **(metadata or {}),
+        },
+    )
+    return normalize_record(record)
+
+
 async def record_project_sync_run(
     request: Request,
     *,
@@ -1387,6 +1534,7 @@ def build_openproject_sync_plan(
     project: dict[str, Any],
     template: dict[str, Any],
     rows: list[dict[str, Any]],
+    baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     project_uuid = str(project["id"])
     identifier = normalize_openproject_identifier(
@@ -1424,6 +1572,7 @@ def build_openproject_sync_plan(
             "project_identifier": engine_metadata.get("project_identifier") or identifier,
             "project_already_synced": bool(project.get("openproject_project_id") or engine_metadata.get("project_id")),
         },
+        "baseline": baseline_summary(baseline),
         "rows": planned_rows,
         "summary": {
             "total_rows": len(planned_rows),
@@ -1607,6 +1756,13 @@ async def metrics(request: Request) -> PlainTextResponse:
                 GROUP BY mode, status
                 """
             )
+            baseline_rows = await connection.fetch(
+                """
+                SELECT status, count(*) AS count
+                FROM wbs_project_baselines
+                GROUP BY status
+                """
+            )
     except Exception:
         database_up = 0
         project_count = 0
@@ -1615,6 +1771,7 @@ async def metrics(request: Request) -> PlainTextResponse:
         import_rows = []
         project_status_rows = []
         sync_run_rows = []
+        baseline_rows = []
 
     lines = [
         "# HELP wbs_api_up WBS extension API availability.",
@@ -1674,6 +1831,16 @@ async def metrics(request: Request) -> PlainTextResponse:
             {"mode": row["mode"], "status": row["status"]},
         )
         for row in sync_run_rows
+    )
+    lines.extend(
+        [
+            "# HELP wbs_project_baselines_total Number of WBS project baselines by status.",
+            "# TYPE wbs_project_baselines_total gauge",
+        ]
+    )
+    lines.extend(
+        prometheus_metric("wbs_project_baselines_total", row["count"], {"status": row["status"]})
+        for row in baseline_rows
     )
 
     return PlainTextResponse(
@@ -1767,8 +1934,32 @@ async def project_sync_plan(project_id: str, request: Request) -> dict[str, Any]
         raise HTTPException(status_code=400, detail="Invalid project id") from exc
 
     project, template, rows = await fetch_project_sync_context(request, parsed_id)
+    async with get_pool(request).acquire() as connection:
+        baseline = await fetch_latest_project_baseline(connection, parsed_id)
 
-    return build_openproject_sync_plan(project, template, rows)
+    return build_openproject_sync_plan(project, template, rows, baseline)
+
+
+@app.get("/api/projects/{project_id}/baseline")
+async def project_baseline(project_id: str, request: Request) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        project_exists = await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM wbs_projects WHERE id = $1)",
+            parsed_id,
+        )
+        if not project_exists:
+            raise HTTPException(status_code=404, detail="Project not found")
+        baseline = await fetch_latest_project_baseline(connection, parsed_id)
+
+    return {
+        **baseline_summary(baseline),
+        "snapshot_rows": baseline.get("snapshot_rows") if baseline else [],
+    }
 
 
 @app.get("/api/projects/{project_id}/sync-runs")
@@ -1811,7 +2002,9 @@ async def project_sync_preflight(project_id: str, request: Request) -> dict[str,
         raise HTTPException(status_code=400, detail="Invalid project id") from exc
 
     project, template, rows = await fetch_project_sync_context(request, parsed_id)
-    plan = build_openproject_sync_plan(project, template, rows)
+    async with get_pool(request).acquire() as connection:
+        baseline = await fetch_latest_project_baseline(connection, parsed_id)
+    plan = build_openproject_sync_plan(project, template, rows, baseline)
     preflight = await run_openproject_preflight()
 
     return {
@@ -1834,7 +2027,9 @@ async def sync_project_to_engine(
         raise HTTPException(status_code=400, detail="Invalid project id") from exc
 
     project, template, rows = await fetch_project_sync_context(request, parsed_id)
-    plan = build_openproject_sync_plan(project, template, rows)
+    async with get_pool(request).acquire() as connection:
+        baseline = await fetch_latest_project_baseline(connection, parsed_id)
+    plan = build_openproject_sync_plan(project, template, rows, baseline)
     if payload.dry_run:
         audit_run = await record_project_sync_run(
             request,
@@ -2023,7 +2218,7 @@ async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str
         async with connection.transaction():
             project = await connection.fetchrow(
                 """
-                SELECT id, name, status
+                SELECT id, name, status, template_key
                 FROM wbs_projects
                 WHERE id = $1
                 FOR UPDATE
@@ -2085,6 +2280,19 @@ async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str
                 project_status,
             )
             approval = await fetch_approval(connection, record["id"])
+            if payload.auto_approve_internal:
+                baseline = await create_project_baseline(
+                    connection,
+                    project_id=payload.project_id,
+                    approval_id=record["id"],
+                    template_key=project["template_key"],
+                    actor=payload.reviewer or payload.requester,
+                    metadata={
+                        "approval_mode": "auto_internal",
+                        "request_type": payload.request_type,
+                    },
+                )
+                approval["baseline"] = baseline_summary(baseline)
 
     return approval
 
@@ -2128,6 +2336,18 @@ async def approve_approval(approval_id: str, payload: ApprovalDecision, request:
                 approval["project_id"],
             )
             updated = await fetch_approval(connection, parsed_id)
+            baseline = await create_project_baseline(
+                connection,
+                project_id=approval["project_id"],
+                approval_id=parsed_id,
+                template_key=approval["template_key"],
+                actor=payload.reviewer,
+                metadata={
+                    "approval_mode": "manual",
+                    "request_type": approval["request_type"],
+                },
+            )
+            updated["baseline"] = baseline_summary(baseline)
 
     return updated
 
@@ -2246,6 +2466,7 @@ async def operations_health(request: Request) -> dict[str, Any]:
             "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'"
         )
         sync_run_count = await connection.fetchval("SELECT count(*) FROM wbs_sync_runs")
+        baseline_count = await connection.fetchval("SELECT count(*) FROM wbs_project_baselines")
         existing_tables = await connection.fetch(
             """
             SELECT table_name
@@ -2260,6 +2481,7 @@ async def operations_health(request: Request) -> dict[str, Any]:
                 "wbs_import_jobs",
                 "wbs_approval_requests",
                 "wbs_sync_runs",
+                "wbs_project_baselines",
             ],
         )
 
@@ -2271,6 +2493,7 @@ async def operations_health(request: Request) -> dict[str, Any]:
         "wbs_import_jobs",
         "wbs_approval_requests",
         "wbs_sync_runs",
+        "wbs_project_baselines",
     }
     missing_tables = sorted(required_tables - table_names)
     preflight = await run_openproject_preflight()
@@ -2334,6 +2557,13 @@ async def operations_health(request: Request) -> dict[str, Any]:
             "pass",
             f"{sync_run_count} sync runs recorded",
             {"sync_runs": sync_run_count},
+        ),
+        operation_check(
+            "baseline_lock",
+            "Baseline lock",
+            "pass",
+            f"{baseline_count} locked WBS baselines",
+            {"baselines": baseline_count},
         ),
         backup_health_check(),
         operation_check(
