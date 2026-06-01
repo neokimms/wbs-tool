@@ -49,13 +49,27 @@ const fallbackProjects = [
   },
 ];
 
+const fallbackApprovals = [
+  {
+    title: "승인 대기 없음",
+    project_name: "프로젝트 승인 요청이 생성되면 표시됩니다",
+    request_type: "PMO Queue",
+    status: "Approved",
+    requester: "System",
+    reviewer: "PMO Lead",
+    due_date: "Ready",
+  },
+];
+
 const state = {
   templates: fallbackTemplates,
   projects: fallbackProjects,
+  approvals: [],
   dashboard: {
     metrics: {
       projects: fallbackProjects.length,
       templates: fallbackTemplates.length,
+      pending_approvals: 0,
       openproject_sync: "ready",
       database: "PostgreSQL 17",
     },
@@ -90,6 +104,7 @@ async function request(path, options = {}) {
 function renderMetrics() {
   document.querySelector("#projectCount").textContent = state.dashboard.metrics.projects;
   document.querySelector("#templateCount").textContent = state.dashboard.metrics.templates;
+  document.querySelector("#approvalCount").textContent = state.dashboard.metrics.pending_approvals || 0;
   document.querySelector("#syncStatus").textContent =
     state.dashboard.metrics.openproject_sync === "ready" ? "Ready" : "Watch";
 }
@@ -143,16 +158,61 @@ function renderProjects() {
   const rows = state.projects.length ? state.projects : fallbackProjects;
   document.querySelector("#projectRows").innerHTML = rows
     .map(
-      (project) => `
+      (project) => {
+        const canRequestApproval = project.id && ["Draft", "Rejected"].includes(project.status);
+        return `
         <tr>
           <td>${project.name}</td>
           <td>${project.owner}</td>
           <td><span class="status-pill ${statusClass(project.status)}">${project.status}</span></td>
           <td>${project.template_key}</td>
           <td>${project.start_date}</td>
+          <td>
+            <button
+              class="table-action"
+              type="button"
+              data-project-id="${project.id || ""}"
+              ${canRequestApproval ? "" : "disabled"}
+            >
+              승인 요청
+            </button>
+          </td>
         </tr>
-      `,
+      `;
+      },
     )
+    .join("");
+}
+
+function renderApprovals() {
+  const approvalStatus = document.querySelector("#approvalStatus");
+  const pendingCount = state.approvals.filter((approval) => approval.status === "Pending").length;
+  approvalStatus.textContent = `${pendingCount} Pending`;
+  approvalStatus.className = `status-pill ${pendingCount ? "attention" : "stable"}`;
+
+  const rows = state.approvals.length ? state.approvals : fallbackApprovals;
+  document.querySelector("#approvalList").innerHTML = rows
+    .slice(0, 5)
+    .map((approval) => {
+      const isPending = approval.status === "Pending" && approval.id;
+      return `
+        <article class="approval-item">
+          <div>
+            <strong>${approval.title}</strong>
+            <span>${approval.project_name} · ${approval.request_type}</span>
+          </div>
+          <div class="approval-meta">
+            <span class="status-pill ${statusClass(approval.status)}">${approval.status}</span>
+            <small>${approval.requester || "PMO"} → ${approval.reviewer || "PMO Lead"}</small>
+            <small>${approval.due_date || "No due date"}</small>
+          </div>
+          <div class="approval-actions">
+            <button class="secondary-button" type="button" data-approval-action="reject" data-approval-id="${approval.id || ""}" ${isPending ? "" : "disabled"}>반려</button>
+            <button class="primary-button" type="button" data-approval-action="approve" data-approval-id="${approval.id || ""}" ${isPending ? "" : "disabled"}>승인</button>
+          </div>
+        </article>
+      `;
+    })
     .join("");
 }
 
@@ -188,24 +248,28 @@ function renderAll() {
   renderTemplates();
   renderTemplateSelect();
   renderProjects();
+  renderApprovals();
   renderImportPreview();
   renderApplyButton();
 }
 
 async function loadData() {
   try {
-    const [dashboard, templates, projects] = await Promise.all([
+    const [dashboard, templates, projects, approvals] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
+      request("/api/approvals"),
     ]);
 
     state.dashboard = dashboard;
     state.templates = templates;
     state.projects = projects.length ? projects : fallbackProjects;
+    state.approvals = approvals;
   } catch (error) {
     state.dashboard.metrics.projects = state.projects.length;
     state.dashboard.metrics.templates = state.templates.length;
+    state.dashboard.metrics.pending_approvals = state.approvals.filter((approval) => approval.status === "Pending").length;
   }
 
   renderAll();
@@ -234,6 +298,61 @@ async function createProject() {
   }
 
   renderAll();
+}
+
+async function requestProjectApproval(projectId) {
+  if (!projectId) return;
+
+  try {
+    const approval = await request("/api/approvals", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: projectId,
+        requester: "PMO",
+        reviewer: "PMO Lead",
+        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        metadata: {
+          source: "wbs-portal",
+        },
+      }),
+    });
+    state.approvals = [approval, ...state.approvals.filter((item) => item.id !== approval.id)];
+    await loadData();
+  } catch (error) {
+    renderImportResult({
+      status: "Rejected",
+      accepted_rows: 0,
+      rejected_rows: 1,
+      errors: [{ message: error.message }],
+      warnings: [],
+      rows: [],
+    });
+  }
+}
+
+async function decideApproval(approvalId, action) {
+  if (!approvalId) return;
+
+  try {
+    const approval = await request(`/api/approvals/${encodeURIComponent(approvalId)}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({
+        reviewer: "PMO Lead",
+        comment: action === "approve" ? "Approved from PMO portal" : "Returned for WBS revision",
+      }),
+    });
+    state.approvals = state.approvals.map((item) => (item.id === approval.id ? approval : item));
+    await loadData();
+  } catch (error) {
+    renderImportResult({
+      status: "Rejected",
+      accepted_rows: 0,
+      rejected_rows: 1,
+      errors: [{ message: error.message }],
+      warnings: [],
+      rows: [],
+    });
+  }
 }
 
 function selectedTemplate() {
@@ -370,6 +489,16 @@ document.querySelector("#downloadTemplateButton").addEventListener("click", down
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
 document.querySelector("#applyImportButton").addEventListener("click", applyImportPreview);
+document.querySelector("#projectRows").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-project-id]");
+  if (!button || button.disabled) return;
+  requestProjectApproval(button.dataset.projectId);
+});
+document.querySelector("#approvalList").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-approval-action]");
+  if (!button || button.disabled) return;
+  decideApproval(button.dataset.approvalId, button.dataset.approvalAction);
+});
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;
 });

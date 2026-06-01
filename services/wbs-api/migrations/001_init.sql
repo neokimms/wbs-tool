@@ -24,6 +24,22 @@ CREATE TABLE IF NOT EXISTS wbs_projects (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS wbs_approval_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES wbs_projects(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  request_type text NOT NULL DEFAULT 'WBS Baseline',
+  status text NOT NULL DEFAULT 'Pending',
+  requester text NOT NULL DEFAULT 'PMO',
+  reviewer text,
+  due_date date,
+  decision_comment text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  decided_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS wbs_import_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_file text NOT NULL,
@@ -71,6 +87,8 @@ CREATE TABLE IF NOT EXISTS wbs_template_items (
 
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_status ON wbs_projects(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_template ON wbs_projects(template_key);
+CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_project ON wbs_approval_requests(project_id);
+CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_status ON wbs_approval_requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_status ON wbs_import_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_template ON wbs_import_jobs(template_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_template ON wbs_template_items(template_key, sort_order);

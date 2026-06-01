@@ -33,6 +33,11 @@ id, source_file, template_key, template_name, project_type, description, status,
 total_rows, accepted_rows, rejected_rows, errors, warnings, preview_rows,
 applied_at, created_at
 """
+APPROVAL_SELECT = """
+a.id, a.project_id, p.name AS project_name, p.template_key, a.title,
+a.request_type, a.status, a.requester, a.reviewer, a.due_date,
+a.decision_comment, a.metadata, a.created_at, a.decided_at, a.updated_at
+"""
 
 EXCEL_COLUMNS = [
     ("level", "레벨"),
@@ -164,6 +169,21 @@ class WbsImportRow(BaseModel):
 class WbsImportValidation(BaseModel):
     source_file: str = Field("wbs-upload.xlsx", min_length=1, max_length=160)
     rows: list[WbsImportRow]
+
+
+class ApprovalCreate(BaseModel):
+    project_id: UUID
+    title: str | None = Field(None, max_length=160)
+    request_type: str = Field("WBS Baseline", min_length=1, max_length=80)
+    requester: str = Field("PMO", min_length=1, max_length=80)
+    reviewer: str | None = Field("PMO Lead", max_length=80)
+    due_date: date | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ApprovalDecision(BaseModel):
+    reviewer: str = Field("PMO Lead", min_length=1, max_length=80)
+    comment: str | None = Field(None, max_length=500)
 
 
 def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
@@ -871,6 +891,33 @@ async def fetch_import_job_for_update(connection: asyncpg.Connection, job_id: UU
     return normalize_record(record) if record else None
 
 
+async def fetch_approval(connection: asyncpg.Connection, approval_id: UUID) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        f"""
+        SELECT {APPROVAL_SELECT}
+        FROM wbs_approval_requests a
+        JOIN wbs_projects p ON p.id = a.project_id
+        WHERE a.id = $1
+        """,
+        approval_id,
+    )
+    return normalize_record(record) if record else None
+
+
+async def fetch_approval_for_update(connection: asyncpg.Connection, approval_id: UUID) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        f"""
+        SELECT {APPROVAL_SELECT}
+        FROM wbs_approval_requests a
+        JOIN wbs_projects p ON p.id = a.project_id
+        WHERE a.id = $1
+        FOR UPDATE OF a
+        """,
+        approval_id,
+    )
+    return normalize_record(record) if record else None
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, str]:
     async with get_pool(request).acquire() as connection:
@@ -949,11 +996,185 @@ async def create_project(payload: ProjectCreate, request: Request) -> dict[str, 
     return normalize_record(record)
 
 
+@app.get("/api/approvals")
+async def list_approvals(request: Request) -> list[dict[str, Any]]:
+    async with get_pool(request).acquire() as connection:
+        records = await connection.fetch(
+            f"""
+            SELECT {APPROVAL_SELECT}
+            FROM wbs_approval_requests a
+            JOIN wbs_projects p ON p.id = a.project_id
+            ORDER BY
+              CASE a.status
+                WHEN 'Pending' THEN 0
+                WHEN 'Approved' THEN 1
+                WHEN 'Rejected' THEN 2
+                ELSE 3
+              END,
+              a.created_at DESC
+            LIMIT 50
+            """
+        )
+    return [normalize_record(record) for record in records]
+
+
+@app.post("/api/approvals", status_code=201)
+async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str, Any]:
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            project = await connection.fetchrow(
+                """
+                SELECT id, name, status
+                FROM wbs_projects
+                WHERE id = $1
+                FOR UPDATE
+                """,
+                payload.project_id,
+            )
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+
+            pending_exists = await connection.fetchval(
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM wbs_approval_requests
+                  WHERE project_id = $1 AND status = 'Pending'
+                )
+                """,
+                payload.project_id,
+            )
+            if pending_exists:
+                raise HTTPException(status_code=409, detail="Project already has a pending approval")
+
+            title = payload.title or f"{project['name']} WBS baseline approval"
+            record = await connection.fetchrow(
+                f"""
+                INSERT INTO wbs_approval_requests
+                  (project_id, title, request_type, requester, reviewer, due_date, metadata)
+                VALUES
+                  ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                RETURNING id
+                """,
+                payload.project_id,
+                title,
+                payload.request_type,
+                payload.requester,
+                payload.reviewer,
+                payload.due_date,
+                payload.metadata,
+            )
+            await connection.execute(
+                """
+                UPDATE wbs_projects
+                SET status = 'Review',
+                    updated_at = now()
+                WHERE id = $1
+                """,
+                payload.project_id,
+            )
+            approval = await fetch_approval(connection, record["id"])
+
+    return approval
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+async def approve_approval(approval_id: str, payload: ApprovalDecision, request: Request) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(approval_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid approval id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            approval = await fetch_approval_for_update(connection, parsed_id)
+            if not approval:
+                raise HTTPException(status_code=404, detail="Approval request not found")
+            if approval["status"] != "Pending":
+                raise HTTPException(status_code=409, detail="Approval request is already decided")
+
+            await connection.execute(
+                """
+                UPDATE wbs_approval_requests
+                SET status = 'Approved',
+                    reviewer = $2,
+                    decision_comment = $3,
+                    decided_at = now(),
+                    updated_at = now()
+                WHERE id = $1
+                """,
+                parsed_id,
+                payload.reviewer,
+                payload.comment,
+            )
+            await connection.execute(
+                """
+                UPDATE wbs_projects
+                SET status = 'Approved',
+                    updated_at = now()
+                WHERE id = $1
+                """,
+                approval["project_id"],
+            )
+            updated = await fetch_approval(connection, parsed_id)
+
+    return updated
+
+
+@app.post("/api/approvals/{approval_id}/reject")
+async def reject_approval(approval_id: str, payload: ApprovalDecision, request: Request) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(approval_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid approval id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            approval = await fetch_approval_for_update(connection, parsed_id)
+            if not approval:
+                raise HTTPException(status_code=404, detail="Approval request not found")
+            if approval["status"] != "Pending":
+                raise HTTPException(status_code=409, detail="Approval request is already decided")
+
+            await connection.execute(
+                """
+                UPDATE wbs_approval_requests
+                SET status = 'Rejected',
+                    reviewer = $2,
+                    decision_comment = $3,
+                    decided_at = now(),
+                    updated_at = now()
+                WHERE id = $1
+                """,
+                parsed_id,
+                payload.reviewer,
+                payload.comment,
+            )
+            await connection.execute(
+                """
+                UPDATE wbs_projects
+                SET status = 'Rejected',
+                    updated_at = now()
+                WHERE id = $1
+                """,
+                approval["project_id"],
+            )
+            updated = await fetch_approval(connection, parsed_id)
+
+    return updated
+
+
 @app.get("/api/dashboard")
 async def dashboard(request: Request) -> dict[str, Any]:
     async with get_pool(request).acquire() as connection:
         project_count = await connection.fetchval("SELECT count(*) FROM wbs_projects")
         template_count = await connection.fetchval("SELECT count(*) FROM wbs_templates")
+        pending_approval_count = await connection.fetchval(
+            "SELECT count(*) FROM wbs_approval_requests WHERE status = 'Pending'"
+        )
+        preview_import_count = await connection.fetchval(
+            "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'"
+        )
         status_rows = await connection.fetch(
             """
             SELECT status, count(*) AS count
@@ -970,19 +1191,31 @@ async def dashboard(request: Request) -> dict[str, Any]:
             LIMIT 5
             """
         )
+        latest_approvals = await connection.fetch(
+            f"""
+            SELECT {APPROVAL_SELECT}
+            FROM wbs_approval_requests a
+            JOIN wbs_projects p ON p.id = a.project_id
+            ORDER BY a.created_at DESC
+            LIMIT 5
+            """
+        )
 
     return {
         "metrics": {
             "projects": project_count,
             "templates": template_count,
+            "pending_approvals": pending_approval_count,
+            "preview_imports": preview_import_count,
             "openproject_sync": "ready",
             "database": "PostgreSQL 17",
         },
         "status_distribution": [normalize_record(row) for row in status_rows],
         "latest_projects": [normalize_record(row) for row in latest_projects],
+        "latest_approvals": [normalize_record(row) for row in latest_approvals],
         "risk_hotspots": [
-            {"name": "Excel hierarchy import", "level": "attention"},
-            {"name": "SSO decision", "level": "watch"},
+            {"name": "Pending PMO approvals", "level": "attention" if pending_approval_count else "stable"},
+            {"name": "Excel preview queue", "level": "watch" if preview_import_count else "stable"},
             {"name": "Backup rehearsal", "level": "stable"},
         ],
     }

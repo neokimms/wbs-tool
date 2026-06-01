@@ -62,6 +62,15 @@ POST /api/templates/{template_key}/codes/resequence
 
 Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 미리보기 상태에서는 PostgreSQL의 import job에 검증 결과와 계층형 rows만 저장되고, 실제 템플릿 교체는 승인 반영 시점에 수행됩니다. 저장된 템플릿의 코드 체계를 다시 맞출 때는 포털의 `코드 정렬` 버튼을 사용합니다.
 
+PMO 승인 워크플로우는 프로젝트별 승인 요청을 PostgreSQL에 감사 이력으로 남기고, 포털의 `승인 대기열`에서 승인 또는 반려할 수 있습니다.
+
+```bash
+GET  /api/approvals
+POST /api/approvals
+POST /api/approvals/{approval_id}/approve
+POST /api/approvals/{approval_id}/reject
+```
+
 서비스 기본 주소:
 
 - 포털: http://localhost:3010

@@ -19,6 +19,7 @@
         <nav class="nav-list">
           <a class="active" href="#dashboard">Dashboard</a>
           <a href="#portfolio">Portfolio</a>
+          <a href="#approvals">Approvals</a>
           <a href="#templates">Templates</a>
           <a href="#imports">Excel Queue</a>
           <a href="#sync">OpenProject</a>
@@ -49,6 +50,11 @@
             <span>Templates</span>
             <strong id="templateCount">0</strong>
             <small>Company standard WBS</small>
+          </article>
+          <article class="metric-panel">
+            <span>Approvals</span>
+            <strong id="approvalCount">0</strong>
+            <small>Pending PMO decisions</small>
           </article>
           <article class="metric-panel">
             <span>OpenProject</span>
@@ -93,6 +99,7 @@
                     <th>Status</th>
                     <th>Template</th>
                     <th>Start</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="projectRows"></tbody>
@@ -109,6 +116,17 @@
               <button class="icon-button" id="templateDownloadButton" type="button" aria-label="Download template" title="Download">↓</button>
             </div>
             <div class="template-list" id="templateList"></div>
+          </article>
+
+          <article class="panel" id="approvals">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">PMO</p>
+                <h2>승인 대기열</h2>
+              </div>
+              <span class="status-pill attention" id="approvalStatus">Pending</span>
+            </div>
+            <div class="approval-list" id="approvalList"></div>
           </article>
 
           <article class="panel" id="imports">
