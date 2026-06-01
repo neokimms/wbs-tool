@@ -16,6 +16,8 @@ POSTGRES_DB="${POSTGRES_DB:-wbs_platform}"
 WBS_API_PORT="${WBS_API_PORT:-8000}"
 WBS_PORTAL_PORT="${WBS_PORTAL_PORT:-3010}"
 OPENPROJECT_HOST_NAME="${OPENPROJECT_HOST_NAME:-localhost:8080}"
+PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
+POSTGRES_EXPORTER_PORT="${POSTGRES_EXPORTER_PORT:-9187}"
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/postgres}"
 FAILURES=0
 WARNINGS=0
@@ -82,6 +84,7 @@ if is_running postgres; then
 fi
 
 check_http "WBS API" "http://localhost:$WBS_API_PORT/health"
+check_http "WBS API metrics" "http://localhost:$WBS_API_PORT/metrics"
 check_http "WBS Portal" "http://localhost:$WBS_PORTAL_PORT"
 
 if is_running openproject; then
@@ -90,6 +93,22 @@ elif [[ "${REQUIRE_OPENPROJECT:-0}" == "1" ]]; then
   fail "OpenProject container is not running"
 else
   warn "OpenProject container is not running; skipped optional check"
+fi
+
+if is_running prometheus; then
+  check_http "Prometheus" "http://localhost:$PROMETHEUS_PORT/-/healthy"
+elif [[ "${REQUIRE_MONITORING:-0}" == "1" ]]; then
+  fail "Prometheus container is not running"
+else
+  warn "Prometheus container is not running; skipped optional check"
+fi
+
+if is_running postgres-exporter; then
+  check_http "PostgreSQL exporter" "http://localhost:$POSTGRES_EXPORTER_PORT/metrics"
+elif [[ "${REQUIRE_MONITORING:-0}" == "1" ]]; then
+  fail "PostgreSQL exporter container is not running"
+else
+  warn "PostgreSQL exporter container is not running; skipped optional check"
 fi
 
 if compgen -G "$BACKUP_DIR/*.dump" >/dev/null; then

@@ -66,6 +66,36 @@ services:
     ports:
       - "${WBS_PORTAL_PORT:-3010}:80"
 
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    profiles: ["monitoring"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/${POSTGRES_DB:-wbs_platform}?sslmode=disable
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    depends_on:
+      wbs-api:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
 volumes:
   postgres17_data:
   openproject_assets:
+  prometheus_data:

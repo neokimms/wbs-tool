@@ -12,7 +12,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -918,6 +918,17 @@ async def fetch_approval_for_update(connection: asyncpg.Connection, approval_id:
     return normalize_record(record) if record else None
 
 
+def prometheus_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def prometheus_metric(name: str, value: int | float, labels: dict[str, str] | None = None) -> str:
+    if labels:
+        label_text = ",".join(f'{key}="{prometheus_escape(str(label_value))}"' for key, label_value in labels.items())
+        return f"{name}{{{label_text}}} {value}"
+    return f"{name} {value}"
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, str]:
     async with get_pool(request).acquire() as connection:
@@ -927,6 +938,97 @@ async def health(request: Request) -> dict[str, str]:
         "database": "postgresql",
         "openproject_base_url": OPENPROJECT_BASE_URL,
     }
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+async def metrics(request: Request) -> PlainTextResponse:
+    pool = get_pool(request)
+    database_up = 1
+
+    try:
+        async with pool.acquire() as connection:
+            await connection.fetchval("SELECT 1")
+            project_count = await connection.fetchval("SELECT count(*) FROM wbs_projects")
+            template_count = await connection.fetchval("SELECT count(*) FROM wbs_templates")
+            approval_rows = await connection.fetch(
+                """
+                SELECT status, count(*) AS count
+                FROM wbs_approval_requests
+                GROUP BY status
+                """
+            )
+            import_rows = await connection.fetch(
+                """
+                SELECT status, count(*) AS count
+                FROM wbs_import_jobs
+                GROUP BY status
+                """
+            )
+            project_status_rows = await connection.fetch(
+                """
+                SELECT status, count(*) AS count
+                FROM wbs_projects
+                GROUP BY status
+                """
+            )
+    except Exception:
+        database_up = 0
+        project_count = 0
+        template_count = 0
+        approval_rows = []
+        import_rows = []
+        project_status_rows = []
+
+    lines = [
+        "# HELP wbs_api_up WBS extension API availability.",
+        "# TYPE wbs_api_up gauge",
+        prometheus_metric("wbs_api_up", 1),
+        "# HELP wbs_database_up PostgreSQL availability from the WBS API.",
+        "# TYPE wbs_database_up gauge",
+        prometheus_metric("wbs_database_up", database_up),
+        "# HELP wbs_projects_total Number of WBS projects.",
+        "# TYPE wbs_projects_total gauge",
+        prometheus_metric("wbs_projects_total", project_count),
+        "# HELP wbs_templates_total Number of WBS templates.",
+        "# TYPE wbs_templates_total gauge",
+        prometheus_metric("wbs_templates_total", template_count),
+        "# HELP wbs_db_pool_connections Asyncpg pool connections by state.",
+        "# TYPE wbs_db_pool_connections gauge",
+        prometheus_metric("wbs_db_pool_connections", pool.get_size(), {"state": "total"}),
+        prometheus_metric("wbs_db_pool_connections", pool.get_idle_size(), {"state": "idle"}),
+        "# HELP wbs_project_status_total Number of WBS projects by status.",
+        "# TYPE wbs_project_status_total gauge",
+    ]
+
+    lines.extend(
+        prometheus_metric("wbs_project_status_total", row["count"], {"status": row["status"]})
+        for row in project_status_rows
+    )
+    lines.extend(
+        [
+            "# HELP wbs_approval_requests_total Number of approval requests by status.",
+            "# TYPE wbs_approval_requests_total gauge",
+        ]
+    )
+    lines.extend(
+        prometheus_metric("wbs_approval_requests_total", row["count"], {"status": row["status"]})
+        for row in approval_rows
+    )
+    lines.extend(
+        [
+            "# HELP wbs_import_jobs_total Number of Excel import jobs by status.",
+            "# TYPE wbs_import_jobs_total gauge",
+        ]
+    )
+    lines.extend(
+        prometheus_metric("wbs_import_jobs_total", row["count"], {"status": row["status"]})
+        for row in import_rows
+    )
+
+    return PlainTextResponse(
+        "\n".join(lines) + "\n",
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @app.get("/api/templates")
