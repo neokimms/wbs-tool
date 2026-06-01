@@ -61,6 +61,23 @@ const fallbackApprovals = [
   },
 ];
 
+const fallbackPreflight = {
+  state: "dry_run_only",
+  ready_for_actual_sync: false,
+  engine: {
+    adapter: "openproject",
+    enabled: false,
+    token_configured: false,
+  },
+  checks: [
+    {
+      name: "pm_engine",
+      status: "skip",
+      message: "API 연결 대기",
+    },
+  ],
+};
+
 const state = {
   templates: fallbackTemplates,
   projects: fallbackProjects,
@@ -76,7 +93,10 @@ const state = {
   },
   importPreview: [],
   pendingImportJobId: null,
+  pmPreflight: fallbackPreflight,
+  syncDetail: null,
   userSelectedTemplate: false,
+  userSelectedSyncProject: false,
 };
 
 async function request(path, options = {}) {
@@ -101,12 +121,37 @@ async function request(path, options = {}) {
   return contentType.includes("application/json") ? response.json() : response;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function syncStateLabel(value) {
+  const labels = {
+    ready: "Ready",
+    dry_run_only: "Dry-run",
+    auth_failed: "Auth",
+    offline: "Offline",
+    blocked: "Blocked",
+  };
+  return labels[value] || "Watch";
+}
+
+function syncStateClass(value) {
+  if (value === "ready") return "stable";
+  if (value === "offline" || value === "auth_failed" || value === "blocked") return "critical";
+  return "attention";
+}
+
 function renderMetrics() {
   document.querySelector("#projectCount").textContent = state.dashboard.metrics.projects;
   document.querySelector("#templateCount").textContent = state.dashboard.metrics.templates;
   document.querySelector("#approvalCount").textContent = state.dashboard.metrics.pending_approvals || 0;
-  document.querySelector("#syncStatus").textContent =
-    state.dashboard.metrics.openproject_sync === "ready" ? "Ready" : "Watch";
+  document.querySelector("#syncStatus").textContent = syncStateLabel(state.pmPreflight?.state);
 }
 
 function renderTemplates() {
@@ -243,6 +288,82 @@ function renderApplyButton() {
   applyButton.disabled = !state.pendingImportJobId;
 }
 
+function renderSyncProjectSelect() {
+  const selector = document.querySelector("#syncProjectSelect");
+  const projects = state.projects.filter((project) => project.id);
+  const selectedValue = state.userSelectedSyncProject && selector.value ? selector.value : projects[0]?.id || "";
+
+  selector.innerHTML = projects.length
+    ? projects
+        .map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`)
+        .join("")
+    : '<option value="">프로젝트 없음</option>';
+  selector.value = projects.some((project) => project.id === selectedValue) ? selectedValue : projects[0]?.id || "";
+  selector.disabled = !projects.length;
+
+  const hasProject = Boolean(selector.value);
+  document.querySelector("#syncPreflightButton").disabled = !hasProject;
+  document.querySelector("#syncDryRunButton").disabled = !hasProject;
+}
+
+function selectedSyncProjectId() {
+  return document.querySelector("#syncProjectSelect").value;
+}
+
+function renderSyncPanel() {
+  const preflight = state.pmPreflight || fallbackPreflight;
+  const stateValue = preflight.state || "dry_run_only";
+  const status = document.querySelector("#syncEngineStatus");
+  status.textContent = syncStateLabel(stateValue);
+  status.className = `status-pill ${syncStateClass(stateValue)}`;
+
+  const engine = preflight.engine || {};
+  document.querySelector("#syncMode").textContent = `${engine.adapter || "openproject"} · ${
+    engine.enabled ? "enabled" : "disabled"
+  }`;
+  document.querySelector("#syncState").textContent = preflight.ready_for_actual_sync ? "Actual sync ready" : "Safe dry-run mode";
+
+  const summary = state.syncDetail?.summary;
+  document.querySelector("#syncPendingRows").textContent = summary
+    ? `${summary.pending_work_packages ?? 0}/${summary.total_rows ?? 0}`
+    : "-";
+
+  const checks = preflight.checks?.length ? preflight.checks : fallbackPreflight.checks;
+  document.querySelector("#syncChecks").innerHTML = state.syncDetail?.error
+    ? `
+      <article class="sync-check">
+        <div>
+          <strong>sync_request</strong>
+          <small>${escapeHtml(state.syncDetail.error)}</small>
+        </div>
+        <span class="status-pill critical">Error</span>
+      </article>
+    `
+    : checks
+        .slice(0, 4)
+        .map((check) => {
+          const checkClass = check.status === "pass" ? "stable" : check.status === "fail" ? "critical" : "attention";
+          return `
+            <article class="sync-check">
+              <div>
+                <strong>${escapeHtml(check.name)}</strong>
+                <small>${escapeHtml(check.message || check.path || check.status)}</small>
+              </div>
+              <span class="status-pill ${checkClass}">${escapeHtml(check.status || "watch")}</span>
+            </article>
+          `;
+        })
+        .join("");
+
+  const payload = state.syncDetail?.payload_sample?.payload;
+  const preview = payload
+    ? JSON.stringify(payload, null, 2)
+    : state.syncDetail?.status
+      ? `${state.syncDetail.status}: ${summary?.total_rows ?? 0} planned rows`
+      : "샘플 payload 대기";
+  document.querySelector("#syncPayloadPreview").textContent = preview;
+}
+
 function renderAll() {
   renderMetrics();
   renderTemplates();
@@ -251,21 +372,25 @@ function renderAll() {
   renderApprovals();
   renderImportPreview();
   renderApplyButton();
+  renderSyncProjectSelect();
+  renderSyncPanel();
 }
 
 async function loadData() {
   try {
-    const [dashboard, templates, projects, approvals] = await Promise.all([
+    const [dashboard, templates, projects, approvals, pmPreflight] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
       request("/api/approvals"),
+      request("/api/pm-engine/preflight"),
     ]);
 
     state.dashboard = dashboard;
     state.templates = templates;
     state.projects = projects.length ? projects : fallbackProjects;
     state.approvals = approvals;
+    state.pmPreflight = pmPreflight;
   } catch (error) {
     state.dashboard.metrics.projects = state.projects.length;
     state.dashboard.metrics.templates = state.templates.length;
@@ -292,6 +417,7 @@ async function createProject() {
     });
     state.projects = [project, ...state.projects.filter((item) => item.name !== project.name)];
     state.dashboard.metrics.projects += 1;
+    state.userSelectedSyncProject = false;
   } catch (error) {
     state.projects = [payload, ...state.projects];
     state.dashboard.metrics.projects = state.projects.length;
@@ -483,12 +609,72 @@ async function applyImportPreview() {
   }
 }
 
+async function refreshEnginePreflight() {
+  try {
+    state.pmPreflight = await request("/api/pm-engine/preflight");
+    state.syncDetail = null;
+  } catch (error) {
+    state.pmPreflight = {
+      ...fallbackPreflight,
+      state: "offline",
+      checks: [{ name: "pm_engine", status: "fail", message: error.message }],
+    };
+    state.syncDetail = null;
+  }
+
+  renderAll();
+}
+
+async function loadProjectSyncPreflight() {
+  const projectId = selectedSyncProjectId();
+  if (!projectId) return;
+
+  document.querySelector("#syncEngineStatus").textContent = "Checking";
+  document.querySelector("#syncEngineStatus").className = "status-pill attention";
+
+  try {
+    const detail = await request(`/api/projects/${encodeURIComponent(projectId)}/sync-preflight`);
+    state.pmPreflight = detail.preflight || state.pmPreflight;
+    state.syncDetail = detail;
+  } catch (error) {
+    state.syncDetail = { error: error.message };
+  }
+
+  renderAll();
+}
+
+async function dryRunProjectSync() {
+  const projectId = selectedSyncProjectId();
+  if (!projectId) return;
+
+  document.querySelector("#syncEngineStatus").textContent = "Dry-run";
+  document.querySelector("#syncEngineStatus").className = "status-pill attention";
+
+  try {
+    state.syncDetail = await request(`/api/projects/${encodeURIComponent(projectId)}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        dry_run: true,
+        create_work_packages: true,
+        validate_payloads: true,
+      }),
+    });
+  } catch (error) {
+    state.syncDetail = { error: error.message };
+  }
+
+  renderAll();
+}
+
 document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#createProjectButton").addEventListener("click", createProject);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
 document.querySelector("#applyImportButton").addEventListener("click", applyImportPreview);
+document.querySelector("#syncRefreshButton").addEventListener("click", refreshEnginePreflight);
+document.querySelector("#syncPreflightButton").addEventListener("click", loadProjectSyncPreflight);
+document.querySelector("#syncDryRunButton").addEventListener("click", dryRunProjectSync);
 document.querySelector("#projectRows").addEventListener("click", (event) => {
   const button = event.target.closest("[data-project-id]");
   if (!button || button.disabled) return;
@@ -501,6 +687,11 @@ document.querySelector("#approvalList").addEventListener("click", (event) => {
 });
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;
+});
+document.querySelector("#syncProjectSelect").addEventListener("change", () => {
+  state.userSelectedSyncProject = true;
+  state.syncDetail = null;
+  renderSyncPanel();
 });
 document.querySelector("#excelFileInput").addEventListener("change", uploadTemplateExcel);
 

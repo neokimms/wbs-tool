@@ -488,6 +488,82 @@ tr:last-child td {
   min-width: 0;
 }
 
+.sync-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px minmax(74px, 0.35fr) minmax(92px, 0.45fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sync-controls select {
+  min-width: 0;
+  height: 38px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sync-controls .secondary-button,
+.sync-controls .primary-button {
+  width: 100%;
+  min-width: 0;
+}
+
+.sync-checks {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.sync-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 36px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.sync-check strong,
+.sync-check small {
+  display: block;
+  min-width: 0;
+}
+
+.sync-check strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-check small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.payload-preview {
+  min-height: 96px;
+  max-height: 180px;
+  margin: 14px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8f9fb;
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .import-summary div {
   min-height: 76px;
   padding: 14px;
@@ -677,6 +753,10 @@ dd {
   }
 
   .import-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-controls {
     grid-template-columns: 1fr;
   }
 
