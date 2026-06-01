@@ -50,15 +50,17 @@ bash scripts/bootstrap-openproject-wbs.sh
 bash scripts/bootstrap-openproject-si-template.sh
 ```
 
-계층형 WBS Excel 템플릿은 포털의 `Excel 다운로드` 버튼으로 내려받고, 같은 화면의 `Excel 업로드`로 다시 반영할 수 있습니다. API로 직접 사용할 때는 다음 엔드포인트를 사용합니다.
+계층형 WBS Excel 템플릿은 포털의 `Excel 다운로드` 버튼으로 내려받고, 같은 화면의 `Excel 업로드`로 검증 미리보기를 확인한 뒤 `반영` 버튼으로 적용합니다. API로 직접 사용할 때는 다음 엔드포인트를 사용합니다.
 
 ```bash
 GET  /api/templates/{template_key}/excel
+POST /api/templates/import/preview
+POST /api/imports/{job_id}/apply
 POST /api/templates/import
 POST /api/templates/{template_key}/codes/resequence
 ```
 
-Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 저장된 템플릿의 코드 체계를 다시 맞출 때는 포털의 `코드 정렬` 버튼을 사용합니다.
+Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 미리보기 상태에서는 PostgreSQL의 import job에 검증 결과와 계층형 rows만 저장되고, 실제 템플릿 교체는 승인 반영 시점에 수행됩니다. 저장된 템플릿의 코드 체계를 다시 맞출 때는 포털의 `코드 정렬` 버튼을 사용합니다.
 
 서비스 기본 주소:
 

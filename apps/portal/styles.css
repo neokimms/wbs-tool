@@ -196,6 +196,14 @@ h2 {
   transform: translateY(-1px);
 }
 
+.primary-button:disabled,
+.secondary-button:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -379,12 +387,13 @@ tr:last-child td {
 
 .import-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
 
 .import-controls select {
+  grid-column: 1 / -1;
   min-width: 0;
   height: 38px;
   padding: 0 34px 0 12px;
@@ -403,7 +412,13 @@ tr:last-child td {
 }
 
 .file-button {
-  min-width: 112px;
+  min-width: 0;
+}
+
+.import-controls .secondary-button,
+.import-controls .primary-button {
+  width: 100%;
+  min-width: 0;
 }
 
 .import-summary div {

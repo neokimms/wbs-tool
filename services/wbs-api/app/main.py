@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any
+from uuid import UUID
 
 import asyncpg
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -27,6 +28,11 @@ PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+IMPORT_JOB_RETURNING = """
+id, source_file, template_key, template_name, project_type, description, status,
+total_rows, accepted_rows, rejected_rows, errors, warnings, preview_rows,
+applied_at, created_at
+"""
 
 EXCEL_COLUMNS = [
     ("level", "레벨"),
@@ -167,7 +173,7 @@ def normalize_record(record: asyncpg.Record) -> dict[str, Any]:
             data[key] = value.isoformat()
         if isinstance(value, Decimal):
             data[key] = float(value)
-        if key in {"errors", "metadata", "phases"} and isinstance(data[key], str):
+        if key in {"errors", "warnings", "metadata", "phases", "preview_rows"} and isinstance(data[key], str):
             try:
                 data[key] = json.loads(data[key])
             except json.JSONDecodeError:
@@ -598,6 +604,18 @@ def serialize_wbs_row(row: dict[str, Any]) -> dict[str, Any]:
     return serialized
 
 
+def restore_wbs_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    restored_rows: list[dict[str, Any]] = []
+    for row in rows:
+        restored = dict(row)
+        for key in ("start_date", "finish_date"):
+            value = restored.get(key)
+            if isinstance(value, str) and value:
+                restored[key] = date.fromisoformat(value)
+        restored_rows.append(restored)
+    return restored_rows
+
+
 def template_phases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     roots = [row for row in rows if not row.get("parent_code")]
     root_code = roots[0]["code"] if len(roots) == 1 else None
@@ -781,6 +799,78 @@ async def replace_template_items(
         )
 
 
+async def prepare_template_import(
+    connection: asyncpg.Connection,
+    *,
+    template_key: str,
+    parsed_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    existing_rows = await fetch_template_items(connection, template_key)
+    root_code = root_code_from_rows(existing_rows) or template_code_prefix(template_key)
+    rows = assign_missing_wbs_codes(parsed_rows, root_code)
+    errors, warnings = validate_wbs_rows(rows)
+    warnings = [*warnings, *auto_code_warnings(rows)]
+    serialized_rows = [serialize_wbs_row(row) for row in rows]
+    return rows, errors, warnings, serialized_rows
+
+
+async def insert_import_job(
+    connection: asyncpg.Connection,
+    *,
+    source_file: str,
+    status: str,
+    total_rows: int,
+    accepted_rows: int,
+    rejected_rows: int,
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    preview_rows: list[dict[str, Any]],
+    template_key: str | None = None,
+    template_name: str | None = None,
+    project_type: str | None = None,
+    description: str | None = None,
+    applied: bool = False,
+) -> asyncpg.Record:
+    return await connection.fetchrow(
+        f"""
+        INSERT INTO wbs_import_jobs
+          (source_file, template_key, template_name, project_type, description,
+           status, total_rows, accepted_rows, rejected_rows, errors, warnings,
+           preview_rows, applied_at)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb,
+           $12::jsonb, CASE WHEN $13::boolean THEN now() ELSE NULL END)
+        RETURNING {IMPORT_JOB_RETURNING}
+        """,
+        source_file,
+        template_key,
+        template_name,
+        project_type,
+        description,
+        status,
+        total_rows,
+        accepted_rows,
+        rejected_rows,
+        errors,
+        warnings,
+        preview_rows,
+        applied,
+    )
+
+
+async def fetch_import_job_for_update(connection: asyncpg.Connection, job_id: UUID) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        f"""
+        SELECT {IMPORT_JOB_RETURNING}
+        FROM wbs_import_jobs
+        WHERE id = $1
+        FOR UPDATE
+        """,
+        job_id,
+    )
+    return normalize_record(record) if record else None
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, str]:
     async with get_pool(request).acquire() as connection:
@@ -906,29 +996,25 @@ async def validate_import(payload: WbsImportValidation, request: Request) -> dic
     ], "WBS")
     errors, warnings = validate_wbs_rows(rows)
     warnings = [*warnings, *auto_code_warnings(rows)]
+    serialized_rows = [serialize_wbs_row(row) for row in rows]
 
     status = "Rejected" if errors else "Accepted"
     async with get_pool(request).acquire() as connection:
-        record = await connection.fetchrow(
-            """
-            INSERT INTO wbs_import_jobs
-              (source_file, status, total_rows, accepted_rows, rejected_rows, errors)
-            VALUES
-              ($1, $2, $3, $4, $5, $6::jsonb)
-            RETURNING id, source_file, status, total_rows, accepted_rows,
-                      rejected_rows, errors, created_at
-            """,
-            payload.source_file,
-            status,
-            len(payload.rows),
-            0 if errors else len(payload.rows),
-            len(errors),
-            errors,
+        record = await insert_import_job(
+            connection,
+            source_file=payload.source_file,
+            status=status,
+            total_rows=len(rows),
+            accepted_rows=0 if errors else len(rows),
+            rejected_rows=len(errors),
+            errors=errors,
+            warnings=warnings,
+            preview_rows=serialized_rows,
         )
 
     response = normalize_record(record)
     response["warnings"] = warnings
-    response["rows"] = [serialize_wbs_row(row) for row in rows]
+    response["rows"] = serialized_rows
     return response
 
 
@@ -981,6 +1067,51 @@ async def export_template_excel(template_key: str, request: Request) -> Streamin
     )
 
 
+@app.post("/api/templates/import/preview", status_code=201)
+async def preview_template_excel(
+    request: Request,
+    file: UploadFile = File(...),
+    template_key: str = Form("uploaded-wbs"),
+    template_name: str = Form("업로드 WBS 템플릿"),
+    project_type: str = Form("Uploaded"),
+    description: str = Form("Excel 업로드로 반영될 계층형 WBS 템플릿"),
+) -> dict[str, Any]:
+    normalized_key = normalize_template_key(template_key)
+    contents = await file.read()
+    parsed_rows = parse_wbs_workbook(contents)
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            rows, errors, warnings, serialized_rows = await prepare_template_import(
+                connection,
+                template_key=normalized_key,
+                parsed_rows=parsed_rows,
+            )
+            status = "Rejected" if errors else "Preview"
+            record = await insert_import_job(
+                connection,
+                source_file=file.filename or "wbs-upload.xlsx",
+                template_key=normalized_key,
+                template_name=template_name,
+                project_type=project_type,
+                description=description,
+                status=status,
+                total_rows=len(rows),
+                accepted_rows=0 if errors else len(rows),
+                rejected_rows=len(errors),
+                errors=errors,
+                warnings=warnings,
+                preview_rows=serialized_rows,
+            )
+            template = await fetch_template(connection, normalized_key)
+
+    response = normalize_record(record)
+    response["template"] = template
+    response["warnings"] = warnings
+    response["rows"] = serialized_rows[:50]
+    return response
+
+
 @app.post("/api/templates/import", status_code=201)
 async def import_template_excel(
     request: Request,
@@ -996,29 +1127,27 @@ async def import_template_excel(
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
-            existing_rows = await fetch_template_items(connection, normalized_key)
-            root_code = root_code_from_rows(existing_rows) or template_code_prefix(normalized_key)
-            rows = assign_missing_wbs_codes(parsed_rows, root_code)
-            errors, warnings = validate_wbs_rows(rows)
-            warnings = [*warnings, *auto_code_warnings(rows)]
+            rows, errors, warnings, serialized_rows = await prepare_template_import(
+                connection,
+                template_key=normalized_key,
+                parsed_rows=parsed_rows,
+            )
             status = "Rejected" if errors else "Accepted"
-            serialized_rows = [serialize_wbs_row(row) for row in rows]
-
-            record = await connection.fetchrow(
-                """
-                INSERT INTO wbs_import_jobs
-                  (source_file, status, total_rows, accepted_rows, rejected_rows, errors)
-                VALUES
-                  ($1, $2, $3, $4, $5, $6::jsonb)
-                RETURNING id, source_file, status, total_rows, accepted_rows,
-                          rejected_rows, errors, created_at
-                """,
-                file.filename or "wbs-upload.xlsx",
-                status,
-                len(rows),
-                0 if errors else len(rows),
-                len(errors),
-                errors,
+            record = await insert_import_job(
+                connection,
+                source_file=file.filename or "wbs-upload.xlsx",
+                template_key=normalized_key,
+                template_name=template_name,
+                project_type=project_type,
+                description=description,
+                status=status,
+                total_rows=len(rows),
+                accepted_rows=0 if errors else len(rows),
+                rejected_rows=len(errors),
+                errors=errors,
+                warnings=warnings,
+                preview_rows=serialized_rows,
+                applied=not errors,
             )
 
             if not errors:
@@ -1037,6 +1166,60 @@ async def import_template_excel(
     response["template"] = template
     response["warnings"] = warnings
     response["rows"] = serialized_rows[:50]
+    return response
+
+
+@app.post("/api/imports/{job_id}/apply")
+async def apply_import_preview(job_id: str, request: Request) -> dict[str, Any]:
+    try:
+        import_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid import job id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            job = await fetch_import_job_for_update(connection, import_job_id)
+            if not job:
+                raise HTTPException(status_code=404, detail="Import job not found")
+            if job["status"] != "Preview":
+                raise HTTPException(status_code=409, detail="Import job is not waiting for approval")
+            if job.get("errors"):
+                raise HTTPException(status_code=400, detail="Rejected import cannot be applied")
+            if not job.get("template_key"):
+                raise HTTPException(status_code=400, detail="Import job has no template key")
+
+            rows = restore_wbs_rows(job.get("preview_rows") or [])
+            errors, _ = validate_wbs_rows(rows)
+            if errors:
+                raise HTTPException(status_code=400, detail={"message": "Preview rows are no longer valid", "errors": errors})
+
+            template_key = normalize_template_key(job["template_key"])
+            await replace_template_items(
+                connection,
+                template_key=template_key,
+                template_name=job.get("template_name") or "업로드 WBS 템플릿",
+                project_type=job.get("project_type") or "Uploaded",
+                description=job.get("description") or "Excel 업로드로 반영된 계층형 WBS 템플릿",
+                rows=rows,
+            )
+            record = await connection.fetchrow(
+                f"""
+                UPDATE wbs_import_jobs
+                SET status = 'Applied',
+                    accepted_rows = total_rows,
+                    rejected_rows = 0,
+                    applied_at = now()
+                WHERE id = $1
+                RETURNING {IMPORT_JOB_RETURNING}
+                """,
+                import_job_id,
+            )
+            template = await fetch_template(connection, template_key)
+
+    response = normalize_record(record)
+    response["template"] = template
+    response["warnings"] = response.get("warnings", [])
+    response["rows"] = (response.get("preview_rows") or [])[:50]
     return response
 
 

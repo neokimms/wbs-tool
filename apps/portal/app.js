@@ -61,6 +61,7 @@ const state = {
     },
   },
   importPreview: [],
+  pendingImportJobId: null,
   userSelectedTemplate: false,
 };
 
@@ -75,7 +76,7 @@ async function request(path, options = {}) {
     let detail = `Request failed: ${response.status}`;
     try {
       const errorBody = await response.json();
-      detail = errorBody.detail || detail;
+      detail = typeof errorBody.detail === "string" ? errorBody.detail : JSON.stringify(errorBody.detail || detail);
     } catch (error) {
       detail = response.statusText || detail;
     }
@@ -125,7 +126,15 @@ function renderTemplateSelect() {
 
 function statusClass(status) {
   const lowered = String(status).toLowerCase();
-  if (lowered.includes("done") || lowered.includes("approved") || lowered.includes("accepted")) return "stable";
+  if (
+    lowered.includes("done") ||
+    lowered.includes("approved") ||
+    lowered.includes("accepted") ||
+    lowered.includes("applied") ||
+    lowered.includes("updated")
+  ) {
+    return "stable";
+  }
   if (lowered.includes("reject") || lowered.includes("critical")) return "critical";
   return "attention";
 }
@@ -169,12 +178,18 @@ function renderImportPreview() {
     `;
 }
 
+function renderApplyButton() {
+  const applyButton = document.querySelector("#applyImportButton");
+  applyButton.disabled = !state.pendingImportJobId;
+}
+
 function renderAll() {
   renderMetrics();
   renderTemplates();
   renderTemplateSelect();
   renderProjects();
   renderImportPreview();
+  renderApplyButton();
 }
 
 async function loadData() {
@@ -227,6 +242,7 @@ function selectedTemplate() {
 }
 
 function renderImportResult(result) {
+  state.pendingImportJobId = result.status === "Preview" && result.id ? result.id : null;
   document.querySelector("#importStatus").textContent = result.status;
   document.querySelector("#importStatus").className = `status-pill ${statusClass(result.status)}`;
   document.querySelector("#acceptedRows").textContent = result.accepted_rows;
@@ -239,6 +255,7 @@ function renderImportResult(result) {
 
   state.importPreview = result.rows || [];
   renderImportPreview();
+  renderApplyButton();
 }
 
 function downloadTemplateExcel() {
@@ -248,6 +265,8 @@ function downloadTemplateExcel() {
 
 async function renumberTemplateCodes() {
   const template = selectedTemplate();
+  state.pendingImportJobId = null;
+  renderApplyButton();
   document.querySelector("#importStatus").textContent = "Running";
   document.querySelector("#importStatus").className = "status-pill attention";
 
@@ -293,16 +312,17 @@ async function uploadTemplateExcel(event) {
   formData.append("project_type", template.project_type);
   formData.append("description", template.description);
 
+  state.pendingImportJobId = null;
+  renderApplyButton();
   document.querySelector("#importStatus").textContent = "Running";
   document.querySelector("#importStatus").className = "status-pill attention";
 
   try {
-    const result = await request("/api/templates/import", {
+    const result = await request("/api/templates/import/preview", {
       method: "POST",
       body: formData,
     });
     renderImportResult(result);
-    await loadData();
   } catch (error) {
     renderImportResult({
       status: "Rejected",
@@ -317,11 +337,39 @@ async function uploadTemplateExcel(event) {
   }
 }
 
+async function applyImportPreview() {
+  if (!state.pendingImportJobId) return;
+
+  const jobId = state.pendingImportJobId;
+  state.pendingImportJobId = null;
+  renderApplyButton();
+  document.querySelector("#importStatus").textContent = "Running";
+  document.querySelector("#importStatus").className = "status-pill attention";
+
+  try {
+    const result = await request(`/api/imports/${encodeURIComponent(jobId)}/apply`, {
+      method: "POST",
+    });
+    renderImportResult(result);
+    await loadData();
+  } catch (error) {
+    renderImportResult({
+      status: "Rejected",
+      accepted_rows: 0,
+      rejected_rows: 1,
+      errors: [{ message: error.message }],
+      warnings: [],
+      rows: [],
+    });
+  }
+}
+
 document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#createProjectButton").addEventListener("click", createProject);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
+document.querySelector("#applyImportButton").addEventListener("click", applyImportPreview);
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;
 });

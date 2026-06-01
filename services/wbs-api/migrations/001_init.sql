@@ -27,13 +27,29 @@ CREATE TABLE IF NOT EXISTS wbs_projects (
 CREATE TABLE IF NOT EXISTS wbs_import_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   source_file text NOT NULL,
+  template_key citext,
+  template_name text,
+  project_type text,
+  description text,
   status text NOT NULL DEFAULT 'Queued',
   total_rows integer NOT NULL DEFAULT 0,
   accepted_rows integer NOT NULL DEFAULT 0,
   rejected_rows integer NOT NULL DEFAULT 0,
   errors jsonb NOT NULL DEFAULT '[]'::jsonb,
+  warnings jsonb NOT NULL DEFAULT '[]'::jsonb,
+  preview_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  applied_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS wbs_import_jobs
+  ADD COLUMN IF NOT EXISTS template_key citext,
+  ADD COLUMN IF NOT EXISTS template_name text,
+  ADD COLUMN IF NOT EXISTS project_type text,
+  ADD COLUMN IF NOT EXISTS description text,
+  ADD COLUMN IF NOT EXISTS warnings jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS preview_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS applied_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS wbs_template_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -56,6 +72,7 @@ CREATE TABLE IF NOT EXISTS wbs_template_items (
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_status ON wbs_projects(status);
 CREATE INDEX IF NOT EXISTS idx_wbs_projects_template ON wbs_projects(template_key);
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_status ON wbs_import_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_template ON wbs_import_jobs(template_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_template ON wbs_template_items(template_key, sort_order);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_parent ON wbs_template_items(template_key, parent_code);
 
