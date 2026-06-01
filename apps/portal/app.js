@@ -51,13 +51,13 @@ const fallbackProjects = [
 
 const fallbackApprovals = [
   {
-    title: "승인 대기 없음",
-    project_name: "프로젝트 승인 요청이 생성되면 표시됩니다",
-    request_type: "PMO Queue",
+    title: "자동 승인 이력 없음",
+    project_name: "내부 WBS 승인은 요청 즉시 승인됩니다",
+    request_type: "Internal Approval",
     status: "Approved",
     requester: "System",
     reviewer: "PMO Lead",
-    due_date: "Ready",
+    decision_comment: "Auto approval is ready",
   },
 ];
 
@@ -262,6 +262,11 @@ function renderProjects() {
         .map((project) => {
           const canRequestApproval = project.id && ["Draft", "Rejected"].includes(project.status);
           const isSelected = project.id && project.id === state.selectedProjectId;
+          const approvalActionLabel = project.status === "Approved"
+            ? "승인 완료"
+            : canRequestApproval
+              ? "자동 승인"
+              : "승인 대기";
           return `
         <tr class="${isSelected ? "selected-row" : ""}">
           <td>${escapeHtml(project.name)}</td>
@@ -287,7 +292,7 @@ function renderProjects() {
                 data-project-id="${project.id || ""}"
                 ${canRequestApproval ? "" : "disabled"}
               >
-                승인 요청
+                ${approvalActionLabel}
               </button>
             </div>
           </td>
@@ -343,7 +348,7 @@ function renderProjectPlan() {
 function renderApprovals() {
   const approvalStatus = document.querySelector("#approvalStatus");
   const pendingCount = state.approvals.filter((approval) => approval.status === "Pending").length;
-  approvalStatus.textContent = `${pendingCount} Pending`;
+  approvalStatus.textContent = pendingCount ? `${pendingCount} Pending` : "Auto";
   approvalStatus.className = `status-pill ${pendingCount ? "attention" : "stable"}`;
 
   const rows = state.approvals.length ? state.approvals : fallbackApprovals;
@@ -360,7 +365,7 @@ function renderApprovals() {
           <div class="approval-meta">
             <span class="status-pill ${statusClass(approval.status)}">${approval.status}</span>
             <small>${approval.requester || "PMO"} → ${approval.reviewer || "PMO Lead"}</small>
-            <small>${approval.due_date || "No due date"}</small>
+            <small>${approval.decision_comment || approval.due_date || "자동 처리"}</small>
           </div>
           <div class="approval-actions">
             <button class="secondary-button" type="button" data-approval-action="reject" data-approval-id="${approval.id || ""}" ${isPending ? "" : "disabled"}>반려</button>
@@ -721,8 +726,10 @@ async function requestProjectApproval(projectId) {
         requester: "PMO",
         reviewer: "PMO Lead",
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        auto_approve_internal: true,
         metadata: {
           source: "wbs-portal",
+          approval_scope: "internal",
         },
       }),
     });

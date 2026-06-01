@@ -194,6 +194,7 @@ class ApprovalCreate(BaseModel):
     requester: str = Field("PMO", min_length=1, max_length=80)
     reviewer: str | None = Field("PMO Lead", max_length=80)
     due_date: date | None = None
+    auto_approve_internal: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -2043,30 +2044,42 @@ async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str
                 raise HTTPException(status_code=409, detail="Project already has a pending approval")
 
             title = payload.title or f"{project['name']} WBS baseline approval"
+            approval_status = "Approved" if payload.auto_approve_internal else "Pending"
+            project_status = "Approved" if payload.auto_approve_internal else "Review"
+            decision_comment = "Auto-approved internal PMO baseline" if payload.auto_approve_internal else None
+            approval_metadata = {
+                **payload.metadata,
+                "approval_mode": "auto_internal" if payload.auto_approve_internal else "manual",
+            }
             record = await connection.fetchrow(
                 f"""
                 INSERT INTO wbs_approval_requests
-                  (project_id, title, request_type, requester, reviewer, due_date, metadata)
+                  (project_id, title, request_type, status, requester, reviewer,
+                   due_date, decision_comment, metadata, decided_at)
                 VALUES
-                  ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                  ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
+                   CASE WHEN $4 = 'Approved' THEN now() ELSE NULL END)
                 RETURNING id
                 """,
                 payload.project_id,
                 title,
                 payload.request_type,
+                approval_status,
                 payload.requester,
                 payload.reviewer,
                 payload.due_date,
-                payload.metadata,
+                decision_comment,
+                approval_metadata,
             )
             await connection.execute(
                 """
                 UPDATE wbs_projects
-                SET status = 'Review',
+                SET status = $2,
                     updated_at = now()
                 WHERE id = $1
                 """,
                 payload.project_id,
+                project_status,
             )
             approval = await fetch_approval(connection, record["id"])
 
