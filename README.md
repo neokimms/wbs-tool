@@ -146,6 +146,7 @@ curl http://localhost:8000/api/operations/health
 ```
 
 PostgreSQL 백업은 `backups/postgres` 아래에 custom dump 형식으로 생성됩니다. 기본 대상은 `.env`의 `POSTGRES_DB`이며, 인자로 다른 DB를 지정할 수 있습니다.
+Docker Compose에서는 이 디렉터리가 API 컨테이너의 `/app/backups/postgres`에 읽기 전용으로 마운트되어 포털의 `제품화 체크`에서 최신 백업 상태를 확인할 수 있습니다.
 
 ```bash
 bash scripts/backup-postgres.sh

@@ -22,6 +22,10 @@ api:
   openprojectSyncParentLinks: true
   portalOrigin: "https://wbs.example.com"
   backupDir: "/app/backups/postgres"
+  backupVolume:
+    enabled: false
+    existingClaim: ""
+    readOnly: true
   resources:
     requests:
       cpu: 100m

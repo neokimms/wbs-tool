@@ -20,6 +20,7 @@ curl https://wbs-api.example.com/api/projects/{project_id}/sync-preflight
 The default sync mode remains dry-run/disabled until `api.openprojectSyncEnabled` and `api.openprojectApiToken` are configured.
 If the API reaches OpenProject through an internal service name while OpenProject validates another public host name, set `api.openprojectHostHeader` to that public host.
 The operations health endpoint reads PostgreSQL backup metadata from `api.backupDir`.
+Set `api.backupVolume.enabled=true` with `api.backupVolume.existingClaim` when the API pod should read backup files from a PVC.
 
 ## Render
 

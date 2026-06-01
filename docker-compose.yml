@@ -65,6 +65,8 @@ services:
       OPENPROJECT_SYNC_PARENT_LINKS: ${OPENPROJECT_SYNC_PARENT_LINKS:-true}
       PORTAL_ORIGIN: http://localhost:${WBS_PORTAL_PORT:-3010}
       BACKUP_DIR: /app/backups/postgres
+    volumes:
+      - ./backups/postgres:/app/backups/postgres:ro
     ports:
       - "${WBS_API_PORT:-8000}:8000"
 

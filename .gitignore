@@ -9,4 +9,7 @@ dist/
 build/
 coverage/
 *.log
-backups/
+backups/*
+!backups/postgres/
+backups/postgres/*
+!backups/postgres/.gitkeep
