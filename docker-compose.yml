@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wbs_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-wbs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wbs_dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wbs} -d ${POSTGRES_DB:-wbs_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  memcached:
+    image: memcached:1.6-alpine
+    command: ["memcached", "-m", "128"]
+
+  openproject:
+    image: openproject/openproject:17
+    depends_on:
+      postgres:
+        condition: service_healthy
+      memcached:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/openproject
+      OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:-change-me-development-secret-key-base-please-replace-before-production-2026-06-01-wbs-platform-openproject}
+      OPENPROJECT_HOST__NAME: ${OPENPROJECT_HOST_NAME:-localhost:8080}
+      OPENPROJECT_HTTPS: "false"
+      OPENPROJECT_DEFAULT__LANGUAGE: ko
+      OPENPROJECT_SEED__ADMIN__USER__PASSWORD: ${OPENPROJECT_ADMIN_PASSWORD:-adminadmin}
+      RAILS_CACHE_STORE: memcache
+      OPENPROJECT_CACHE__MEMCACHE__SERVER: memcached:11211
+    volumes:
+      - openproject_assets:/var/openproject/assets
+    ports:
+      - "8080:80"
+
+  wbs-api:
+    build:
+      context: ./services/wbs-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/${POSTGRES_DB:-wbs_platform}
+      OPENPROJECT_BASE_URL: http://openproject
+      PORTAL_ORIGIN: http://localhost:${WBS_PORTAL_PORT:-3000}
+    ports:
+      - "${WBS_API_PORT:-8000}:8000"
+
+  wbs-portal:
+    build:
+      context: ./apps/portal
+    depends_on:
+      - wbs-api
+    ports:
+      - "${WBS_PORTAL_PORT:-3000}:80"
+
+volumes:
+  postgres_data:
+  openproject_assets:
