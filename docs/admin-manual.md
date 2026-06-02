@@ -30,6 +30,21 @@ helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
 
 운영 배포 전 기본 개발 계정의 비밀번호는 반드시 변경합니다. 신규 계정은 기본적으로 최초 로그인 후 비밀번호 변경이 필요합니다.
 
+Docker Compose 개발 환경의 기본 로그인은 다음 두 방식이 모두 가능합니다.
+
+```text
+admin@wbs.local  / adminadmin
+admin            / admin
+
+pmo@wbs.local    / pmopmo
+pmo              / pmo
+
+viewer@wbs.local / viewonly
+viewer           / viewer
+```
+
+운영/Helm 배포에서는 기본값으로 별칭 로그인이 꺼져 있습니다. 데모 목적으로만 켤 때는 `api.enableLoginAliases=true`를 사용하고, 운영 전에는 다시 비활성화합니다.
+
 ## 3. 승인과 상태
 
 프로젝트 상태 전이는 API에서 강제됩니다.

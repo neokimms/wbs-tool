@@ -25,6 +25,8 @@ api:
   allowFileOrigin: false
   loginFailureLimit: 5
   loginLockMinutes: 15
+  enableLoginAliases: false
+  loginAliasesJson: ""
   auditRetentionDays: 365
   runMigrationsOnStartup: true
   migrationJob:

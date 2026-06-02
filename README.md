@@ -64,6 +64,16 @@ pmo@wbs.local    / pmopmo      / pmo
 viewer@wbs.local / viewonly    / viewer
 ```
 
+Docker Compose 개발 환경에서는 짧은 별칭 로그인도 켜져 있습니다.
+
+```text
+admin  / admin  / admin
+pmo    / pmo    / pmo
+viewer / viewer / viewer
+```
+
+운영에서는 `WBS_ENABLE_LOGIN_ALIASES=false`로 별칭 로그인을 끄는 것을 권장합니다. 별칭 구성이 필요하면 `WBS_LOGIN_ALIASES_JSON`에 `{"alias":{"email":"user@example.com","password":"alias-password"}}` 형식으로 지정합니다.
+
 API는 `/api/auth/login`을 제외한 `/api/*` 요청에 Bearer 세션 토큰을 요구합니다.
 
 ```bash

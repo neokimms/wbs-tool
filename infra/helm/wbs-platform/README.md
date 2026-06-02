@@ -22,6 +22,7 @@ If the API reaches OpenProject through an internal service name while OpenProjec
 For local installation validation without external OpenProject calls, set `api.pmEngineAdapter=mock`.
 The operations health endpoint reads PostgreSQL backup metadata from `api.backupDir`.
 Set `api.backupVolume.enabled=true` with `api.backupVolume.existingClaim` when the API pod should read backup files from a PVC.
+Short login aliases such as `admin/admin` are disabled by default in this chart; enable `api.enableLoginAliases=true` only for demos or local validation.
 
 ## Render
 

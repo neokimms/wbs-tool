@@ -15,8 +15,8 @@ json_token() {
   python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
 }
 
-admin_token="$(login admin@wbs.local adminadmin | json_token)"
-viewer_token="$(login viewer@wbs.local viewonly | json_token)"
+admin_token="$(login admin admin | json_token)"
+viewer_token="$(login viewer viewer | json_token)"
 
 curl -fsS "${API_BASE}/api/dashboard" -H "Authorization: Bearer ${viewer_token}" >/dev/null
 

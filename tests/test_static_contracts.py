@@ -17,6 +17,8 @@ class WbsPlatformContracts(unittest.TestCase):
             '@app.post("/api/users/{user_id}/sessions/revoke")',
             "LOGIN_FAILURE_LIMIT",
             "must_change_password",
+            "resolve_login_alias",
+            "WBS_ENABLE_LOGIN_ALIASES",
         ):
             self.assertIn(snippet, API)
 

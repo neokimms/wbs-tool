@@ -42,6 +42,7 @@ RUN_MIGRATIONS_ON_STARTUP = os.getenv("WBS_RUN_MIGRATIONS_ON_STARTUP", "true").l
 SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
 LOGIN_FAILURE_LIMIT = int(os.getenv("WBS_LOGIN_FAILURE_LIMIT", "5"))
 LOGIN_LOCK_MINUTES = int(os.getenv("WBS_LOGIN_LOCK_MINUTES", "15"))
+ENABLE_LOGIN_ALIASES = os.getenv("WBS_ENABLE_LOGIN_ALIASES", "false").lower() in {"1", "true", "yes", "on"}
 AUDIT_RETENTION_DAYS = int(os.getenv("WBS_AUDIT_RETENTION_DAYS", "365"))
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -60,6 +61,11 @@ PROJECT_WORKFLOW_TRANSITIONS = {
 APPROVAL_ALLOWED_PROJECT_STATUSES = {"Draft", "Rejected", "Review"}
 PROJECT_WBS_IMPORT_ALLOWED_STATUSES = {"Draft", "Rejected", "Review"}
 ACTUAL_SYNC_REQUIRED_STATUS = "Approved"
+DEFAULT_LOGIN_ALIASES = {
+    "admin": {"email": "admin@wbs.local", "password": "admin"},
+    "pmo": {"email": "pmo@wbs.local", "password": "pmo"},
+    "viewer": {"email": "viewer@wbs.local", "password": "viewer"},
+}
 USER_SELECT = """
 id, email, display_name, role, status, failed_login_count, locked_until,
 must_change_password, last_login_at, password_changed_at, created_at
@@ -417,6 +423,49 @@ def ensure_project_transition(current_status: str, next_status: str) -> None:
             status_code=409,
             detail=f"Project status cannot move from {current} to {target}",
         )
+
+
+def load_login_aliases_config() -> dict[str, dict[str, str]]:
+    raw_config = os.getenv("WBS_LOGIN_ALIASES_JSON", "").strip()
+    configured_aliases: Any = DEFAULT_LOGIN_ALIASES
+    if raw_config:
+        try:
+            configured_aliases = json.loads(raw_config)
+        except json.JSONDecodeError:
+            configured_aliases = DEFAULT_LOGIN_ALIASES
+
+    aliases: dict[str, dict[str, str]] = {}
+    if not isinstance(configured_aliases, dict):
+        return aliases
+
+    for alias, value in configured_aliases.items():
+        alias_key = str(alias).strip().lower()
+        if not alias_key:
+            continue
+        if isinstance(value, str):
+            email = value.strip().lower()
+            alias_password = ""
+        elif isinstance(value, dict):
+            email = str(value.get("email", "")).strip().lower()
+            alias_password = str(value.get("password", ""))
+        else:
+            continue
+        if email:
+            aliases[alias_key] = {"email": email, "password": alias_password}
+    return aliases
+
+
+LOGIN_ALIASES = load_login_aliases_config()
+
+
+def resolve_login_alias(identifier: str) -> tuple[str, dict[str, str] | None]:
+    normalized_identifier = identifier.strip().lower()
+    if not ENABLE_LOGIN_ALIASES:
+        return normalized_identifier, None
+    alias = LOGIN_ALIASES.get(normalized_identifier)
+    if not alias:
+        return normalized_identifier, None
+    return alias["email"], alias
 
 
 def safe_uuid(value: Any) -> UUID | None:
@@ -2257,7 +2306,9 @@ async def health(request: Request) -> dict[str, str]:
 
 @app.post("/api/auth/login")
 async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
-    normalized_email = payload.email.strip().lower()
+    login_identifier = payload.email.strip().lower()
+    normalized_email, login_alias = resolve_login_alias(login_identifier)
+    alias_used = login_alias is not None
     expires_at = datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)
     token = secrets.token_urlsafe(32)
 
@@ -2272,25 +2323,35 @@ async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
                 """,
                 normalized_email,
             )
-            password_ok = bool(
+            account_locked = bool(
                 user_record
-                and user_record["status"] == "Active"
-                and not (user_record["locked_until"] and user_record["locked_until"] > datetime.now(timezone.utc))
-                and await connection.fetchval(
+                and user_record["locked_until"]
+                and user_record["locked_until"] > datetime.now(timezone.utc)
+            )
+            password_ok = False
+            if user_record and user_record["status"] == "Active" and not account_locked:
+                stored_password_ok = await connection.fetchval(
                     "SELECT $1 = crypt($2, $1)",
                     user_record["password_hash"],
                     payload.password,
                 )
-            )
+                alias_password = login_alias.get("password") if login_alias else ""
+                alias_password_ok = bool(alias_password and payload.password == alias_password)
+                password_ok = bool(stored_password_ok or alias_password_ok)
 
-            if user_record and user_record["locked_until"] and user_record["locked_until"] > datetime.now(timezone.utc):
+            if account_locked:
                 await insert_audit_event(
                     connection,
                     event_type="auth.login_locked",
                     entity_type="user",
                     entity_id=user_record["id"],
                     summary="Login blocked because account is locked",
-                    metadata={"email": normalized_email, "locked_until": user_record["locked_until"].isoformat()},
+                    metadata={
+                        "email": normalized_email,
+                        "login_identifier": login_identifier,
+                        "alias_used": alias_used,
+                        "locked_until": user_record["locked_until"].isoformat(),
+                    },
                     actor_email=normalized_email,
                     actor_role=user_record["role"],
                 )
@@ -2324,6 +2385,8 @@ async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
                     summary="Login failed",
                     metadata={
                         "email": normalized_email,
+                        "login_identifier": login_identifier,
+                        "alias_used": alias_used,
                         "failed_login_count": failed_count,
                         "locked_until": locked_until.isoformat() if locked_until else None,
                     },
@@ -2362,6 +2425,10 @@ async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
                 entity_type="user",
                 entity_id=user_record["id"],
                 summary="User logged in",
+                metadata={
+                    "login_identifier": login_identifier,
+                    "alias_used": alias_used,
+                },
                 actor=user_response(updated_user),
             )
 

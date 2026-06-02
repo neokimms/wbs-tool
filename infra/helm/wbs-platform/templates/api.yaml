@@ -99,6 +99,10 @@ spec:
               value: {{ .Values.api.loginFailureLimit | quote }}
             - name: WBS_LOGIN_LOCK_MINUTES
               value: {{ .Values.api.loginLockMinutes | quote }}
+            - name: WBS_ENABLE_LOGIN_ALIASES
+              value: {{ .Values.api.enableLoginAliases | quote }}
+            - name: WBS_LOGIN_ALIASES_JSON
+              value: {{ .Values.api.loginAliasesJson | quote }}
             - name: WBS_AUDIT_RETENTION_DAYS
               value: {{ .Values.api.auditRetentionDays | quote }}
             - name: WBS_RUN_MIGRATIONS_ON_STARTUP
