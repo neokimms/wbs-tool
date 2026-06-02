@@ -33,16 +33,42 @@ OPENPROJECT_AUTH_MODE = os.getenv("OPENPROJECT_AUTH_MODE", "bearer").lower()
 OPENPROJECT_DEFAULT_TYPE_ID = os.getenv("OPENPROJECT_DEFAULT_TYPE_ID", "")
 OPENPROJECT_TYPE_MAP_JSON = os.getenv("OPENPROJECT_TYPE_MAP_JSON", "{}")
 OPENPROJECT_SYNC_PARENT_LINKS = os.getenv("OPENPROJECT_SYNC_PARENT_LINKS", "true").lower() in {"1", "true", "yes", "on"}
+PM_ENGINE_ADAPTER = os.getenv("PM_ENGINE_ADAPTER", "openproject").strip().lower()
 PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
+ALLOW_FILE_ORIGIN = os.getenv("WBS_ALLOW_FILE_ORIGIN", "true").lower() in {"1", "true", "yes", "on"}
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/app/backups/postgres"))
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
+RUN_MIGRATIONS_ON_STARTUP = os.getenv("WBS_RUN_MIGRATIONS_ON_STARTUP", "true").lower() in {"1", "true", "yes", "on"}
 SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
+LOGIN_FAILURE_LIMIT = int(os.getenv("WBS_LOGIN_FAILURE_LIMIT", "5"))
+LOGIN_LOCK_MINUTES = int(os.getenv("WBS_LOGIN_LOCK_MINUTES", "15"))
+AUDIT_RETENTION_DAYS = int(os.getenv("WBS_AUDIT_RETENTION_DAYS", "365"))
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 ALLOWED_USER_ROLES = {"admin", "pmo", "viewer"}
 ALLOWED_USER_STATUSES = {"Active", "Suspended"}
-USER_SELECT = "id, email, display_name, role, status, last_login_at, created_at"
-USER_SELECT_U = "u.id, u.email, u.display_name, u.role, u.status, u.last_login_at, u.created_at"
+MUTATING_ROLES = {"admin", "pmo"}
+ADMIN_ROLES = {"admin"}
+PROJECT_WORKFLOW_TRANSITIONS = {
+    "Draft": {"Review", "Approved", "Closed"},
+    "Review": {"Approved", "Rejected", "Closed"},
+    "Rejected": {"Draft", "Review", "Closed"},
+    "Approved": {"Synced", "Closed"},
+    "Synced": {"Closed"},
+    "Closed": set(),
+}
+APPROVAL_ALLOWED_PROJECT_STATUSES = {"Draft", "Rejected", "Review"}
+PROJECT_WBS_IMPORT_ALLOWED_STATUSES = {"Draft", "Rejected", "Review"}
+ACTUAL_SYNC_REQUIRED_STATUS = "Approved"
+USER_SELECT = """
+id, email, display_name, role, status, failed_login_count, locked_until,
+must_change_password, last_login_at, password_changed_at, created_at
+"""
+USER_SELECT_U = """
+u.id, u.email, u.display_name, u.role, u.status, u.failed_login_count,
+u.locked_until, u.must_change_password, u.last_login_at, u.password_changed_at,
+u.created_at
+"""
 SETTING_SELECT = "key, label, category, description, value, is_sensitive, updated_by, created_at, updated_at"
 AUDIT_SELECT = """
 id, actor_user_id, actor_email, actor_role, event_type, entity_type, entity_id,
@@ -51,7 +77,7 @@ summary, metadata, created_at
 IMPORT_JOB_RETURNING = """
 id, source_file, template_key, template_name, project_type, description, status,
 total_rows, accepted_rows, rejected_rows, errors, warnings, preview_rows,
-applied_at, created_at
+diff_rows, template_version, applied_at, created_at
 """
 APPROVAL_SELECT = """
 a.id, a.project_id, p.name AS project_name, p.template_key, a.title,
@@ -153,8 +179,9 @@ async def lifespan(app: FastAPI):
         max_size=8,
         init=init_connection,
     )
-    async with pool.acquire() as connection:
-        await connection.execute(MIGRATION_PATH.read_text(encoding="utf-8"))
+    if RUN_MIGRATIONS_ON_STARTUP:
+        async with pool.acquire() as connection:
+            await connection.execute(MIGRATION_PATH.read_text(encoding="utf-8"))
     app.state.pool = pool
     yield
     await pool.close()
@@ -166,9 +193,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+allowed_origins = [PORTAL_ORIGIN, "http://localhost:3010", "http://127.0.0.1:3010"]
+if ALLOW_FILE_ORIGIN:
+    allowed_origins.append("null")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[PORTAL_ORIGIN, "http://localhost:3010", "http://127.0.0.1:3010", "null"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -227,9 +258,19 @@ class ProjectSyncRequest(BaseModel):
     actor: str = Field("PMO", min_length=1, max_length=80)
 
 
+class ProjectStatusUpdate(BaseModel):
+    status: str = Field(..., min_length=4, max_length=20)
+    comment: str | None = Field(None, max_length=500)
+
+
 class LoginRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=160)
     password: str = Field(..., min_length=1, max_length=200)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
 
 
 class UserCreate(BaseModel):
@@ -238,6 +279,7 @@ class UserCreate(BaseModel):
     role: str = Field("viewer", min_length=3, max_length=20)
     password: str = Field(..., min_length=8, max_length=200)
     status: str = Field("Active", min_length=5, max_length=20)
+    must_change_password: bool = True
 
 
 class UserUpdate(BaseModel):
@@ -245,6 +287,7 @@ class UserUpdate(BaseModel):
     role: str | None = Field(None, min_length=3, max_length=20)
     password: str | None = Field(None, min_length=8, max_length=200)
     status: str | None = Field(None, min_length=5, max_length=20)
+    must_change_password: bool | None = None
 
 
 class SettingUpdate(BaseModel):
@@ -298,7 +341,9 @@ def user_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
         "display_name": user["display_name"],
         "role": user["role"],
         "status": user["status"],
+        "must_change_password": bool(user.get("must_change_password", False)),
         "last_login_at": user.get("last_login_at"),
+        "password_changed_at": user.get("password_changed_at"),
         "created_at": user.get("created_at"),
     }
 
@@ -309,6 +354,8 @@ def managed_user_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, 
         **user_response(user),
         "updated_at": user.get("updated_at"),
         "active_sessions": int(user.get("active_sessions") or 0),
+        "failed_login_count": int(user.get("failed_login_count") or 0),
+        "locked_until": user.get("locked_until"),
     }
 
 
@@ -334,6 +381,42 @@ def require_roles(request: Request, allowed_roles: set[str]) -> dict[str, Any]:
     if user["role"] not in allowed_roles:
         raise HTTPException(status_code=403, detail="Insufficient role")
     return user
+
+
+def require_mutating_role(request: Request) -> dict[str, Any]:
+    return require_roles(request, MUTATING_ROLES)
+
+
+def require_admin_role(request: Request) -> dict[str, Any]:
+    return require_roles(request, ADMIN_ROLES)
+
+
+def validate_project_status(status: str) -> str:
+    normalized_status = status.strip().title()
+    if normalized_status not in PROJECT_WORKFLOW_TRANSITIONS:
+        raise HTTPException(status_code=400, detail="Invalid project status")
+    return normalized_status
+
+
+def ensure_project_status_allowed(project: dict[str, Any] | asyncpg.Record, allowed_statuses: set[str], action: str) -> None:
+    status = project["status"]
+    if status not in allowed_statuses:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{action} is not allowed while project status is {status}",
+        )
+
+
+def ensure_project_transition(current_status: str, next_status: str) -> None:
+    current = validate_project_status(current_status)
+    target = validate_project_status(next_status)
+    if target == current:
+        return
+    if target not in PROJECT_WORKFLOW_TRANSITIONS[current]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Project status cannot move from {current} to {target}",
+        )
 
 
 def safe_uuid(value: Any) -> UUID | None:
@@ -409,25 +492,32 @@ async def insert_audit_event(
     )
 
 
+def apply_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
 @app.middleware("http")
 async def authenticate_api_requests(request: Request, call_next):
     path = request.url.path
     public_paths = {"/api/auth/login"}
     if request.method == "OPTIONS" or not path.startswith("/api/") or path in public_paths:
-        return await call_next(request)
+        return apply_security_headers(await call_next(request))
 
     token = auth_token_from_request(request)
     if not token:
-        return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+        return apply_security_headers(JSONResponse(status_code=401, content={"detail": "Authentication required"}))
 
     async with get_pool(request).acquire() as connection:
         user = await fetch_user_by_token(connection, token)
 
     if not user:
-        return JSONResponse(status_code=401, content={"detail": "Invalid or expired session"})
+        return apply_security_headers(JSONResponse(status_code=401, content={"detail": "Invalid or expired session"}))
 
     request.state.user = user
-    return await call_next(request)
+    return apply_security_headers(await call_next(request))
 
 
 def parse_json_object(value: str, *, default: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -855,6 +945,58 @@ def serialize_wbs_row(row: dict[str, Any]) -> dict[str, Any]:
     return serialized
 
 
+def comparable_wbs_row(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = normalize_metadata(row.get("metadata"))
+    return {
+        "parent_code": row.get("parent_code"),
+        "name": row.get("name"),
+        "item_type": row.get("item_type") or "작업",
+        "owner": row.get("owner"),
+        "weight": float(row["weight"]) if row.get("weight") is not None else None,
+        "start_date": row.get("start_date").isoformat() if isinstance(row.get("start_date"), date) else row.get("start_date"),
+        "finish_date": row.get("finish_date").isoformat() if isinstance(row.get("finish_date"), date) else row.get("finish_date"),
+        "deliverable_type": row.get("deliverable_type", metadata.get("deliverable_type")),
+        "inspection_required": row.get("inspection_required", metadata.get("inspection_required", False)),
+        "progress_formula": row.get("progress_formula", metadata.get("progress_formula")),
+        "notes": row.get("notes", metadata.get("notes")),
+    }
+
+
+def build_wbs_diff_rows(existing_rows: list[dict[str, Any]], next_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    existing_by_code = {row["code"]: row for row in existing_rows if row.get("code")}
+    next_by_code = {row["code"]: row for row in next_rows if row.get("code")}
+    diff_rows: list[dict[str, Any]] = []
+
+    for code, row in next_by_code.items():
+        existing = existing_by_code.get(code)
+        if not existing:
+            diff_rows.append({"change": "added", "code": code, "name": row.get("name")})
+            continue
+
+        before = comparable_wbs_row(existing)
+        after = comparable_wbs_row(row)
+        changed_fields = [
+            {"field": field, "before": before.get(field), "after": after.get(field)}
+            for field in sorted(after)
+            if before.get(field) != after.get(field)
+        ]
+        if changed_fields:
+            diff_rows.append(
+                {
+                    "change": "changed",
+                    "code": code,
+                    "name": row.get("name"),
+                    "fields": changed_fields,
+                }
+            )
+
+    for code, row in existing_by_code.items():
+        if code not in next_by_code:
+            diff_rows.append({"change": "removed", "code": code, "name": row.get("name")})
+
+    return sorted(diff_rows, key=lambda item: (item["code"], item["change"]))
+
+
 def restore_wbs_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     restored_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -964,6 +1106,60 @@ def build_template_workbook(template: dict[str, Any], rows: list[dict[str, Any]]
     return output
 
 
+def build_import_errors_workbook(job: dict[str, Any]) -> BytesIO:
+    workbook = Workbook()
+    issues = workbook.active
+    issues.title = "Issues"
+    issues.append(["Type", "Row", "Field", "Code", "Message"])
+    for issue_type, entries in (("Error", job.get("errors") or []), ("Warning", job.get("warnings") or [])):
+        for issue in entries:
+            issues.append(
+                [
+                    issue_type,
+                    issue.get("row"),
+                    issue.get("field") or issue.get("parent_code"),
+                    issue.get("code") or issue.get("parent_code"),
+                    issue.get("message"),
+                ]
+            )
+
+    diff = workbook.create_sheet("Diff")
+    diff.append(["Change", "Code", "Name", "Field", "Before", "After"])
+    for item in job.get("diff_rows") or []:
+        fields = item.get("fields") or [{}]
+        for field in fields:
+            diff.append(
+                [
+                    item.get("change"),
+                    item.get("code"),
+                    item.get("name"),
+                    field.get("field"),
+                    field.get("before"),
+                    field.get("after"),
+                ]
+            )
+
+    rows = workbook.create_sheet("Rows")
+    rows.append([label for _, label in EXCEL_COLUMNS])
+    for row in job.get("preview_rows") or []:
+        rows.append([row.get(key) for key, _ in EXCEL_COLUMNS])
+
+    for worksheet in workbook.worksheets:
+        for cell in worksheet[1]:
+            cell.fill = PatternFill("solid", fgColor="1D1D1F")
+            cell.font = Font(color="FFFFFF", bold=True)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+        for column in range(1, worksheet.max_column + 1):
+            worksheet.column_dimensions[worksheet.cell(1, column).column_letter].width = 22
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
 async def fetch_template(connection: asyncpg.Connection, template_key: str) -> dict[str, Any] | None:
     record = await connection.fetchrow(
         """
@@ -1001,6 +1197,61 @@ async def fetch_template_items(connection: asyncpg.Connection, template_key: str
         template_key,
     )
     return [normalize_record(record) for record in records]
+
+
+async def fetch_project_wbs_items(connection: asyncpg.Connection, project_id: UUID) -> list[dict[str, Any]]:
+    records = await connection.fetch(
+        """
+        SELECT code, parent_code, name, item_type, owner, weight,
+               start_date, finish_date, sort_order, metadata
+        FROM wbs_project_wbs_items
+        WHERE project_id = $1
+        ORDER BY sort_order, code
+        """,
+        project_id,
+    )
+    return [normalize_record(record) for record in records]
+
+
+async def replace_project_wbs_items(
+    connection: asyncpg.Connection,
+    *,
+    project_id: UUID,
+    rows: list[dict[str, Any]],
+    source_import_job_id: UUID | None = None,
+) -> None:
+    await connection.execute("DELETE FROM wbs_project_wbs_items WHERE project_id = $1", project_id)
+    for index, row in enumerate(rows, start=1):
+        existing_metadata = normalize_metadata(row.get("metadata"))
+        metadata = {
+            "deliverable_type": row.get("deliverable_type", existing_metadata.get("deliverable_type")),
+            "inspection_required": row.get("inspection_required", existing_metadata.get("inspection_required", False)),
+            "progress_formula": row.get("progress_formula")
+            or existing_metadata.get("progress_formula")
+            or ("하위 단계 가중치 합산" if not row.get("parent_code") else "작업 완료율 x 가중치"),
+            "notes": row.get("notes", existing_metadata.get("notes")),
+        }
+        await connection.execute(
+            """
+            INSERT INTO wbs_project_wbs_items
+              (project_id, code, parent_code, name, item_type, owner, weight,
+               start_date, finish_date, sort_order, metadata, source_import_job_id)
+            VALUES
+              ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
+            """,
+            project_id,
+            row["code"],
+            row.get("parent_code"),
+            row["name"],
+            row.get("item_type") or "작업",
+            row.get("owner"),
+            row.get("weight"),
+            row.get("start_date"),
+            row.get("finish_date"),
+            index,
+            metadata,
+            source_import_job_id,
+        )
 
 
 async def replace_template_items(
@@ -1062,20 +1313,43 @@ async def replace_template_items(
             metadata,
         )
 
+    version = await connection.fetchval(
+        "SELECT COALESCE(max(version), 0) + 1 FROM wbs_template_versions WHERE template_key = $1",
+        template_key,
+    )
+    await connection.execute(
+        """
+        INSERT INTO wbs_template_versions
+          (template_key, version, template_name, project_type, description,
+           item_count, snapshot_rows, metadata)
+        VALUES
+          ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+        """,
+        template_key,
+        version,
+        template_name,
+        project_type,
+        description,
+        len(rows),
+        [serialize_wbs_row(row) for row in rows],
+        {"source": "replace_template_items"},
+    )
+
 
 async def prepare_template_import(
     connection: asyncpg.Connection,
     *,
     template_key: str,
     parsed_rows: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     existing_rows = await fetch_template_items(connection, template_key)
     root_code = root_code_from_rows(existing_rows) or template_code_prefix(template_key)
     rows = assign_missing_wbs_codes(parsed_rows, root_code)
     errors, warnings = validate_wbs_rows(rows)
     warnings = [*warnings, *auto_code_warnings(rows)]
     serialized_rows = [serialize_wbs_row(row) for row in rows]
-    return rows, errors, warnings, serialized_rows
+    diff_rows = build_wbs_diff_rows(existing_rows, rows)
+    return rows, errors, warnings, serialized_rows, diff_rows
 
 
 async def insert_import_job(
@@ -1089,6 +1363,8 @@ async def insert_import_job(
     errors: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
     preview_rows: list[dict[str, Any]],
+    diff_rows: list[dict[str, Any]] | None = None,
+    template_version: int | None = None,
     template_key: str | None = None,
     template_name: str | None = None,
     project_type: str | None = None,
@@ -1099,11 +1375,11 @@ async def insert_import_job(
         f"""
         INSERT INTO wbs_import_jobs
           (source_file, template_key, template_name, project_type, description,
-           status, total_rows, accepted_rows, rejected_rows, errors, warnings,
-           preview_rows, applied_at)
+           status, template_version, total_rows, accepted_rows, rejected_rows,
+           errors, warnings, preview_rows, diff_rows, applied_at)
         VALUES
-          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb,
-           $12::jsonb, CASE WHEN $13::boolean THEN now() ELSE NULL END)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb,
+           $13::jsonb, $14::jsonb, CASE WHEN $15::boolean THEN now() ELSE NULL END)
         RETURNING {IMPORT_JOB_RETURNING}
         """,
         source_file,
@@ -1112,12 +1388,14 @@ async def insert_import_job(
         project_type,
         description,
         status,
+        template_version,
         total_rows,
         accepted_rows,
         rejected_rows,
         errors,
         warnings,
         preview_rows,
+        diff_rows or [],
         applied,
     )
 
@@ -1396,9 +1674,12 @@ async def fetch_import_job_for_update(connection: asyncpg.Connection, job_id: UU
 def import_job_response(record: asyncpg.Record, *, include_rows: bool = False, row_limit: int = 50) -> dict[str, Any]:
     job = normalize_record(record)
     preview_rows = job.get("preview_rows") or []
+    diff_rows = job.get("diff_rows") or []
     job["preview_count"] = len(preview_rows)
+    job["diff_count"] = len(diff_rows)
     if include_rows:
         job["rows"] = preview_rows[:row_limit]
+        job["diff_rows"] = diff_rows[:row_limit]
     job.pop("preview_rows", None)
     return job
 
@@ -1660,8 +1941,9 @@ def openproject_engine_status() -> dict[str, Any]:
 def pm_engine_status(setting_value: dict[str, Any] | None = None) -> dict[str, Any]:
     setting_value = setting_value or {}
     runtime = openproject_engine_status()
-    adapter = setting_value.get("adapter") or runtime["adapter"]
-    display_name = setting_value.get("display_name") or "OpenProject"
+    adapter = PM_ENGINE_ADAPTER or setting_value.get("adapter") or runtime["adapter"]
+    display_name = "Mock PM Engine" if adapter == "mock" else setting_value.get("display_name") or "OpenProject"
+    actual_sync_ready = adapter == "mock" or (runtime["enabled"] and bool(OPENPROJECT_API_TOKEN))
     return {
         **runtime,
         "adapter": adapter,
@@ -1673,9 +1955,10 @@ def pm_engine_status(setting_value: dict[str, Any] | None = None) -> dict[str, A
         "capabilities": {
             "preflight": True,
             "dry_run": True,
-            "actual_sync": runtime["enabled"] and bool(OPENPROJECT_API_TOKEN),
+            "actual_sync": actual_sync_ready,
             "work_package_payload_validation": True,
             "hierarchy_parent_links": runtime["parent_links"],
+            "mock_adapter": adapter == "mock",
         },
         "runtime": runtime,
     }
@@ -1692,6 +1975,25 @@ def openproject_preflight_check(name: str, status: str, message: str, **extra: A
 
 
 async def run_openproject_preflight() -> dict[str, Any]:
+    if PM_ENGINE_ADAPTER == "mock":
+        return {
+            "engine": pm_engine_status({"adapter": "mock", "display_name": "Mock PM Engine"}),
+            "state": "ready",
+            "ready_for_actual_sync": True,
+            "checks": [
+                openproject_preflight_check(
+                    "pm_engine_adapter",
+                    "pass",
+                    "Mock PM engine adapter is ready for local product validation",
+                ),
+                openproject_preflight_check(
+                    "external_api",
+                    "skip",
+                    "OpenProject API calls are skipped by the mock adapter",
+                ),
+            ],
+        }
+
     client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
     checks: list[dict[str, Any]] = []
 
@@ -1799,6 +2101,7 @@ def build_openproject_sync_plan(
         "engine": pm_engine_status(),
         "project": project,
         "template": template,
+        "wbs_source": project.get("wbs_source", "template"),
         "openproject": {
             "project_id": project.get("openproject_project_id") or engine_metadata.get("project_id"),
             "project_identifier": engine_metadata.get("project_identifier") or identifier,
@@ -1923,7 +2226,9 @@ async def fetch_project_sync_context(
         template = await fetch_template(connection, project["template_key"])
         if not template:
             raise HTTPException(status_code=404, detail="Template not found")
-        rows = await fetch_template_items(connection, project["template_key"])
+        project_rows = await fetch_project_wbs_items(connection, project_id)
+        rows = project_rows or await fetch_template_items(connection, project["template_key"])
+        project["wbs_source"] = "project" if project_rows else "template"
 
     return project, template, template_rows_or_phases(template, rows)
 
@@ -1961,29 +2266,81 @@ async def login(payload: LoginRequest, request: Request) -> dict[str, Any]:
             await connection.execute("DELETE FROM wbs_user_sessions WHERE expires_at <= now()")
             user_record = await connection.fetchrow(
                 f"""
-                SELECT {USER_SELECT}
+                SELECT {USER_SELECT}, password_hash
                 FROM wbs_users
                 WHERE email = $1
-                  AND password_hash = crypt($2, password_hash)
-                  AND status = 'Active'
                 """,
                 normalized_email,
-                payload.password,
             )
-            if not user_record:
+            password_ok = bool(
+                user_record
+                and user_record["status"] == "Active"
+                and not (user_record["locked_until"] and user_record["locked_until"] > datetime.now(timezone.utc))
+                and await connection.fetchval(
+                    "SELECT $1 = crypt($2, $1)",
+                    user_record["password_hash"],
+                    payload.password,
+                )
+            )
+
+            if user_record and user_record["locked_until"] and user_record["locked_until"] > datetime.now(timezone.utc):
+                await insert_audit_event(
+                    connection,
+                    event_type="auth.login_locked",
+                    entity_type="user",
+                    entity_id=user_record["id"],
+                    summary="Login blocked because account is locked",
+                    metadata={"email": normalized_email, "locked_until": user_record["locked_until"].isoformat()},
+                    actor_email=normalized_email,
+                    actor_role=user_record["role"],
+                )
+                raise HTTPException(status_code=423, detail="Account is temporarily locked")
+
+            if not password_ok:
+                failed_count = int(user_record["failed_login_count"] or 0) + 1 if user_record else 1
+                locked_until = (
+                    datetime.now(timezone.utc) + timedelta(minutes=LOGIN_LOCK_MINUTES)
+                    if user_record and failed_count >= LOGIN_FAILURE_LIMIT
+                    else None
+                )
+                if user_record:
+                    await connection.execute(
+                        """
+                        UPDATE wbs_users
+                        SET failed_login_count = $2,
+                            locked_until = $3,
+                            updated_at = now()
+                        WHERE id = $1
+                        """,
+                        user_record["id"],
+                        failed_count,
+                        locked_until,
+                    )
                 await insert_audit_event(
                     connection,
                     event_type="auth.login_failed",
                     entity_type="user",
-                    entity_id=normalized_email,
+                    entity_id=user_record["id"] if user_record else normalized_email,
                     summary="Login failed",
-                    metadata={"email": normalized_email},
+                    metadata={
+                        "email": normalized_email,
+                        "failed_login_count": failed_count,
+                        "locked_until": locked_until.isoformat() if locked_until else None,
+                    },
                     actor_email=normalized_email,
+                    actor_role=user_record["role"] if user_record else None,
                 )
                 raise HTTPException(status_code=401, detail="Invalid email or password")
 
             await connection.execute(
-                "UPDATE wbs_users SET last_login_at = now(), updated_at = now() WHERE id = $1",
+                """
+                UPDATE wbs_users
+                SET last_login_at = now(),
+                    failed_login_count = 0,
+                    locked_until = NULL,
+                    updated_at = now()
+                WHERE id = $1
+                """,
                 user_record["id"],
             )
             await connection.execute(
@@ -2037,14 +2394,75 @@ async def logout(request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/api/auth/password")
+async def change_password(payload: PasswordChangeRequest, request: Request) -> dict[str, Any]:
+    token = auth_token_from_request(request)
+    current = request.state.user
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            password_ok = await connection.fetchval(
+                """
+                SELECT password_hash = crypt($2, password_hash)
+                FROM wbs_users
+                WHERE id = $1 AND status = 'Active'
+                """,
+                safe_uuid(current["id"]),
+                payload.current_password,
+            )
+            if not password_ok:
+                await insert_audit_event(
+                    connection,
+                    request=request,
+                    event_type="auth.password_change_failed",
+                    entity_type="user",
+                    entity_id=current["id"],
+                    summary="Password change failed",
+                    metadata={"reason": "current_password_mismatch"},
+                )
+                raise HTTPException(status_code=401, detail="Current password is invalid")
+
+            updated = await connection.fetchrow(
+                f"""
+                UPDATE wbs_users
+                SET password_hash = crypt($2, gen_salt('bf')),
+                    must_change_password = false,
+                    password_changed_at = now(),
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING {USER_SELECT}
+                """,
+                safe_uuid(current["id"]),
+                payload.new_password,
+            )
+            if token:
+                await connection.execute(
+                    "DELETE FROM wbs_user_sessions WHERE user_id = $1 AND token <> $2",
+                    safe_uuid(current["id"]),
+                    token,
+                )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="auth.password_changed",
+                entity_type="user",
+                entity_id=current["id"],
+                summary="Password changed",
+                metadata={"other_sessions_revoked": True},
+            )
+
+    return {"status": "ok", "user": user_response(updated)}
+
+
 @app.get("/api/users")
 async def list_users(request: Request) -> list[dict[str, Any]]:
-    require_roles(request, {"admin"})
+    require_admin_role(request)
     async with get_pool(request).acquire() as connection:
         records = await connection.fetch(
             """
             SELECT u.id, u.email, u.display_name, u.role, u.status,
-                   u.last_login_at, u.created_at, u.updated_at,
+                   u.failed_login_count, u.locked_until, u.must_change_password,
+                   u.last_login_at, u.password_changed_at, u.created_at, u.updated_at,
                    count(s.token)::integer AS active_sessions
             FROM wbs_users u
             LEFT JOIN wbs_user_sessions s
@@ -2061,7 +2479,7 @@ async def list_users(request: Request) -> list[dict[str, Any]]:
 
 @app.post("/api/users", status_code=201)
 async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
-    require_roles(request, {"admin"})
+    require_admin_role(request)
     normalized_email = payload.email.strip().lower()
     role = validate_user_role(payload.role)
     status = validate_user_status(payload.status)
@@ -2076,9 +2494,13 @@ async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
                 raise HTTPException(status_code=409, detail="User email already exists")
             record = await connection.fetchrow(
                 """
-                INSERT INTO wbs_users (email, display_name, role, password_hash, status)
-                VALUES ($1, $2, $3, crypt($4, gen_salt('bf')), $5)
-                RETURNING id, email, display_name, role, status, last_login_at, created_at, updated_at,
+                INSERT INTO wbs_users
+                  (email, display_name, role, password_hash, status, must_change_password)
+                VALUES
+                  ($1, $2, $3, crypt($4, gen_salt('bf')), $5, $6)
+                RETURNING id, email, display_name, role, status, failed_login_count,
+                          locked_until, must_change_password, last_login_at,
+                          password_changed_at, created_at, updated_at,
                           0::integer AS active_sessions
                 """,
                 normalized_email,
@@ -2086,6 +2508,7 @@ async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
                 role,
                 payload.password,
                 status,
+                payload.must_change_password,
             )
             await insert_audit_event(
                 connection,
@@ -2094,7 +2517,11 @@ async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
                 entity_type="user",
                 entity_id=record["id"],
                 summary=f"User created: {normalized_email}",
-                metadata={"role": role, "status": status},
+                metadata={
+                    "role": role,
+                    "status": status,
+                    "must_change_password": payload.must_change_password,
+                },
             )
 
     return managed_user_response(record)
@@ -2102,7 +2529,7 @@ async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
 
 @app.patch("/api/users/{user_id}")
 async def update_user(user_id: str, payload: UserUpdate, request: Request) -> dict[str, Any]:
-    current = require_roles(request, {"admin"})
+    current = require_admin_role(request)
     parsed_id = safe_uuid(user_id)
     if not parsed_id:
         raise HTTPException(status_code=400, detail="Invalid user id")
@@ -2132,13 +2559,20 @@ async def update_user(user_id: str, payload: UserUpdate, request: Request) -> di
                 SET display_name = COALESCE($2, display_name),
                     role = COALESCE($3, role),
                     status = COALESCE($4, status),
+                    must_change_password = COALESCE($6, CASE WHEN $5::text IS NULL THEN must_change_password ELSE true END),
                     password_hash = CASE
                       WHEN $5::text IS NULL THEN password_hash
                       ELSE crypt($5, gen_salt('bf'))
                     END,
+                    password_changed_at = CASE
+                      WHEN $5::text IS NULL THEN password_changed_at
+                      ELSE now()
+                    END,
                     updated_at = now()
                 WHERE id = $1
-                RETURNING id, email, display_name, role, status, last_login_at, created_at, updated_at,
+                RETURNING id, email, display_name, role, status, failed_login_count,
+                          locked_until, must_change_password, last_login_at,
+                          password_changed_at, created_at, updated_at,
                           0::integer AS active_sessions
                 """,
                 parsed_id,
@@ -2146,6 +2580,7 @@ async def update_user(user_id: str, payload: UserUpdate, request: Request) -> di
                 role,
                 status,
                 payload.password,
+                payload.must_change_password,
             )
             if status and status != "Active":
                 await connection.execute("DELETE FROM wbs_user_sessions WHERE user_id = $1", parsed_id)
@@ -2161,10 +2596,47 @@ async def update_user(user_id: str, payload: UserUpdate, request: Request) -> di
                     "role_changed": role is not None and role != existing["role"],
                     "status_changed": status is not None and status != existing["status"],
                     "password_changed": payload.password is not None,
+                    "must_change_password": payload.must_change_password,
                 },
             )
 
     return managed_user_response(record)
+
+
+@app.post("/api/users/{user_id}/sessions/revoke")
+async def revoke_user_sessions(user_id: str, request: Request) -> dict[str, Any]:
+    require_admin_role(request)
+    parsed_id = safe_uuid(user_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            user_exists = await connection.fetchval("SELECT EXISTS (SELECT 1 FROM wbs_users WHERE id = $1)", parsed_id)
+            if not user_exists:
+                raise HTTPException(status_code=404, detail="User not found")
+            deleted = await connection.fetchval(
+                """
+                WITH deleted AS (
+                  DELETE FROM wbs_user_sessions
+                  WHERE user_id = $1
+                  RETURNING token
+                )
+                SELECT count(*) FROM deleted
+                """,
+                parsed_id,
+            )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="user.sessions_revoked",
+                entity_type="user",
+                entity_id=parsed_id,
+                summary="User sessions revoked",
+                metadata={"revoked_sessions": int(deleted or 0)},
+            )
+
+    return {"status": "ok", "revoked_sessions": int(deleted or 0)}
 
 
 @app.get("/api/audit-events")
@@ -2172,33 +2644,36 @@ async def list_audit_events(
     request: Request,
     limit: int = 50,
     event_type: str | None = None,
+    actor_email: str | None = None,
+    entity_type: str | None = None,
+    search: str | None = None,
 ) -> list[dict[str, Any]]:
     require_roles(request, {"admin", "pmo"})
     bounded_limit = max(1, min(limit, 100))
 
     async with get_pool(request).acquire() as connection:
-        if event_type:
-            records = await connection.fetch(
-                f"""
-                SELECT {AUDIT_SELECT}
-                FROM wbs_audit_events
-                WHERE event_type = $1
-                ORDER BY created_at DESC
-                LIMIT $2
-                """,
-                event_type,
-                bounded_limit,
-            )
-        else:
-            records = await connection.fetch(
-                f"""
-                SELECT {AUDIT_SELECT}
-                FROM wbs_audit_events
-                ORDER BY created_at DESC
-                LIMIT $1
-                """,
-                bounded_limit,
-            )
+        records = await connection.fetch(
+            f"""
+            SELECT {AUDIT_SELECT}
+            FROM wbs_audit_events
+            WHERE ($1::text IS NULL OR event_type = $1)
+              AND ($2::text IS NULL OR actor_email = $2)
+              AND ($3::text IS NULL OR entity_type = $3)
+              AND (
+                $4::text IS NULL
+                OR summary ILIKE '%' || $4 || '%'
+                OR event_type ILIKE '%' || $4 || '%'
+                OR entity_id ILIKE '%' || $4 || '%'
+              )
+            ORDER BY created_at DESC
+            LIMIT $5
+            """,
+            event_type,
+            actor_email.strip().lower() if actor_email else None,
+            entity_type,
+            search.strip() if search else None,
+            bounded_limit,
+        )
 
     return [audit_response(record) for record in records]
 
@@ -2225,7 +2700,7 @@ async def list_settings(request: Request) -> dict[str, Any]:
 
 @app.put("/api/settings/{setting_key}")
 async def update_setting(setting_key: str, payload: SettingUpdate, request: Request) -> dict[str, Any]:
-    current = require_roles(request, {"admin"})
+    current = require_admin_role(request)
     key = setting_key.strip()
     if not key:
         raise HTTPException(status_code=400, detail="Setting key is required")
@@ -2432,6 +2907,7 @@ async def list_projects(request: Request) -> list[dict[str, Any]]:
 
 @app.post("/api/projects", status_code=201)
 async def create_project(payload: ProjectCreate, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     start_date = payload.start_date or date.today()
     metadata = {
         "created_by": "wbs-portal",
@@ -2471,6 +2947,54 @@ async def create_project(payload: ProjectCreate, request: Request) -> dict[str, 
             summary=f"Project created: {payload.name}",
             metadata={"template_key": payload.template_key, "owner": payload.owner},
         )
+
+    return normalize_record(record)
+
+
+@app.patch("/api/projects/{project_id}/status")
+async def update_project_status(project_id: str, payload: ProjectStatusUpdate, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+
+    target_status = validate_project_status(payload.status)
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            project = await connection.fetchrow(
+                """
+                SELECT id, name, template_key, owner, status, start_date,
+                       openproject_project_id, metadata, created_at, updated_at
+                FROM wbs_projects
+                WHERE id = $1
+                FOR UPDATE
+                """,
+                parsed_id,
+            )
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            ensure_project_transition(project["status"], target_status)
+            record = await connection.fetchrow(
+                """
+                UPDATE wbs_projects
+                SET status = $2,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING id, name, template_key, owner, status, start_date,
+                          openproject_project_id, metadata, created_at, updated_at
+                """,
+                parsed_id,
+                target_status,
+            )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="project.status_changed",
+                entity_type="project",
+                entity_id=parsed_id,
+                summary=f"Project status changed: {project['status']} -> {target_status}",
+                metadata={"comment": payload.comment},
+            )
 
     return normalize_record(record)
 
@@ -2555,6 +3079,7 @@ async def list_project_sync_runs(project_id: str, request: Request, limit: int =
 
 @app.get("/api/projects/{project_id}/sync-preflight")
 async def project_sync_preflight(project_id: str, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     try:
         parsed_id = UUID(project_id)
     except ValueError as exc:
@@ -2580,6 +3105,7 @@ async def sync_project_to_engine(
     request: Request,
     payload: ProjectSyncRequest = ProjectSyncRequest(),
 ) -> dict[str, Any]:
+    require_mutating_role(request)
     try:
         parsed_id = UUID(project_id)
     except ValueError as exc:
@@ -2603,6 +3129,90 @@ async def sync_project_to_engine(
             },
         )
         return {"status": "DryRun", **plan, "audit": audit_run}
+
+    ensure_project_status_allowed(project, {ACTUAL_SYNC_REQUIRED_STATUS}, "Actual sync")
+    if not baseline_summary(baseline).get("locked"):
+        error = HTTPException(status_code=409, detail="Actual sync requires a locked WBS baseline")
+        await record_project_sync_run(
+            request,
+            project_id=parsed_id,
+            plan=plan,
+            payload=payload,
+            mode="actual",
+            status="Blocked",
+            metadata={"source": "api", "blocked_reason": "baseline_unlocked"},
+            error=sync_error_payload(error),
+        )
+        raise error
+
+    if PM_ENGINE_ADAPTER == "mock":
+        metadata = normalize_metadata(project.get("metadata"))
+        engine_metadata = normalize_metadata(metadata.get("pm_engine"))
+        mock_project_id = engine_metadata.get("project_id") or f"mock-{str(parsed_id)[:8]}"
+        work_packages = {
+            row["code"]: {
+                "id": f"mock-wp-{index}",
+                "href": f"/mock/work_packages/{index}",
+                "subject": row["subject"],
+                "synced_at": utc_now_iso(),
+            }
+            for index, row in enumerate(plan["rows"], start=1)
+        }
+        engine_metadata.update(
+            {
+                "adapter": "mock",
+                "project_id": mock_project_id,
+                "project_identifier": plan["openproject"]["project_identifier"],
+                "work_packages": work_packages,
+                "last_sync_at": utc_now_iso(),
+            }
+        )
+        metadata["pm_engine"] = engine_metadata
+        async with get_pool(request).acquire() as connection:
+            record = await connection.fetchrow(
+                """
+                UPDATE wbs_projects
+                SET status = 'Synced',
+                    openproject_project_id = $2,
+                    metadata = $3::jsonb,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING id, name, template_key, owner, status, start_date,
+                          openproject_project_id, metadata, created_at, updated_at
+                """,
+                parsed_id,
+                mock_project_id,
+                metadata,
+            )
+        audit_run = await record_project_sync_run(
+            request,
+            project_id=parsed_id,
+            plan=plan,
+            payload=payload,
+            mode="actual",
+            status="Synced",
+            created_work_packages=len(work_packages),
+            openproject_project_id=mock_project_id,
+            metadata={"source": "mock_adapter", "known_work_packages": len(work_packages)},
+        )
+        return {
+            "status": "Synced",
+            "engine": pm_engine_status({"adapter": "mock", "display_name": "Mock PM Engine"}),
+            "project": normalize_record(record),
+            "openproject": {
+                "project_id": mock_project_id,
+                "project_identifier": engine_metadata.get("project_identifier"),
+                "project_href": None,
+            },
+            "summary": {
+                "created_work_packages": len(work_packages),
+                "known_work_packages": len(work_packages),
+                "total_rows": len(rows),
+                "payload_validation": False,
+            },
+            "created_work_packages": list(work_packages.values()),
+            "audit": audit_run,
+        }
 
     if not OPENPROJECT_SYNC_ENABLED:
         error = HTTPException(
@@ -2700,7 +3310,8 @@ async def sync_project_to_engine(
         record = await connection.fetchrow(
             """
             UPDATE wbs_projects
-            SET openproject_project_id = $2,
+            SET status = 'Synced',
+                openproject_project_id = $2,
                 metadata = $3::jsonb,
                 updated_at = now()
             WHERE id = $1
@@ -2773,6 +3384,7 @@ async def list_approvals(request: Request) -> list[dict[str, Any]]:
 
 @app.post("/api/approvals", status_code=201)
 async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
             project = await connection.fetchrow(
@@ -2786,6 +3398,7 @@ async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str
             )
             if not project:
                 raise HTTPException(status_code=404, detail="Project not found")
+            ensure_project_status_allowed(project, APPROVAL_ALLOWED_PROJECT_STATUSES, "Approval request")
 
             pending_exists = await connection.fetchval(
                 """
@@ -2872,6 +3485,7 @@ async def create_approval(payload: ApprovalCreate, request: Request) -> dict[str
 
 @app.post("/api/approvals/{approval_id}/approve")
 async def approve_approval(approval_id: str, payload: ApprovalDecision, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     try:
         parsed_id = UUID(approval_id)
     except ValueError as exc:
@@ -2939,6 +3553,7 @@ async def approve_approval(approval_id: str, payload: ApprovalDecision, request:
 
 @app.post("/api/approvals/{approval_id}/reject")
 async def reject_approval(approval_id: str, payload: ApprovalDecision, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     try:
         parsed_id = UUID(approval_id)
     except ValueError as exc:
@@ -3064,8 +3679,11 @@ async def operations_health(request: Request) -> dict[str, Any]:
         sync_run_count = await connection.fetchval("SELECT count(*) FROM wbs_sync_runs")
         baseline_count = await connection.fetchval("SELECT count(*) FROM wbs_project_baselines")
         user_count = await connection.fetchval("SELECT count(*) FROM wbs_users")
+        locked_user_count = await connection.fetchval("SELECT count(*) FROM wbs_users WHERE locked_until > now()")
         audit_count = await connection.fetchval("SELECT count(*) FROM wbs_audit_events")
         setting_count = await connection.fetchval("SELECT count(*) FROM wbs_system_settings")
+        project_wbs_count = await connection.fetchval("SELECT count(*) FROM wbs_project_wbs_items")
+        template_version_count = await connection.fetchval("SELECT count(*) FROM wbs_template_versions")
         existing_tables = await connection.fetch(
             """
             SELECT table_name
@@ -3085,6 +3703,8 @@ async def operations_health(request: Request) -> dict[str, Any]:
                 "wbs_user_sessions",
                 "wbs_system_settings",
                 "wbs_audit_events",
+                "wbs_template_versions",
+                "wbs_project_wbs_items",
             ],
         )
 
@@ -3101,6 +3721,8 @@ async def operations_health(request: Request) -> dict[str, Any]:
         "wbs_user_sessions",
         "wbs_system_settings",
         "wbs_audit_events",
+        "wbs_template_versions",
+        "wbs_project_wbs_items",
     }
     missing_tables = sorted(required_tables - table_names)
     preflight = await run_openproject_preflight()
@@ -3191,7 +3813,35 @@ async def operations_health(request: Request) -> dict[str, Any]:
             "Audit log",
             "pass",
             f"{audit_count} audit events recorded",
-            {"audit_events": audit_count},
+            {"audit_events": audit_count, "retention_days": AUDIT_RETENTION_DAYS},
+        ),
+        operation_check(
+            "account_lockout",
+            "Account lockout",
+            "warn" if locked_user_count else "pass",
+            f"{locked_user_count} users currently locked",
+            {"locked_users": locked_user_count, "failure_limit": LOGIN_FAILURE_LIMIT},
+        ),
+        operation_check(
+            "template_versions",
+            "Template versions",
+            "pass" if template_version_count else "warn",
+            f"{template_version_count} template versions stored",
+            {"template_versions": template_version_count},
+        ),
+        operation_check(
+            "project_wbs_storage",
+            "Project WBS storage",
+            "pass",
+            f"{project_wbs_count} project WBS rows stored",
+            {"project_wbs_rows": project_wbs_count},
+        ),
+        operation_check(
+            "cors_policy",
+            "CORS policy",
+            "warn" if ALLOW_FILE_ORIGIN else "pass",
+            "file:// origin is allowed for local development" if ALLOW_FILE_ORIGIN else "file:// origin is disabled",
+            {"allow_file_origin": ALLOW_FILE_ORIGIN, "portal_origin": PORTAL_ORIGIN},
         ),
         backup_health_check(),
         operation_check(
@@ -3276,8 +3926,38 @@ async def get_import_job(job_id: str, request: Request) -> dict[str, Any]:
     return import_job_response(record, include_rows=True)
 
 
+@app.get("/api/imports/{job_id}/errors.xlsx")
+async def download_import_errors(job_id: str, request: Request) -> StreamingResponse:
+    try:
+        import_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid import job id") from exc
+
+    async with get_pool(request).acquire() as connection:
+        record = await connection.fetchrow(
+            f"""
+            SELECT {IMPORT_JOB_RETURNING}
+            FROM wbs_import_jobs
+            WHERE id = $1
+            """,
+            import_job_id,
+        )
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    job = normalize_record(record)
+    output = build_import_errors_workbook(job)
+    filename = f"{job['source_file'].rsplit('.', 1)[0]}-issues.xlsx"
+    return StreamingResponse(
+        output,
+        media_type=EXCEL_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/api/imports/validate")
 async def validate_import(payload: WbsImportValidation, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     rows = assign_missing_wbs_codes([
         {"row_number": index, **row.model_dump()}
         for index, row in enumerate(payload.rows, start=1)
@@ -3319,6 +3999,26 @@ async def list_template_items(template_key: str, request: Request) -> dict[str, 
         "template": template,
         "rows": rows,
     }
+
+
+@app.get("/api/templates/{template_key}/versions")
+async def list_template_versions(template_key: str, request: Request, limit: int = 20) -> list[dict[str, Any]]:
+    normalized_key = normalize_template_key(template_key)
+    bounded_limit = max(1, min(limit, 100))
+    async with get_pool(request).acquire() as connection:
+        records = await connection.fetch(
+            """
+            SELECT id, template_key, version, template_name, project_type,
+                   description, item_count, metadata, created_at
+            FROM wbs_template_versions
+            WHERE template_key = $1
+            ORDER BY version DESC
+            LIMIT $2
+            """,
+            normalized_key,
+            bounded_limit,
+        )
+    return [normalize_record(record) for record in records]
 
 
 @app.get("/api/templates/{template_key}/excel")
@@ -3364,13 +4064,14 @@ async def preview_template_excel(
     project_type: str = Form("Uploaded"),
     description: str = Form("Excel 업로드로 반영될 계층형 WBS 템플릿"),
 ) -> dict[str, Any]:
+    require_mutating_role(request)
     normalized_key = normalize_template_key(template_key)
     contents = await file.read()
     parsed_rows = parse_wbs_workbook(contents)
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
-            rows, errors, warnings, serialized_rows = await prepare_template_import(
+            rows, errors, warnings, serialized_rows, diff_rows = await prepare_template_import(
                 connection,
                 template_key=normalized_key,
                 parsed_rows=parsed_rows,
@@ -3390,6 +4091,7 @@ async def preview_template_excel(
                 errors=errors,
                 warnings=warnings,
                 preview_rows=serialized_rows,
+                diff_rows=diff_rows,
             )
             await insert_audit_event(
                 connection,
@@ -3403,6 +4105,7 @@ async def preview_template_excel(
                     "status": status,
                     "accepted_rows": 0 if errors else len(rows),
                     "rejected_rows": len(errors),
+                    "diff_count": len(diff_rows),
                 },
             )
             template = await fetch_template(connection, normalized_key)
@@ -3411,6 +4114,7 @@ async def preview_template_excel(
     response["template"] = template
     response["warnings"] = warnings
     response["rows"] = serialized_rows[:50]
+    response["diff_rows"] = diff_rows[:50]
     return response
 
 
@@ -3423,13 +4127,14 @@ async def import_template_excel(
     project_type: str = Form("Uploaded"),
     description: str = Form("Excel 업로드로 반영된 계층형 WBS 템플릿"),
 ) -> dict[str, Any]:
+    require_mutating_role(request)
     normalized_key = normalize_template_key(template_key)
     contents = await file.read()
     parsed_rows = parse_wbs_workbook(contents)
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
-            rows, errors, warnings, serialized_rows = await prepare_template_import(
+            rows, errors, warnings, serialized_rows, diff_rows = await prepare_template_import(
                 connection,
                 template_key=normalized_key,
                 parsed_rows=parsed_rows,
@@ -3449,6 +4154,7 @@ async def import_template_excel(
                 errors=errors,
                 warnings=warnings,
                 preview_rows=serialized_rows,
+                diff_rows=diff_rows,
                 applied=not errors,
             )
 
@@ -3460,6 +4166,20 @@ async def import_template_excel(
                     project_type=project_type,
                     description=description,
                     rows=rows,
+                )
+                template_version = await connection.fetchval(
+                    "SELECT max(version) FROM wbs_template_versions WHERE template_key = $1",
+                    normalized_key,
+                )
+                record = await connection.fetchrow(
+                    f"""
+                    UPDATE wbs_import_jobs
+                    SET template_version = $2
+                    WHERE id = $1
+                    RETURNING {IMPORT_JOB_RETURNING}
+                    """,
+                    record["id"],
+                    template_version,
                 )
             await insert_audit_event(
                 connection,
@@ -3473,6 +4193,7 @@ async def import_template_excel(
                     "status": status,
                     "accepted_rows": 0 if errors else len(rows),
                     "rejected_rows": len(errors),
+                    "diff_count": len(diff_rows),
                     "applied": not errors,
                 },
             )
@@ -3483,11 +4204,13 @@ async def import_template_excel(
     response["template"] = template
     response["warnings"] = warnings
     response["rows"] = serialized_rows[:50]
+    response["diff_rows"] = diff_rows[:50]
     return response
 
 
 @app.post("/api/imports/{job_id}/apply")
 async def apply_import_preview(job_id: str, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     try:
         import_job_id = UUID(job_id)
     except ValueError as exc:
@@ -3519,17 +4242,23 @@ async def apply_import_preview(job_id: str, request: Request) -> dict[str, Any]:
                 description=job.get("description") or "Excel 업로드로 반영된 계층형 WBS 템플릿",
                 rows=rows,
             )
+            template_version = await connection.fetchval(
+                "SELECT max(version) FROM wbs_template_versions WHERE template_key = $1",
+                template_key,
+            )
             record = await connection.fetchrow(
                 f"""
                 UPDATE wbs_import_jobs
                 SET status = 'Applied',
                     accepted_rows = total_rows,
                     rejected_rows = 0,
+                    template_version = $2,
                     applied_at = now()
                 WHERE id = $1
                 RETURNING {IMPORT_JOB_RETURNING}
                 """,
                 import_job_id,
+                template_version,
             )
             template = await fetch_template(connection, template_key)
             await insert_audit_event(
@@ -3552,8 +4281,93 @@ async def apply_import_preview(job_id: str, request: Request) -> dict[str, Any]:
     return response
 
 
+@app.post("/api/projects/{project_id}/imports/{job_id}/apply")
+async def apply_import_to_project(project_id: str, job_id: str, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
+    parsed_project_id = safe_uuid(project_id)
+    import_job_id = safe_uuid(job_id)
+    if not parsed_project_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    if not import_job_id:
+        raise HTTPException(status_code=400, detail="Invalid import job id")
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            project = await connection.fetchrow(
+                """
+                SELECT id, name, template_key, owner, status, start_date,
+                       openproject_project_id, metadata, created_at, updated_at
+                FROM wbs_projects
+                WHERE id = $1
+                FOR UPDATE
+                """,
+                parsed_project_id,
+            )
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            ensure_project_status_allowed(project, PROJECT_WBS_IMPORT_ALLOWED_STATUSES, "Project WBS import")
+
+            job = await fetch_import_job_for_update(connection, import_job_id)
+            if not job:
+                raise HTTPException(status_code=404, detail="Import job not found")
+            if job["status"] not in {"Preview", "Applied", "Accepted"}:
+                raise HTTPException(status_code=409, detail="Import job is not valid for project apply")
+            if job.get("errors"):
+                raise HTTPException(status_code=400, detail="Rejected import cannot be applied to project")
+
+            rows = restore_wbs_rows(job.get("preview_rows") or [])
+            errors, _ = validate_wbs_rows(rows)
+            if errors:
+                raise HTTPException(status_code=400, detail={"message": "Import rows are no longer valid", "errors": errors})
+
+            existing_rows = await fetch_project_wbs_items(connection, parsed_project_id)
+            if not existing_rows:
+                existing_rows = await fetch_template_items(connection, project["template_key"])
+            diff_rows = build_wbs_diff_rows(existing_rows, rows)
+            await replace_project_wbs_items(
+                connection,
+                project_id=parsed_project_id,
+                rows=rows,
+                source_import_job_id=import_job_id,
+            )
+            record = await connection.fetchrow(
+                """
+                UPDATE wbs_projects
+                SET status = CASE WHEN status = 'Rejected' THEN 'Draft' ELSE status END,
+                    updated_at = now()
+                WHERE id = $1
+                RETURNING id, name, template_key, owner, status, start_date,
+                          openproject_project_id, metadata, created_at, updated_at
+                """,
+                parsed_project_id,
+            )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="project_wbs.import_applied",
+                entity_type="project",
+                entity_id=parsed_project_id,
+                summary=f"Project WBS import applied: {project['name']}",
+                metadata={
+                    "import_job_id": str(import_job_id),
+                    "source_file": job.get("source_file"),
+                    "rows": len(rows),
+                    "diff_count": len(diff_rows),
+                },
+            )
+
+    return {
+        "status": "Applied",
+        "project": normalize_record(record),
+        "rows": [serialize_wbs_row(row) for row in rows[:50]],
+        "diff_rows": diff_rows[:50],
+        "summary": {"rows": len(rows), "diff_count": len(diff_rows)},
+    }
+
+
 @app.post("/api/templates/{template_key}/codes/resequence")
 async def resequence_template_codes(template_key: str, request: Request) -> dict[str, Any]:
+    require_mutating_role(request)
     normalized_key = normalize_template_key(template_key)
 
     async with get_pool(request).acquire() as connection:

@@ -70,15 +70,17 @@ API는 `/api/auth/login`을 제외한 `/api/*` 요청에 Bearer 세션 토큰을
 POST /api/auth/login
 GET  /api/auth/me
 POST /api/auth/logout
+POST /api/auth/password
 GET  /api/users
 POST /api/users
 PATCH /api/users/{user_id}
+POST /api/users/{user_id}/sessions/revoke
 GET  /api/audit-events
 GET  /api/settings
 PUT  /api/settings/{setting_key}
 ```
 
-포털의 `Users` 메뉴는 `admin`만 사용할 수 있고, 계정 생성, 역할 변경, 상태 변경, 비밀번호 재설정을 처리합니다. `Audit`과 `Settings` 메뉴는 `admin`, `pmo`가 조회할 수 있으며 설정 저장은 `admin`만 가능합니다. 로그인, 로그아웃, 사용자/설정 변경, 프로젝트 생성, 승인, Excel 반영, PM 엔진 sync 시도는 `wbs_audit_events`에 감사 이력으로 저장됩니다.
+포털의 `Users` 메뉴는 `admin`만 사용할 수 있고, 계정 생성, 역할 변경, 상태 변경, 비밀번호 재설정, 세션 강제 종료를 처리합니다. `Audit`과 `Settings` 메뉴는 `admin`, `pmo`가 조회할 수 있으며 설정 저장은 `admin`만 가능합니다. 로그인 실패는 기본 5회 후 15분 잠기며, 신규 계정은 기본적으로 최초 비밀번호 변경이 필요합니다. 로그인, 로그아웃, 사용자/설정 변경, 프로젝트 생성/상태 변경, 승인, Excel 반영, PM 엔진 sync 시도는 `wbs_audit_events`에 감사 이력으로 저장됩니다.
 
 계층형 WBS Excel 템플릿은 포털의 `Excel 다운로드` 버튼으로 내려받고, 같은 화면의 `Excel 업로드`로 검증 미리보기를 확인한 뒤 `반영` 버튼으로 적용합니다. API로 직접 사용할 때는 다음 엔드포인트를 사용합니다.
 
@@ -88,11 +90,14 @@ GET  /api/imports
 GET  /api/imports/{job_id}
 POST /api/templates/import/preview
 POST /api/imports/{job_id}/apply
+GET  /api/imports/{job_id}/errors.xlsx
 POST /api/templates/import
 POST /api/templates/{template_key}/codes/resequence
+GET  /api/templates/{template_key}/versions
+POST /api/projects/{project_id}/imports/{job_id}/apply
 ```
 
-Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 미리보기 상태에서는 PostgreSQL의 import job에 검증 결과와 계층형 rows만 저장되고, 실제 템플릿 교체는 승인 반영 시점에 수행됩니다. 포털의 최근 import 이력에서 업로드 파일별 검증 결과와 저장된 계층형 rows를 다시 열어볼 수 있습니다. 저장된 템플릿의 코드 체계를 다시 맞출 때는 포털의 `코드 정렬` 버튼을 사용합니다.
+Excel 업로드 시 `WBS 코드`를 비워두면 `레벨`과 행 순서 기준으로 코드가 자동 생성됩니다. 미리보기 상태에서는 PostgreSQL의 import job에 검증 결과, 계층형 rows, 기존 템플릿 대비 diff가 저장되고, 실제 템플릿 교체는 승인 반영 시점에 수행됩니다. 오류가 있으면 `오류 Excel`을 내려받아 Issues/Diff/Rows 시트 기준으로 수정합니다. 템플릿 반영 시 `wbs_template_versions`에 버전 snapshot이 저장됩니다. 프로젝트별 WBS에 적용할 때는 `POST /api/projects/{project_id}/imports/{job_id}/apply`를 사용합니다.
 
 PMO 승인 워크플로우는 프로젝트별 승인 요청을 PostgreSQL에 감사 이력으로 남깁니다. 내부 WBS baseline 승인은 기본적으로 자동 승인되며, 승인 시점의 WBS는 `wbs_project_baselines`에 `Locked` 스냅샷으로 저장됩니다. 포털의 `승인 이력`과 프로젝트 WBS 상세의 `Baseline` 상태에서 처리 결과를 확인합니다. 수동 대기열이 필요한 요청은 `auto_approve_internal=false`로 생성합니다.
 
@@ -102,7 +107,10 @@ POST /api/approvals
 POST /api/approvals/{approval_id}/approve
 POST /api/approvals/{approval_id}/reject
 GET  /api/projects/{project_id}/baseline
+PATCH /api/projects/{project_id}/status
 ```
+
+프로젝트 상태는 `Draft -> Review/Approved/Closed`, `Review -> Approved/Rejected/Closed`, `Rejected -> Draft/Review/Closed`, `Approved -> Synced/Closed`, `Synced -> Closed` 순서로만 전이됩니다. 실제 sync는 `Approved` 상태와 locked baseline이 필요합니다.
 
 OpenProject 실제 연동은 PM engine adapter 경계 뒤에 둡니다. 기본값은 dry-run/disabled라서 토큰을 넣기 전에는 외부 OpenProject API를 호출하지 않습니다. 포털의 `Settings` 메뉴와 `/api/settings`는 `pm_engine` 설정을 노출하며, 실제 런타임 토큰/동기화 플래그는 환경변수로 제어합니다.
 
@@ -123,6 +131,13 @@ OPENPROJECT_API_TOKEN=opapi-...
 OPENPROJECT_AUTH_MODE=bearer
 OPENPROJECT_HOST_HEADER=localhost:8080
 OPENPROJECT_DEFAULT_TYPE_ID=1
+PM_ENGINE_ADAPTER=openproject
+```
+
+외부 OpenProject 호출 없이 제품 흐름만 검증하려면 mock adapter를 사용할 수 있습니다.
+
+```bash
+PM_ENGINE_ADAPTER=mock
 ```
 
 Docker Compose에서는 API 컨테이너가 `http://openproject`로 OpenProject에 접근하므로, 로컬 개발 기본값은 `OPENPROJECT_HOST_HEADER=localhost:8080`입니다. 토큰 적용 후에는 먼저 preflight를 확인합니다. 이 단계는 OpenProject API root, 토큰 존재 여부, 현재 인증 사용자, 프로젝트별 샘플 Work Package payload를 보여주며 실제 데이터는 생성하지 않습니다.
@@ -180,6 +195,8 @@ REQUIRE_OPENPROJECT=1 bash scripts/status-check.sh
 curl http://localhost:8000/api/operations/health
 ```
 
+관리자 매뉴얼은 [docs/admin-manual.md](docs/admin-manual.md)에 있습니다.
+
 PostgreSQL 백업은 `backups/postgres` 아래에 custom dump 형식으로 생성됩니다. 기본 대상은 `.env`의 `POSTGRES_DB`이며, 인자로 다른 DB를 지정할 수 있습니다.
 Docker Compose에서는 이 디렉터리가 API 컨테이너의 `/app/backups/postgres`에 읽기 전용으로 마운트되어 포털의 `제품화 체크`에서 최신 백업 상태를 확인할 수 있습니다.
 
@@ -227,6 +244,15 @@ helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
   --set postgresql.auth.password='replace-me' \
   --set api.portalOrigin='https://wbs.example.com' \
   --set portal.apiBaseUrl='https://wbs-api.example.com'
+```
+
+별도 migration Job을 사용하려면 다음 값을 추가합니다.
+
+```bash
+helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
+  --namespace wbs --create-namespace \
+  --set api.migrationJob.enabled=true \
+  --set api.runMigrationsOnStartup=false
 ```
 
 운영 DB를 별도로 쓰는 경우:

@@ -20,7 +20,16 @@ api:
   openprojectDefaultTypeId: ""
   openprojectTypeMapJson: "{}"
   openprojectSyncParentLinks: true
+  pmEngineAdapter: openproject
   portalOrigin: "https://wbs.example.com"
+  allowFileOrigin: false
+  loginFailureLimit: 5
+  loginLockMinutes: 15
+  auditRetentionDays: 365
+  runMigrationsOnStartup: true
+  migrationJob:
+    enabled: false
+    backoffLimit: 3
   backupDir: "/app/backups/postgres"
   backupVolume:
     enabled: false

@@ -47,10 +47,20 @@ CREATE TABLE IF NOT EXISTS wbs_users (
   role text NOT NULL DEFAULT 'viewer',
   password_hash text NOT NULL,
   status text NOT NULL DEFAULT 'Active',
+  failed_login_count integer NOT NULL DEFAULT 0,
+  locked_until timestamptz,
+  must_change_password boolean NOT NULL DEFAULT false,
   last_login_at timestamptz,
+  password_changed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE IF EXISTS wbs_users
+  ADD COLUMN IF NOT EXISTS failed_login_count integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS locked_until timestamptz,
+  ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS password_changed_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS wbs_user_sessions (
   token text PRIMARY KEY,
@@ -92,12 +102,14 @@ CREATE TABLE IF NOT EXISTS wbs_import_jobs (
   project_type text,
   description text,
   status text NOT NULL DEFAULT 'Queued',
+  template_version integer,
   total_rows integer NOT NULL DEFAULT 0,
   accepted_rows integer NOT NULL DEFAULT 0,
   rejected_rows integer NOT NULL DEFAULT 0,
   errors jsonb NOT NULL DEFAULT '[]'::jsonb,
   warnings jsonb NOT NULL DEFAULT '[]'::jsonb,
   preview_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  diff_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
   applied_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -107,8 +119,10 @@ ALTER TABLE IF EXISTS wbs_import_jobs
   ADD COLUMN IF NOT EXISTS template_name text,
   ADD COLUMN IF NOT EXISTS project_type text,
   ADD COLUMN IF NOT EXISTS description text,
+  ADD COLUMN IF NOT EXISTS template_version integer,
   ADD COLUMN IF NOT EXISTS warnings jsonb NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS preview_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS diff_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS applied_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS wbs_template_items (
@@ -127,6 +141,39 @@ CREATE TABLE IF NOT EXISTS wbs_template_items (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (template_key, code)
+);
+
+CREATE TABLE IF NOT EXISTS wbs_template_versions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_key citext NOT NULL REFERENCES wbs_templates(key) ON DELETE CASCADE,
+  version integer NOT NULL,
+  template_name text NOT NULL,
+  project_type text NOT NULL,
+  description text NOT NULL,
+  item_count integer NOT NULL DEFAULT 0,
+  snapshot_rows jsonb NOT NULL DEFAULT '[]'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (template_key, version)
+);
+
+CREATE TABLE IF NOT EXISTS wbs_project_wbs_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL REFERENCES wbs_projects(id) ON DELETE CASCADE,
+  code text NOT NULL,
+  parent_code text,
+  name text NOT NULL,
+  item_type text NOT NULL DEFAULT '작업',
+  owner text,
+  weight numeric(8, 2),
+  start_date date,
+  finish_date date,
+  sort_order integer NOT NULL DEFAULT 0,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  source_import_job_id uuid REFERENCES wbs_import_jobs(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (project_id, code)
 );
 
 CREATE TABLE IF NOT EXISTS wbs_sync_runs (
@@ -172,6 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_wbs_projects_template ON wbs_projects(template_ke
 CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_project ON wbs_approval_requests(project_id);
 CREATE INDEX IF NOT EXISTS idx_wbs_approval_requests_status ON wbs_approval_requests(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_users_role ON wbs_users(role, status);
+CREATE INDEX IF NOT EXISTS idx_wbs_users_locked ON wbs_users(locked_until) WHERE locked_until IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_wbs_user_sessions_user ON wbs_user_sessions(user_id, expires_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_user_sessions_expires ON wbs_user_sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_wbs_system_settings_category ON wbs_system_settings(category, key);
@@ -182,6 +230,9 @@ CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_status ON wbs_import_jobs(status)
 CREATE INDEX IF NOT EXISTS idx_wbs_import_jobs_template ON wbs_import_jobs(template_key, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_template ON wbs_template_items(template_key, sort_order);
 CREATE INDEX IF NOT EXISTS idx_wbs_template_items_parent ON wbs_template_items(template_key, parent_code);
+CREATE INDEX IF NOT EXISTS idx_wbs_template_versions_template ON wbs_template_versions(template_key, version DESC);
+CREATE INDEX IF NOT EXISTS idx_wbs_project_wbs_items_project ON wbs_project_wbs_items(project_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_wbs_project_wbs_items_parent ON wbs_project_wbs_items(project_id, parent_code);
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_project ON wbs_sync_runs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_status ON wbs_sync_runs(status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_wbs_sync_runs_mode ON wbs_sync_runs(mode, started_at DESC);
@@ -208,6 +259,7 @@ VALUES
       "mode": "ce-api-adapter",
       "dependency_boundary": "pm-engine-api",
       "actual_sync_control": "OPENPROJECT_SYNC_ENABLED",
+      "mock_adapter_available": true,
       "notes": "OpenProject 전용 API 호출은 PM engine adapter 내부에서만 수행합니다."
     }'::jsonb
   ),
@@ -231,7 +283,42 @@ VALUES
       "operations_roles": ["admin", "pmo"],
       "audit_roles": ["admin", "pmo"],
       "settings_roles": ["admin", "pmo"],
-      "user_admin_roles": ["admin"]
+      "user_admin_roles": ["admin"],
+      "mutating_roles": ["admin", "pmo"],
+      "viewer_mode": "read_only"
+    }'::jsonb
+  ),
+  (
+    'security_policy',
+    'Security Policy',
+    'security',
+    '로그인 실패 제한, 초기 비밀번호 변경, 감사 로그 보존 기준입니다.',
+    '{
+      "login_failure_limit": 5,
+      "login_lock_minutes": 15,
+      "new_user_must_change_password": true,
+      "audit_retention_days": 365,
+      "file_origin_allowed_for_local_dev": true
+    }'::jsonb
+  ),
+  (
+    'workflow_policy',
+    'Project Workflow Policy',
+    'workflow',
+    '프로젝트 상태 전이와 승인 후 수정 제한 기준입니다.',
+    '{
+      "transitions": {
+        "Draft": ["Review", "Approved", "Closed"],
+        "Review": ["Approved", "Rejected", "Closed"],
+        "Rejected": ["Draft", "Review", "Closed"],
+        "Approved": ["Synced", "Closed"],
+        "Synced": ["Closed"],
+        "Closed": []
+      },
+      "approval_allowed": ["Draft", "Rejected", "Review"],
+      "project_wbs_import_allowed": ["Draft", "Rejected", "Review"],
+      "actual_sync_requires_status": "Approved",
+      "actual_sync_requires_locked_baseline": true
     }'::jsonb
   )
 ON CONFLICT (key) DO NOTHING;

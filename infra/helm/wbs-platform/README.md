@@ -19,6 +19,7 @@ curl https://wbs-api.example.com/api/projects/{project_id}/sync-preflight
 
 The default sync mode remains dry-run/disabled until `api.openprojectSyncEnabled` and `api.openprojectApiToken` are configured.
 If the API reaches OpenProject through an internal service name while OpenProject validates another public host name, set `api.openprojectHostHeader` to that public host.
+For local installation validation without external OpenProject calls, set `api.pmEngineAdapter=mock`.
 The operations health endpoint reads PostgreSQL backup metadata from `api.backupDir`.
 Set `api.backupVolume.enabled=true` with `api.backupVolume.existingClaim` when the API pod should read backup files from a PVC.
 
@@ -49,3 +50,14 @@ helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
 ```
 
 For production, prefer an existing Kubernetes Secret and set `postgresql.auth.existingSecret` or `externalPostgresql.existingSecret`. The Secret must contain `username`, `password`, and `database` keys.
+
+## Migration job
+
+The API can apply the SQL migration at startup by default. For stricter operations, run it as a separate Kubernetes Job and disable startup migration:
+
+```bash
+helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
+  --namespace wbs --create-namespace \
+  --set api.migrationJob.enabled=true \
+  --set api.runMigrationsOnStartup=false
+```

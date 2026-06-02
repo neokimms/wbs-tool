@@ -89,8 +89,20 @@ spec:
               value: {{ .Values.api.openprojectTypeMapJson | quote }}
             - name: OPENPROJECT_SYNC_PARENT_LINKS
               value: {{ .Values.api.openprojectSyncParentLinks | quote }}
+            - name: PM_ENGINE_ADAPTER
+              value: {{ .Values.api.pmEngineAdapter | quote }}
             - name: PORTAL_ORIGIN
               value: {{ .Values.api.portalOrigin | quote }}
+            - name: WBS_ALLOW_FILE_ORIGIN
+              value: {{ .Values.api.allowFileOrigin | quote }}
+            - name: WBS_LOGIN_FAILURE_LIMIT
+              value: {{ .Values.api.loginFailureLimit | quote }}
+            - name: WBS_LOGIN_LOCK_MINUTES
+              value: {{ .Values.api.loginLockMinutes | quote }}
+            - name: WBS_AUDIT_RETENTION_DAYS
+              value: {{ .Values.api.auditRetentionDays | quote }}
+            - name: WBS_RUN_MIGRATIONS_ON_STARTUP
+              value: {{ .Values.api.runMigrationsOnStartup | quote }}
             - name: BACKUP_DIR
               value: {{ .Values.api.backupDir | quote }}
           {{- if .Values.api.backupVolume.enabled }}

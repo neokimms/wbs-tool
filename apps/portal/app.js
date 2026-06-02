@@ -155,9 +155,11 @@ const state = {
     },
   },
   importPreview: [],
+  importDiffRows: [],
   importJobs: [],
   pendingImportJobId: null,
   selectedImportJobId: null,
+  templateVersions: [],
   pmPreflight: fallbackPreflight,
   syncDetail: null,
   syncRuns: [],
@@ -260,6 +262,10 @@ function canManageUsers() {
   return state.currentUser?.role === "admin";
 }
 
+function canMutateWork() {
+  return ["admin", "pmo"].includes(state.currentUser?.role);
+}
+
 function canViewAudit() {
   return ["admin", "pmo"].includes(state.currentUser?.role);
 }
@@ -294,6 +300,11 @@ function renderAuthState() {
   toggleNavAndPanel("#users", canManageUsers());
   toggleNavAndPanel("#audit", canViewAudit());
   toggleNavAndPanel("#settings", canViewSettings());
+  const canMutate = canMutateWork();
+  document.querySelector("#createProjectButton").disabled = !canMutate;
+  document.querySelector("#renumberButton").disabled = !canMutate;
+  document.querySelector(".file-button").classList.toggle("disabled-control", !canMutate);
+  document.querySelector("#excelFileInput").disabled = !canMutate;
   if (!canAccessView(document.body.dataset.portalView)) {
     applyPortalView("#dashboard", { updateHistory: true, scrollToTop: false });
   }
@@ -475,10 +486,11 @@ function renderProjectPlanFilters() {
 
 function renderProjects() {
   const rows = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
+  const canMutate = canMutateWork();
   document.querySelector("#projectRows").innerHTML = rows.length
     ? rows
         .map((project) => {
-          const canRequestApproval = project.id && ["Draft", "Rejected"].includes(project.status);
+          const canRequestApproval = canMutate && project.id && ["Draft", "Rejected", "Review"].includes(project.status);
           const isSelected = project.id && project.id === state.selectedProjectId;
           const approvalActionLabel = project.status === "Approved"
             ? "승인 완료"
@@ -586,7 +598,7 @@ function renderApprovals() {
   document.querySelector("#approvalList").innerHTML = rows
     .slice(0, 5)
     .map((approval) => {
-      const isPending = approval.status === "Pending" && approval.id;
+      const isPending = canMutateWork() && approval.status === "Pending" && approval.id;
       return `
         <article class="approval-item">
           <div>
@@ -630,9 +642,31 @@ function renderImportPreview() {
     `;
 }
 
+function renderImportDiff() {
+  const rows = state.importDiffRows.slice(0, 8);
+  document.querySelector("#importDiffRows").innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              <td><span class="status-pill ${statusClass(row.change)}">${escapeHtml(row.change)}</span></td>
+              <td>${escapeHtml(row.code || "")}</td>
+              <td>${escapeHtml(row.name || "")}</td>
+              <td>${escapeHtml((row.fields || []).map((field) => field.field).join(", ") || "-")}</td>
+            </tr>
+          `,
+        )
+        .join("")
+    : `
+      <tr>
+        <td colspan="4">변경 diff 없음</td>
+      </tr>
+    `;
+}
+
 function renderApplyButton() {
   const applyButton = document.querySelector("#applyImportButton");
-  applyButton.disabled = !state.pendingImportJobId;
+  applyButton.disabled = !canMutateWork() || !state.pendingImportJobId;
 }
 
 function upsertImportJob(job) {
@@ -684,6 +718,32 @@ function renderImportHistory() {
     `;
 }
 
+function renderTemplateVersions() {
+  document.querySelector("#templateVersionCount").textContent = state.templateVersions.length;
+  document.querySelector("#templateVersionList").innerHTML = state.templateVersions.length
+    ? state.templateVersions
+        .map(
+          (version) => `
+            <article class="sync-run">
+              <div>
+                <strong>v${escapeHtml(version.version)} · ${escapeHtml(version.template_name)}</strong>
+                <small>${escapeHtml(formatTimestamp(version.created_at))} · ${escapeHtml(version.item_count)} rows</small>
+              </div>
+              <span class="status-pill stable">${escapeHtml(version.project_type)}</span>
+            </article>
+          `,
+        )
+        .join("")
+    : `
+      <article class="sync-run empty-run">
+        <div>
+          <strong>No versions</strong>
+          <small>버전 이력 없음</small>
+        </div>
+      </article>
+    `;
+}
+
 function renderProjectTemplateSelect(preserveSelection = true) {
   const selector = document.querySelector("#projectTemplateSelect");
   const selectedValue = preserveSelection && selector.value ? selector.value : defaultTemplateKey();
@@ -709,9 +769,10 @@ function renderSyncProjectSelect() {
   selector.disabled = !projects.length;
 
   const hasProject = Boolean(selector.value);
-  const canActualSync = hasProject && Boolean(state.pmPreflight?.ready_for_actual_sync);
-  document.querySelector("#syncPreflightButton").disabled = !hasProject;
-  document.querySelector("#syncDryRunButton").disabled = !hasProject;
+  const canSyncAction = hasProject && canMutateWork();
+  const canActualSync = canSyncAction && Boolean(state.pmPreflight?.ready_for_actual_sync);
+  document.querySelector("#syncPreflightButton").disabled = !canSyncAction;
+  document.querySelector("#syncDryRunButton").disabled = !canSyncAction;
   document.querySelector("#syncRunButton").disabled = !canActualSync;
   document.querySelector("#syncRunButton").title = canActualSync
     ? "Create or update work packages in OpenProject"
@@ -857,6 +918,7 @@ function renderUsersPanel() {
               <td>
                 <strong>${escapeHtml(user.display_name)}</strong>
                 <small>${escapeHtml(user.email)}</small>
+                <small>${user.must_change_password ? "Password change required" : "Password current"}</small>
               </td>
               <td>
                 <select data-user-field="role" aria-label="Role for ${escapeHtml(user.email)}">
@@ -874,6 +936,7 @@ function renderUsersPanel() {
                 <div class="table-actions">
                   <input data-user-field="password" type="password" minlength="8" placeholder="새 비밀번호" aria-label="New password for ${escapeHtml(user.email)}" />
                   <button class="table-action" type="button" data-user-action="save">저장</button>
+                  <button class="table-action" type="button" data-user-action="revoke">세션 종료</button>
                 </div>
               </td>
             </tr>
@@ -973,8 +1036,10 @@ function renderAll() {
   renderProjectPlan();
   renderApprovals();
   renderImportPreview();
+  renderImportDiff();
   renderApplyButton();
   renderImportHistory();
+  renderTemplateVersions();
   renderProjectTemplateSelect();
   renderSyncProjectSelect();
   renderSyncPanel();
@@ -1010,6 +1075,11 @@ async function loadData() {
     state.users = users;
     state.auditEvents = auditEvents;
     state.settings = settings;
+    try {
+      state.templateVersions = await request(`/api/templates/${encodeURIComponent(defaultTemplateKey())}/versions?limit=8`);
+    } catch (error) {
+      state.templateVersions = [];
+    }
     state.selectedImportJobId = importJobs.some((job) => job.id === state.selectedImportJobId)
       ? state.selectedImportJobId
       : null;
@@ -1044,6 +1114,7 @@ async function loadData() {
     };
     state.syncRuns = [];
     state.importJobs = [];
+    state.templateVersions = [];
     state.users = [];
     state.auditEvents = [];
     state.settings = fallbackSettings;
@@ -1150,6 +1221,20 @@ async function updatePortalUser(row) {
       body: JSON.stringify(payload),
     });
     passwordInput.value = "";
+    await loadData();
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+async function revokePortalUserSessions(row) {
+  if (!canManageUsers() || !row?.dataset.userId) return;
+  const status = document.querySelector("#userFormStatus");
+  status.textContent = "";
+  try {
+    await request(`/api/users/${encodeURIComponent(row.dataset.userId)}/sessions/revoke`, {
+      method: "POST",
+    });
     await loadData();
   } catch (error) {
     status.textContent = error.message;
@@ -1301,7 +1386,11 @@ function renderImportResult(result) {
     : "<li>계층, 일정, 가중치 검증 통과</li>";
 
   state.importPreview = result.rows || [];
+  state.importDiffRows = result.diff_rows || [];
+  document.querySelector("#importErrorWorkbookButton").disabled = !result.id || !issues.length;
+  document.querySelector("#importErrorWorkbookButton").dataset.importJobId = result.id || "";
   renderImportPreview();
+  renderImportDiff();
   renderApplyButton();
   renderImportHistory();
 }
@@ -1309,6 +1398,12 @@ function renderImportResult(result) {
 function downloadTemplateExcel() {
   const template = selectedTemplate();
   window.location.href = `${API_BASE}/api/templates/${encodeURIComponent(template.key)}/excel`;
+}
+
+function downloadImportErrorsExcel() {
+  const jobId = document.querySelector("#importErrorWorkbookButton").dataset.importJobId;
+  if (!jobId) return;
+  window.location.href = `${API_BASE}/api/imports/${encodeURIComponent(jobId)}/errors.xlsx`;
 }
 
 async function renumberTemplateCodes() {
@@ -1612,6 +1707,9 @@ async function activateSession(session) {
     scrollToTop: false,
   });
   await loadData();
+  if (state.currentUser?.must_change_password) {
+    openPasswordDialog(true);
+  }
 }
 
 async function restoreSession() {
@@ -1664,9 +1762,62 @@ async function logoutUser() {
   }
 }
 
+function openPasswordDialog(required = false) {
+  const dialog = document.querySelector("#passwordDialog");
+  document.querySelector("#passwordForm").reset();
+  document.querySelector("#passwordFormStatus").textContent = required ? "초기 비밀번호를 변경해야 합니다" : "";
+  document.querySelector("#passwordDialogClose").disabled = required;
+  document.querySelector("#passwordCancelButton").disabled = required;
+  dialog.dataset.required = required ? "true" : "false";
+  dialog.showModal();
+  document.querySelector("#currentPasswordInput").focus();
+}
+
+function closePasswordDialog() {
+  const dialog = document.querySelector("#passwordDialog");
+  if (dialog.dataset.required === "true") return;
+  dialog.close();
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const submitButton = document.querySelector("#passwordSubmitButton");
+  const status = document.querySelector("#passwordFormStatus");
+  const newPassword = document.querySelector("#newPasswordInput").value;
+  const confirmPassword = document.querySelector("#confirmPasswordInput").value;
+  if (newPassword !== confirmPassword) {
+    status.textContent = "새 비밀번호 확인이 일치하지 않습니다";
+    return;
+  }
+
+  submitButton.disabled = true;
+  status.textContent = "";
+  try {
+    const result = await request("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: document.querySelector("#currentPasswordInput").value,
+        new_password: newPassword,
+      }),
+    });
+    state.currentUser = result.user;
+    document.querySelector("#passwordDialog").dataset.required = "false";
+    document.querySelector("#passwordDialog").close();
+    renderAll();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
 document.querySelector("#refreshButton").addEventListener("click", loadData);
 document.querySelector("#loginForm").addEventListener("submit", loginUser);
 document.querySelector("#logoutButton").addEventListener("click", logoutUser);
+document.querySelector("#passwordButton").addEventListener("click", () => openPasswordDialog(false));
+document.querySelector("#passwordDialogClose").addEventListener("click", closePasswordDialog);
+document.querySelector("#passwordCancelButton").addEventListener("click", closePasswordDialog);
+document.querySelector("#passwordForm").addEventListener("submit", changePassword);
 document.querySelector("#createProjectButton").addEventListener("click", openProjectDialog);
 document.querySelector("#projectDialogClose").addEventListener("click", closeProjectDialog);
 document.querySelector("#projectCancelButton").addEventListener("click", closeProjectDialog);
@@ -1674,6 +1825,7 @@ document.querySelector("#projectForm").addEventListener("submit", createProject)
 document.querySelector("#userCreateForm").addEventListener("submit", createPortalUser);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
+document.querySelector("#importErrorWorkbookButton").addEventListener("click", downloadImportErrorsExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
 document.querySelector("#applyImportButton").addEventListener("click", applyImportPreview);
 document.querySelector("#syncRefreshButton").addEventListener("click", refreshEnginePreflight);
@@ -1695,8 +1847,12 @@ document.querySelector("#approvalList").addEventListener("click", (event) => {
   decideApproval(button.dataset.approvalId, button.dataset.approvalAction);
 });
 document.querySelector("#userRows").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-user-action='save']");
+  const button = event.target.closest("[data-user-action]");
   if (!button || button.disabled) return;
+  if (button.dataset.userAction === "revoke") {
+    revokePortalUserSessions(button.closest("tr"));
+    return;
+  }
   updatePortalUser(button.closest("tr"));
 });
 document.querySelector(".nav-list").addEventListener("click", (event) => {

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WBS Control Portal</title>
-    <link rel="stylesheet" href="./styles.css?v=20260602-admin-rbac" />
+    <link rel="stylesheet" href="./styles.css?v=20260602-rbac-hidden" />
   </head>
   <body data-auth="pending">
     <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
@@ -59,6 +59,7 @@
             <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh dashboard" title="Refresh">↻</button>
             <button class="secondary-button" id="downloadTemplateButton" type="button">Excel 다운로드</button>
             <button class="primary-button" id="createProjectButton" type="button">프로젝트 생성</button>
+            <button class="secondary-button" id="passwordButton" type="button">비밀번호</button>
             <button class="secondary-button" id="logoutButton" type="button">로그아웃</button>
           </div>
         </header>
@@ -216,6 +217,7 @@
               <button class="secondary-button" id="renumberButton" type="button">코드 정렬</button>
               <label class="secondary-button file-button" for="excelFileInput">Excel 업로드</label>
               <button class="primary-button" id="applyImportButton" type="button" disabled>반영</button>
+              <button class="secondary-button" id="importErrorWorkbookButton" type="button" disabled>오류 Excel</button>
               <input id="excelFileInput" type="file" accept=".xlsx" />
             </div>
             <div class="import-summary">
@@ -244,10 +246,36 @@
             </div>
             <div class="import-history">
               <div class="compact-label">
+                <span>Import diff</span>
+                <small>preview</small>
+              </div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Change</th>
+                      <th>WBS</th>
+                      <th>Name</th>
+                      <th>Fields</th>
+                    </tr>
+                  </thead>
+                  <tbody id="importDiffRows"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="import-history">
+              <div class="compact-label">
                 <span>Recent imports</span>
                 <small id="importHistoryCount">0</small>
               </div>
               <div class="import-history-list" id="importHistoryList"></div>
+            </div>
+            <div class="sync-history">
+              <div class="compact-label">
+                <span>Template versions</span>
+                <small id="templateVersionCount">0</small>
+              </div>
+              <div class="sync-run-list" id="templateVersionList"></div>
             </div>
           </article>
 
@@ -426,7 +454,38 @@
       </form>
     </dialog>
 
+    <dialog class="dialog" id="passwordDialog" aria-labelledby="passwordDialogTitle">
+      <form class="dialog-panel" id="passwordForm" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Security</p>
+            <h2 id="passwordDialogTitle">비밀번호 변경</h2>
+          </div>
+          <button class="icon-button" id="passwordDialogClose" type="button" aria-label="Close password dialog" title="Close">×</button>
+        </div>
+        <div class="form-grid">
+          <label>
+            <span>Current</span>
+            <input id="currentPasswordInput" name="current_password" type="password" autocomplete="current-password" required />
+          </label>
+          <label>
+            <span>New</span>
+            <input id="newPasswordInput" name="new_password" type="password" minlength="8" autocomplete="new-password" required />
+          </label>
+          <label>
+            <span>Confirm</span>
+            <input id="confirmPasswordInput" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required />
+          </label>
+        </div>
+        <p class="form-status" id="passwordFormStatus"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="passwordCancelButton" type="button">취소</button>
+          <button class="primary-button" id="passwordSubmitButton" type="submit">변경</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="./config.js"></script>
-    <script src="./app.js?v=20260602-admin-rbac"></script>
+    <script src="./app.js?v=20260602-rbac-hidden"></script>
   </body>
 </html>
