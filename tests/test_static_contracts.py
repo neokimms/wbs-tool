@@ -7,6 +7,7 @@ API = (ROOT / "services/wbs-api/app/main.py").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "services/wbs-api/migrations/001_init.sql").read_text(encoding="utf-8")
 PORTAL_HTML = (ROOT / "apps/portal/index.html").read_text(encoding="utf-8")
 PORTAL_JS = (ROOT / "apps/portal/app.js").read_text(encoding="utf-8")
+DEMO_E2E = (ROOT / "scripts/demo-e2e.sh").read_text(encoding="utf-8")
 
 
 class WbsPlatformContracts(unittest.TestCase):
@@ -38,6 +39,7 @@ class WbsPlatformContracts(unittest.TestCase):
             '@app.get("/api/templates/{template_key}/versions")',
             '@app.post("/api/projects/{project_id}/imports/{job_id}/apply")',
             "wbs_project_wbs_items",
+            "baseline_source",
         ):
             self.assertIn(snippet, API + MIGRATION)
 
@@ -50,6 +52,17 @@ class WbsPlatformContracts(unittest.TestCase):
             "downloadImportErrorsExcel",
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS)
+
+    def test_demo_e2e_contract_exists(self):
+        for snippet in (
+            "scripts/generate-demo-wbs-workbook.py",
+            "/api/templates/import/preview",
+            "/imports/${import_job_id}/apply",
+            "/api/approvals",
+            "/sync-preflight",
+            "ready_for_actual_sync",
+        ):
+            self.assertIn(snippet, DEMO_E2E)
 
 
 if __name__ == "__main__":

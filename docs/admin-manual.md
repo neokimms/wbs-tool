@@ -128,3 +128,11 @@ curl https://wbs-api.example.com/api/operations/health
 ```
 
 점검 항목은 PostgreSQL, schema, template baseline, 사용자/세션 보안, 감사 로그, PM engine preflight, 백업, metrics, CORS 정책을 포함합니다.
+
+Excel/승인/baseline/sync dry-run까지 포함한 데모 검증은 로컬 API 프로필에서 다음 명령으로 실행합니다.
+
+```bash
+zsh scripts/demo-e2e.sh
+```
+
+결과는 `outputs/demo/demo-e2e-summary.json`에 저장됩니다. OpenProject 실제 sync까지 검증하려면 토큰과 sync 실행 플래그를 설정한 뒤 API를 재기동합니다.

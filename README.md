@@ -205,6 +205,14 @@ REQUIRE_OPENPROJECT=1 bash scripts/status-check.sh
 curl http://localhost:8000/api/operations/health
 ```
 
+Excel 업로드부터 프로젝트 WBS 적용, 자동 승인, baseline lock, sync preflight, dry-run까지 한 번에 검증하려면 데모 E2E 스크립트를 실행합니다. 스크립트는 `outputs/demo/wbs-demo-import.xlsx` 샘플 파일과 `outputs/demo/demo-e2e-summary.json` 결과 요약을 생성합니다.
+
+```bash
+zsh scripts/demo-e2e.sh
+```
+
+OpenProject 실제 sync는 `OPENPROJECT_SYNC_ENABLED=true`, `OPENPROJECT_API_TOKEN`, `OPENPROJECT_AUTH_MODE`, 필요 시 `OPENPROJECT_DEFAULT_TYPE_ID`를 설정한 뒤 API를 재기동해야 실행됩니다. 준비되지 않은 환경에서는 E2E 스크립트가 actual sync를 건너뛰고 dry-run 결과까지만 검증합니다.
+
 관리자 매뉴얼은 [docs/admin-manual.md](docs/admin-manual.md)에 있습니다.
 
 PostgreSQL 백업은 `backups/postgres` 아래에 custom dump 형식으로 생성됩니다. 기본 대상은 `.env`의 `POSTGRES_DB`이며, 인자로 다른 DB를 지정할 수 있습니다.

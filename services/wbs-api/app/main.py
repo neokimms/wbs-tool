@@ -1621,7 +1621,9 @@ async def create_project_baseline(
     template = await fetch_template(connection, template_key)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found for baseline")
-    rows = template_rows_or_phases(template, await fetch_template_items(connection, template_key))
+    project_rows = await fetch_project_wbs_items(connection, project_id)
+    baseline_source = "project_wbs" if project_rows else "template"
+    rows = project_rows or template_rows_or_phases(template, await fetch_template_items(connection, template_key))
     snapshot_rows = baseline_snapshot_rows(rows)
     version = await connection.fetchval(
         "SELECT COALESCE(max(version), 0) + 1 FROM wbs_project_baselines WHERE project_id = $1",
@@ -1652,6 +1654,7 @@ async def create_project_baseline(
         {
             "locked_by": actor,
             "source": "approval",
+            "baseline_source": baseline_source,
             **(metadata or {}),
         },
     )
