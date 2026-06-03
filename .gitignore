@@ -10,6 +10,8 @@ build/
 coverage/
 *.log
 outputs/
+~$*
+*.dump
 backups/*
 !backups/postgres/
 backups/postgres/*

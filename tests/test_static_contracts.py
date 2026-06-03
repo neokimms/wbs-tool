@@ -8,6 +8,8 @@ MIGRATION = (ROOT / "services/wbs-api/migrations/001_init.sql").read_text(encodi
 PORTAL_HTML = (ROOT / "apps/portal/index.html").read_text(encoding="utf-8")
 PORTAL_JS = (ROOT / "apps/portal/app.js").read_text(encoding="utf-8")
 DEMO_E2E = (ROOT / "scripts/demo-e2e.sh").read_text(encoding="utf-8")
+ENV_EXAMPLE = (ROOT / ".env.example").read_text(encoding="utf-8")
+GITIGNORE = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
 
 class WbsPlatformContracts(unittest.TestCase):
@@ -79,6 +81,26 @@ class WbsPlatformContracts(unittest.TestCase):
             "ready_for_actual_sync",
         ):
             self.assertIn(snippet, DEMO_E2E)
+
+    def test_generated_backups_and_excel_locks_are_ignored(self):
+        for snippet in (
+            "outputs/",
+            "~$*",
+            "*.dump",
+            "backups/postgres/*",
+            "!backups/postgres/.gitkeep",
+        ):
+            self.assertIn(snippet, GITIGNORE)
+
+    def test_env_example_keeps_dev_aliases_disabled_and_documents_policy(self):
+        for snippet in (
+            "WBS_ENABLE_LOGIN_ALIASES=false",
+            "Development-only convenience aliases.",
+            "WBS_PASSWORD_MIN_LENGTH=8",
+            "WBS_PASSWORD_REQUIRE_NUMBER=true",
+            "WBS_STRICT_WEIGHT_VALIDATION=true",
+        ):
+            self.assertIn(snippet, ENV_EXAMPLE)
 
 
 if __name__ == "__main__":
