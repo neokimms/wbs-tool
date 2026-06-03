@@ -1478,9 +1478,27 @@ function renderSettingsPanel() {
   document.querySelector("#settingsStatus").textContent = state.settingsStatus;
 }
 
+function renderGuidePanel() {
+  const guideContent = document.querySelector("#guideContent");
+  if (!guideContent) return;
+
+  if (window.WbsGuideRenderer?.renderGuide && window.WBS_PORTAL_GUIDE_CONTENT) {
+    guideContent.innerHTML = window.WbsGuideRenderer.renderGuide(window.WBS_PORTAL_GUIDE_CONTENT);
+    return;
+  }
+
+  guideContent.innerHTML = `
+    <div class="guide-empty">
+      <strong>가이드 콘텐츠 로딩 대기</strong>
+      <p>가이드 콘텐츠 파일을 불러오면 WBS 포털 사용법이 여기에 표시됩니다.</p>
+    </div>
+  `;
+}
+
 function renderAll() {
   renderAuthState();
   renderMetrics();
+  renderGuidePanel();
   renderPortfolioTabs();
   renderProjectTimeline();
   renderTemplates();
@@ -2449,6 +2467,15 @@ document.querySelector(".nav-list").addEventListener("click", (event) => {
   event.preventDefault();
   applyPortalView(link.hash, { behavior: "smooth" });
 });
+document.querySelector("#guideContent").addEventListener("click", (event) => {
+  const link = event.target.closest("[data-guide-anchor]");
+  if (!link) return;
+  event.preventDefault();
+  document.getElementById(`guide-${link.dataset.guideAnchor}`)?.scrollIntoView({
+    block: "start",
+    behavior: "smooth",
+  });
+});
 document.querySelector("#auditRefreshButton").addEventListener("click", loadData);
 document.querySelector("#settingsCards").addEventListener("click", (event) => {
   const card = event.target.closest("[data-setting-key]");
@@ -2496,4 +2523,5 @@ window.addEventListener("popstate", () => applyPortalView(window.location.hash, 
   updateHistory: false,
 }));
 
+renderGuidePanel();
 restoreSession();

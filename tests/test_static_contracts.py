@@ -8,6 +8,8 @@ MIGRATION = (ROOT / "services/wbs-api/migrations/001_init.sql").read_text(encodi
 PORTAL_HTML = (ROOT / "apps/portal/index.html").read_text(encoding="utf-8")
 PORTAL_JS = (ROOT / "apps/portal/app.js").read_text(encoding="utf-8")
 PORTAL_NGINX = (ROOT / "apps/portal/nginx.conf").read_text(encoding="utf-8")
+GUIDE_CONTENT = (ROOT / "apps/portal/wbs-guide-content.js").read_text(encoding="utf-8")
+GUIDE_RENDERER = (ROOT / "apps/portal/guide-renderer.js").read_text(encoding="utf-8")
 DEMO_E2E = (ROOT / "scripts/demo-e2e.sh").read_text(encoding="utf-8")
 ENV_EXAMPLE = (ROOT / ".env.example").read_text(encoding="utf-8")
 GITIGNORE = (ROOT / ".gitignore").read_text(encoding="utf-8")
@@ -91,6 +93,37 @@ class WbsPlatformContracts(unittest.TestCase):
             'name: "회고", weight: 5',
         ):
             self.assertIn(snippet, PORTAL_JS)
+
+    def test_portal_guide_panel_is_separated_and_populated(self):
+        for snippet in (
+            'href="#guide"',
+            'id="guide"',
+            'id="guideContent"',
+            "wbs-guide-content.js",
+            "guide-renderer.js",
+            "renderGuidePanel",
+            "WBS_PORTAL_GUIDE_CONTENT",
+            "WbsGuideRenderer.renderGuide",
+            "data-guide-anchor",
+            "guideContent\").addEventListener(\"click\"",
+        ):
+            self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + GUIDE_CONTENT + GUIDE_RENDERER)
+        for menu in (
+            "대시보드",
+            "프로젝트",
+            "표준 WBS",
+            "Excel 반영",
+            "OpenProject",
+            "승인 이력",
+            "운영 점검",
+            "사용자",
+            "감사 로그",
+            "설정",
+        ):
+            self.assertIn(f'menu: "{menu}"', GUIDE_CONTENT)
+        for kind in ("overview", "procedure", "task-list", "reference", "troubleshooting"):
+            self.assertIn(f'kind: "{kind}"', GUIDE_CONTENT)
+        self.assertIn('body[data-portal-view="guide"] #guide', (ROOT / "apps/portal/styles.css").read_text(encoding="utf-8"))
 
     def test_policy_and_pull_sync_contracts_exist(self):
         for snippet in (
