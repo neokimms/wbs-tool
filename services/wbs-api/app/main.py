@@ -2401,8 +2401,6 @@ async def health(request: Request) -> dict[str, str]:
         await connection.fetchval("SELECT 1")
     return {
         "status": "ok",
-        "database": "postgresql",
-        "openproject_base_url": OPENPROJECT_BASE_URL,
     }
 
 

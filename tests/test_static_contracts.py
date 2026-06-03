@@ -7,6 +7,7 @@ API = (ROOT / "services/wbs-api/app/main.py").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "services/wbs-api/migrations/001_init.sql").read_text(encoding="utf-8")
 PORTAL_HTML = (ROOT / "apps/portal/index.html").read_text(encoding="utf-8")
 PORTAL_JS = (ROOT / "apps/portal/app.js").read_text(encoding="utf-8")
+PORTAL_NGINX = (ROOT / "apps/portal/nginx.conf").read_text(encoding="utf-8")
 DEMO_E2E = (ROOT / "scripts/demo-e2e.sh").read_text(encoding="utf-8")
 ENV_EXAMPLE = (ROOT / ".env.example").read_text(encoding="utf-8")
 GITIGNORE = (ROOT / ".gitignore").read_text(encoding="utf-8")
@@ -61,6 +62,36 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS)
 
+    def test_portal_connects_project_excel_tabs_and_approval_paging(self):
+        for snippet in (
+            'id="projectWbsDownloadButton"',
+            'id="projectWbsFileInput"',
+            "downloadProjectWbsExcel",
+            "uploadProjectWbsExcel",
+            "/api/projects/${encodeURIComponent(state.selectedProjectId)}/imports/preview",
+            "projectWbsDownloadButton\").addEventListener(\"click\", downloadProjectWbsExcel",
+            "projectWbsFileInput\").addEventListener(\"change\", uploadProjectWbsExcel",
+            'data-portfolio-tab="pmo"',
+            'data-portfolio-tab="delivery"',
+            'data-portfolio-tab="risk"',
+            "event.target.closest(\"[data-portfolio-tab]\")",
+            "renderProjectTimeline",
+            "state.approvalLimit += 5",
+        ):
+            self.assertIn(snippet, PORTAL_HTML + PORTAL_JS)
+        self.assertNotIn("slice(0, 5)", PORTAL_JS)
+
+    def test_portal_fallback_templates_cover_project_types(self):
+        for snippet in (
+            'key: "migration-data"',
+            'name: "소스 분석", weight: 15',
+            'name: "검증", weight: 10',
+            'key: "maintenance"',
+            'name: "요청 접수", weight: 10',
+            'name: "회고", weight: 5',
+        ):
+            self.assertIn(snippet, PORTAL_JS)
+
     def test_policy_and_pull_sync_contracts_exist(self):
         for snippet in (
             "WBS_STRICT_WEIGHT_VALIDATION",
@@ -101,6 +132,12 @@ class WbsPlatformContracts(unittest.TestCase):
             "WBS_STRICT_WEIGHT_VALIDATION=true",
         ):
             self.assertIn(snippet, ENV_EXAMPLE)
+
+    def test_public_health_and_portal_nginx_do_not_leak_internal_details(self):
+        self.assertIn("Content-Security-Policy", PORTAL_NGINX)
+        self.assertIn("frame-ancestors 'none'", PORTAL_NGINX)
+        self.assertNotIn('"openproject_base_url"', API)
+        self.assertNotIn('"database": "postgresql"', API)
 
 
 if __name__ == "__main__":
