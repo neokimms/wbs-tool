@@ -2225,7 +2225,7 @@ async function runProjectSync() {
   }
 }
 
-const navLinks = [...document.querySelectorAll(".nav-list a[href^='#']")];
+const navLinks = [...document.querySelectorAll(".nav-list a[href^='#'], .nav-guide a[href^='#']")];
 const viewAliases = {
   admin: "operations",
 };
@@ -2461,7 +2461,7 @@ document.querySelector("#userRows").addEventListener("click", (event) => {
   }
   updatePortalUser(button.closest("tr"));
 });
-document.querySelector(".nav-list").addEventListener("click", (event) => {
+document.querySelector(".sidebar").addEventListener("click", (event) => {
   const link = event.target.closest("a[href^='#']");
   if (!link) return;
   event.preventDefault();

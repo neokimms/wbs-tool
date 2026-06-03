@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WBS 운영 포털</title>
-    <link rel="stylesheet" href="./styles.css?v=20260603-guide" />
+    <link rel="stylesheet" href="./styles.css?v=20260603-guide-nav" />
   </head>
   <body data-auth="pending">
     <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
@@ -36,7 +36,6 @@
         </div>
         <nav class="nav-list">
           <a class="active" href="#dashboard">대시보드</a>
-          <a href="#guide">사용 가이드</a>
           <a href="#portfolio">프로젝트</a>
           <a href="#templates">표준 WBS</a>
           <a href="#approvals">승인 이력</a>
@@ -46,6 +45,12 @@
           <a href="#users">사용자</a>
           <a href="#audit">감사 로그</a>
           <a href="#settings">설정</a>
+        </nav>
+        <nav class="nav-guide" aria-label="사용 지원">
+          <a href="#guide">
+            <span>사용 가이드</span>
+            <small>업무 Runbook</small>
+          </a>
         </nav>
       </aside>
 
@@ -536,6 +541,6 @@
     <script src="./config.js"></script>
     <script src="./wbs-guide-content.js?v=20260603-guide"></script>
     <script src="./guide-renderer.js?v=20260603-guide"></script>
-    <script src="./app.js?v=20260603-guide"></script>
+    <script src="./app.js?v=20260603-guide-nav"></script>
   </body>
 </html>

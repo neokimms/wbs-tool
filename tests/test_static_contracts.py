@@ -7,6 +7,7 @@ API = (ROOT / "services/wbs-api/app/main.py").read_text(encoding="utf-8")
 MIGRATION = (ROOT / "services/wbs-api/migrations/001_init.sql").read_text(encoding="utf-8")
 PORTAL_HTML = (ROOT / "apps/portal/index.html").read_text(encoding="utf-8")
 PORTAL_JS = (ROOT / "apps/portal/app.js").read_text(encoding="utf-8")
+PORTAL_CSS = (ROOT / "apps/portal/styles.css").read_text(encoding="utf-8")
 PORTAL_NGINX = (ROOT / "apps/portal/nginx.conf").read_text(encoding="utf-8")
 GUIDE_CONTENT = (ROOT / "apps/portal/wbs-guide-content.js").read_text(encoding="utf-8")
 GUIDE_RENDERER = (ROOT / "apps/portal/guide-renderer.js").read_text(encoding="utf-8")
@@ -99,6 +100,7 @@ class WbsPlatformContracts(unittest.TestCase):
             'href="#guide"',
             'id="guide"',
             'id="guideContent"',
+            'class="nav-guide"',
             "wbs-guide-content.js",
             "guide-renderer.js",
             "renderGuidePanel",
@@ -106,8 +108,10 @@ class WbsPlatformContracts(unittest.TestCase):
             "WbsGuideRenderer.renderGuide",
             "data-guide-anchor",
             "guideContent\").addEventListener(\"click\"",
+            ".nav-guide a.active",
+            "grid-column: 2",
         ):
-            self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + GUIDE_CONTENT + GUIDE_RENDERER)
+            self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + PORTAL_CSS + GUIDE_CONTENT + GUIDE_RENDERER)
         for menu in (
             "대시보드",
             "프로젝트",
@@ -123,7 +127,7 @@ class WbsPlatformContracts(unittest.TestCase):
             self.assertIn(f'menu: "{menu}"', GUIDE_CONTENT)
         for kind in ("overview", "procedure", "task-list", "reference", "troubleshooting"):
             self.assertIn(f'kind: "{kind}"', GUIDE_CONTENT)
-        self.assertIn('body[data-portal-view="guide"] #guide', (ROOT / "apps/portal/styles.css").read_text(encoding="utf-8"))
+        self.assertIn('body[data-portal-view="guide"] #guide', PORTAL_CSS)
 
     def test_policy_and_pull_sync_contracts_exist(self):
         for snippet in (
