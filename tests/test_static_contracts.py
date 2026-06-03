@@ -38,6 +38,8 @@ class WbsPlatformContracts(unittest.TestCase):
             '@app.get("/api/imports/{job_id}/errors.xlsx")',
             '@app.get("/api/templates/{template_key}/versions")',
             '@app.post("/api/projects/{project_id}/imports/{job_id}/apply")',
+            '@app.get("/api/projects/{project_id}/excel")',
+            '@app.post("/api/projects/{project_id}/imports/preview", status_code=201)',
             "wbs_project_wbs_items",
             "baseline_source",
         ):
@@ -48,10 +50,24 @@ class WbsPlatformContracts(unittest.TestCase):
             'id="passwordDialog"',
             'id="importDiffRows"',
             'id="templateVersionList"',
+            'id="projectWbsFileInput"',
+            'id="approvalLoadMoreButton"',
+            'id="pmEngineForm"',
+            'id="syncPullButton"',
             "canMutateWork",
             "downloadImportErrorsExcel",
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS)
+
+    def test_policy_and_pull_sync_contracts_exist(self):
+        for snippet in (
+            "WBS_STRICT_WEIGHT_VALIDATION",
+            "WBS_PASSWORD_MIN_LENGTH",
+            "validate_password_policy",
+            '@app.post("/api/projects/{project_id}/sync-pull")',
+            "openproject_work_package_pull_snapshot",
+        ):
+            self.assertIn(snippet, API)
 
     def test_demo_e2e_contract_exists(self):
         for snippet in (

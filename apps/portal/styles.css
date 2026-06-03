@@ -442,7 +442,7 @@ body[data-portal-view="settings"] #settings {
 
 .timeline {
   display: grid;
-  grid-template-columns: 5fr 15fr 20fr 25fr 20fr 10fr 5fr;
+  grid-template-columns: var(--timeline-columns, 5fr 15fr 20fr 25fr 20fr 10fr 5fr);
   gap: 3px;
   min-height: 58px;
   margin-bottom: 16px;
@@ -661,7 +661,7 @@ tr:last-child td {
 
 .sync-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 38px minmax(74px, 0.35fr) minmax(92px, 0.45fr) minmax(80px, 0.35fr);
+  grid-template-columns: minmax(0, 1fr) 38px minmax(74px, 0.35fr) minmax(92px, 0.45fr) minmax(92px, 0.45fr) minmax(80px, 0.35fr);
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -681,6 +681,11 @@ tr:last-child td {
 .sync-controls .danger-button {
   width: 100%;
   min-width: 0;
+}
+
+.more-button {
+  width: 100%;
+  margin-top: 10px;
 }
 
 .sync-checks {
@@ -975,6 +980,26 @@ button.import-job:hover,
 .detail-controls select:disabled {
   cursor: not-allowed;
   opacity: 0.56;
+}
+
+.project-import-actions {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 1fr) minmax(140px, 0.75fr);
+  gap: 8px;
+}
+
+.project-import-actions button,
+.project-import-actions label {
+  width: 100%;
+  min-width: 0;
+}
+
+#projectWbsFileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
 .detail-table {
@@ -1282,11 +1307,12 @@ button.setting-card:hover,
 
 .settings-editor {
   display: grid;
-  grid-template-rows: 38px minmax(220px, 1fr) auto;
+  grid-template-rows: 38px auto minmax(120px, 1fr) auto;
   gap: 8px;
 }
 
 .settings-editor select,
+.settings-editor input,
 .settings-editor textarea {
   width: 100%;
   min-width: 0;
@@ -1296,9 +1322,56 @@ button.setting-card:hover,
   color: var(--text);
 }
 
-.settings-editor select {
+.settings-editor select,
+.settings-editor input {
   height: 38px;
   padding: 0 12px;
+}
+
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-form label,
+.toggle-line {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.toggle-line {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.toggle-line input {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-advanced {
+  min-height: 0;
+}
+
+.settings-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-advanced:not([open]) textarea {
+  display: none;
 }
 
 .settings-editor textarea {
@@ -1495,13 +1568,15 @@ button.setting-card:hover,
     grid-template-columns: 1fr;
   }
 
+  .project-import-actions,
   .sync-controls {
     grid-template-columns: 1fr;
   }
 
   .user-admin-form,
   .settings-layout,
-  .settings-engine {
+  .settings-engine,
+  .settings-form {
     grid-template-columns: 1fr;
   }
 

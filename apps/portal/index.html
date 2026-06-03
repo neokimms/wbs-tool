@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WBS Control Portal</title>
-    <link rel="stylesheet" href="./styles.css?v=20260602-rbac-hidden" />
+    <title>WBS 운영 포털</title>
+    <link rel="stylesheet" href="./styles.css?v=20260602-ko-main" />
   </head>
   <body data-auth="pending">
     <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
       <form class="login-panel" id="loginForm">
         <div>
-          <p class="eyebrow">Secure access</p>
+          <p class="eyebrow">보안 접속</p>
           <h1 id="loginTitle">WBS Control 로그인</h1>
         </div>
         <label>
@@ -26,37 +26,37 @@
       </form>
     </section>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="Primary navigation">
+      <aside class="sidebar" aria-label="주요 메뉴">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">W</div>
           <div>
             <strong>WBS Control</strong>
-            <span>PMO Portal</span>
+            <span>PMO 포털</span>
           </div>
         </div>
         <nav class="nav-list">
-          <a class="active" href="#dashboard">Dashboard</a>
-          <a href="#portfolio">Portfolio</a>
-          <a href="#templates">Templates</a>
-          <a href="#approvals">Approval Log</a>
-          <a href="#imports">Excel Queue</a>
+          <a class="active" href="#dashboard">대시보드</a>
+          <a href="#portfolio">프로젝트</a>
+          <a href="#templates">표준 WBS</a>
+          <a href="#approvals">승인 이력</a>
+          <a href="#imports">Excel 반영</a>
           <a href="#sync">OpenProject</a>
-          <a href="#operations">Operations</a>
-          <a href="#users">Users</a>
-          <a href="#audit">Audit</a>
-          <a href="#settings">Settings</a>
+          <a href="#operations">운영 점검</a>
+          <a href="#users">사용자</a>
+          <a href="#audit">감사 로그</a>
+          <a href="#settings">설정</a>
         </nav>
       </aside>
 
       <main class="workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Enterprise WBS Platform</p>
+            <p class="eyebrow">기업 WBS 플랫폼</p>
             <h1>PMO 운영 콘솔</h1>
           </div>
-          <div class="toolbar" aria-label="Page actions">
+          <div class="toolbar" aria-label="화면 작업">
             <span class="user-pill" id="userBadge">-</span>
-            <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh dashboard" title="Refresh">↻</button>
+            <button class="icon-button" id="refreshButton" type="button" aria-label="새로고침" title="새로고침">↻</button>
             <button class="secondary-button" id="downloadTemplateButton" type="button">Excel 다운로드</button>
             <button class="primary-button" id="createProjectButton" type="button">프로젝트 생성</button>
             <button class="secondary-button" id="passwordButton" type="button">비밀번호</button>
@@ -64,31 +64,31 @@
           </div>
         </header>
 
-        <section class="metric-grid" id="dashboard" aria-label="Dashboard metrics">
+        <section class="metric-grid" id="dashboard" aria-label="대시보드 지표">
           <article class="metric-panel">
-            <span>Projects</span>
+            <span>프로젝트</span>
             <strong id="projectCount">0</strong>
-            <small>Draft and active portfolio</small>
+            <small>초안 및 진행 프로젝트</small>
           </article>
           <article class="metric-panel">
-            <span>Templates</span>
+            <span>표준 WBS</span>
             <strong id="templateCount">0</strong>
-            <small>Company standard WBS</small>
+            <small>회사 표준 템플릿</small>
           </article>
           <article class="metric-panel">
-            <span>Approvals</span>
+            <span>승인</span>
             <strong id="approvalCount">0</strong>
-            <small>Pending PMO decisions</small>
+            <small>PMO 처리 대기</small>
           </article>
           <article class="metric-panel">
             <span>OpenProject</span>
-            <strong id="syncStatus">Ready</strong>
-            <small>CE engine integration</small>
+            <strong id="syncStatus">준비</strong>
+            <small>CE 엔진 연계</small>
           </article>
           <article class="metric-panel">
-            <span>Database</span>
+            <span>데이터베이스</span>
             <strong>PostgreSQL</strong>
-            <small>17 platform standard</small>
+            <small>플랫폼 표준 17</small>
           </article>
         </section>
 
@@ -96,16 +96,16 @@
           <article class="panel wide" id="portfolio">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Portfolio</p>
+                <p class="eyebrow">프로젝트</p>
                 <h2>프로젝트 현황</h2>
               </div>
-              <div class="segmented" role="tablist" aria-label="Portfolio view">
-                <button class="selected" type="button">PMO</button>
-                <button type="button">Delivery</button>
-                <button type="button">Risk</button>
+              <div class="segmented" role="tablist" aria-label="프로젝트 보기">
+                <button class="selected" type="button" data-portfolio-tab="pmo">PMO</button>
+                <button type="button" data-portfolio-tab="delivery">수행</button>
+                <button type="button" data-portfolio-tab="risk">리스크</button>
               </div>
             </div>
-            <div class="timeline" aria-label="Standard delivery timeline">
+            <div class="timeline" id="projectTimeline" aria-label="표준 수행 일정">
               <div style="--span: 5"><span>착수</span></div>
               <div style="--span: 15"><span>분석</span></div>
               <div style="--span: 20"><span>설계</span></div>
@@ -118,12 +118,12 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Project</th>
-                    <th>Owner</th>
-                    <th>Status</th>
-                    <th>Template</th>
-                    <th>Start</th>
-                    <th>Action</th>
+                    <th>프로젝트</th>
+                    <th>담당</th>
+                    <th>상태</th>
+                    <th>템플릿</th>
+                    <th>시작일</th>
+                    <th>작업</th>
                   </tr>
                 </thead>
                 <tbody id="projectRows"></tbody>
@@ -132,18 +132,18 @@
             <div class="project-detail" id="projectDetail">
               <div class="panel-header compact-header">
                 <div>
-                  <p class="eyebrow">WBS Plan</p>
+                  <p class="eyebrow">WBS 계획</p>
                   <h2 id="projectDetailTitle">프로젝트 계획</h2>
                 </div>
-                <span class="status-pill attention" id="projectDetailStatus">Select</span>
+                <span class="status-pill attention" id="projectDetailStatus">선택</span>
               </div>
               <dl class="definition-list detail-definitions">
                 <div>
-                  <dt>Template</dt>
+                  <dt>템플릿</dt>
                   <dd id="projectDetailTemplate">-</dd>
                 </div>
                 <div>
-                  <dt>Rows</dt>
+                  <dt>행</dt>
                   <dd id="projectDetailRows">-</dd>
                 </div>
                 <div>
@@ -151,29 +151,36 @@
                   <dd id="projectDetailSync">-</dd>
                 </div>
                 <div>
-                  <dt>Baseline</dt>
+                  <dt>기준선</dt>
                   <dd id="projectDetailBaseline">-</dd>
                 </div>
               </dl>
-              <div class="detail-controls" aria-label="WBS tree filters">
-                <input id="projectWbsSearchInput" type="search" placeholder="WBS 검색" aria-label="Search WBS tree" />
-                <select id="projectPhaseFilter" aria-label="Phase filter">
+              <div class="detail-controls" aria-label="WBS 필터">
+                <input id="projectWbsSearchInput" type="search" placeholder="WBS 검색" aria-label="WBS 검색" />
+                <select id="projectPhaseFilter" aria-label="단계 필터">
                   <option value="">전체 단계</option>
                 </select>
-                <select id="projectTypeFilter" aria-label="Type filter">
+                <select id="projectTypeFilter" aria-label="유형 필터">
                   <option value="">전체 유형</option>
                 </select>
               </div>
+              <div class="project-import-actions">
+                <button class="secondary-button" id="projectWbsDownloadButton" type="button">프로젝트 WBS 다운로드</button>
+                <label class="secondary-button file-button" for="projectWbsFileInput">프로젝트 WBS 업로드</label>
+                <button class="primary-button" id="applyProjectImportButton" type="button" disabled>프로젝트 WBS 반영</button>
+                <input id="projectWbsFileInput" type="file" accept=".xlsx" />
+              </div>
+              <p class="form-status" id="projectImportStatus"></p>
               <div class="table-wrap compact-table detail-table">
                 <table>
                   <thead>
                     <tr>
                       <th>WBS</th>
-                      <th>Subject</th>
-                      <th>Type</th>
-                      <th>Owner</th>
-                      <th>Weight</th>
-                      <th>Sync</th>
+                      <th>작업명</th>
+                      <th>유형</th>
+                      <th>담당</th>
+                      <th>가중치</th>
+                      <th>동기화</th>
                     </tr>
                   </thead>
                   <tbody id="projectPlanRows"></tbody>
@@ -185,10 +192,10 @@
           <article class="panel" id="templates">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Templates</p>
+                <p class="eyebrow">템플릿</p>
                 <h2>표준 WBS</h2>
               </div>
-              <button class="icon-button" id="templateDownloadButton" type="button" aria-label="Download template" title="Download">↓</button>
+              <button class="icon-button" id="templateDownloadButton" type="button" aria-label="템플릿 다운로드" title="다운로드">↓</button>
             </div>
             <div class="template-list" id="templateList"></div>
           </article>
@@ -199,21 +206,22 @@
                 <p class="eyebrow">PMO</p>
                 <h2>승인 이력</h2>
               </div>
-              <span class="status-pill stable" id="approvalStatus">Auto</span>
+              <span class="status-pill stable" id="approvalStatus">자동</span>
             </div>
             <div class="approval-list" id="approvalList"></div>
+            <button class="secondary-button more-button" id="approvalLoadMoreButton" type="button" hidden>더 보기</button>
           </article>
 
           <article class="panel" id="imports">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">Excel</p>
-                <h2>Import 검증</h2>
+                <h2>업로드 검증</h2>
               </div>
-              <span class="status-pill attention" id="importStatus">Queued</span>
+              <span class="status-pill attention" id="importStatus">대기</span>
             </div>
             <div class="import-controls">
-              <select id="templateSelect" aria-label="Template"></select>
+              <select id="templateSelect" aria-label="템플릿 선택"></select>
               <button class="secondary-button" id="renumberButton" type="button">코드 정렬</button>
               <label class="secondary-button file-button" for="excelFileInput">Excel 업로드</label>
               <button class="primary-button" id="applyImportButton" type="button" disabled>반영</button>
@@ -223,11 +231,11 @@
             <div class="import-summary">
               <div>
                 <strong id="acceptedRows">0</strong>
-                <span>Accepted</span>
+                <span>정상</span>
               </div>
               <div>
                 <strong id="rejectedRows">0</strong>
-                <span>Rejected</span>
+                <span>오류</span>
               </div>
             </div>
             <ul class="issue-list" id="importIssues"></ul>
@@ -236,9 +244,9 @@
                 <thead>
                   <tr>
                     <th>WBS</th>
-                    <th>Parent</th>
-                    <th>Name</th>
-                    <th>Weight</th>
+                    <th>상위</th>
+                    <th>작업명</th>
+                    <th>가중치</th>
                   </tr>
                 </thead>
                 <tbody id="importPreviewRows"></tbody>
@@ -246,17 +254,17 @@
             </div>
             <div class="import-history">
               <div class="compact-label">
-                <span>Import diff</span>
-                <small>preview</small>
+                <span>변경 비교</span>
+                <small>미리보기</small>
               </div>
               <div class="table-wrap compact-table">
                 <table>
                   <thead>
                     <tr>
-                      <th>Change</th>
+                      <th>변경</th>
                       <th>WBS</th>
-                      <th>Name</th>
-                      <th>Fields</th>
+                      <th>작업명</th>
+                      <th>항목</th>
                     </tr>
                   </thead>
                   <tbody id="importDiffRows"></tbody>
@@ -265,14 +273,14 @@
             </div>
             <div class="import-history">
               <div class="compact-label">
-                <span>Recent imports</span>
+                <span>최근 업로드</span>
                 <small id="importHistoryCount">0</small>
               </div>
               <div class="import-history-list" id="importHistoryList"></div>
             </div>
             <div class="sync-history">
               <div class="compact-label">
-                <span>Template versions</span>
+                <span>템플릿 버전</span>
                 <small id="templateVersionCount">0</small>
               </div>
               <div class="sync-run-list" id="templateVersionList"></div>
@@ -282,37 +290,38 @@
           <article class="panel" id="sync">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Engine</p>
+                <p class="eyebrow">엔진</p>
                 <h2>OpenProject 연계</h2>
               </div>
-              <span class="status-pill attention" id="syncEngineStatus">Checking</span>
+              <span class="status-pill attention" id="syncEngineStatus">점검 중</span>
             </div>
             <div class="sync-controls">
-              <select id="syncProjectSelect" aria-label="Sync project"></select>
-              <button class="icon-button" id="syncRefreshButton" type="button" aria-label="Refresh OpenProject status" title="Refresh">↻</button>
+              <select id="syncProjectSelect" aria-label="동기화 프로젝트"></select>
+              <button class="icon-button" id="syncRefreshButton" type="button" aria-label="OpenProject 상태 새로고침" title="새로고침">↻</button>
               <button class="secondary-button" id="syncPreflightButton" type="button">점검</button>
-              <button class="primary-button" id="syncDryRunButton" type="button">Dry-run</button>
-              <button class="danger-button" id="syncRunButton" type="button" disabled>Sync</button>
+              <button class="primary-button" id="syncDryRunButton" type="button">모의 실행</button>
+              <button class="secondary-button" id="syncPullButton" type="button">가져오기</button>
+              <button class="danger-button" id="syncRunButton" type="button" disabled>동기화</button>
             </div>
             <dl class="definition-list">
               <div>
-                <dt>Mode</dt>
-                <dd id="syncMode">Community Edition engine</dd>
+                <dt>모드</dt>
+                <dd id="syncMode">Community Edition 엔진</dd>
               </div>
               <div>
-                <dt>State</dt>
-                <dd id="syncState">Waiting</dd>
+                <dt>상태</dt>
+                <dd id="syncState">대기</dd>
               </div>
               <div>
-                <dt>Rows</dt>
+                <dt>행</dt>
                 <dd id="syncPendingRows">-</dd>
               </div>
             </dl>
             <div class="sync-checks" id="syncChecks"></div>
             <pre class="payload-preview" id="syncPayloadPreview">샘플 payload 대기</pre>
-            <div class="sync-history" aria-label="Recent OpenProject sync runs">
+            <div class="sync-history" aria-label="최근 OpenProject 동기화 실행">
               <div class="compact-label">
-                <span>Recent runs</span>
+                <span>최근 실행</span>
                 <small id="syncRunCount">0</small>
               </div>
               <div class="sync-run-list" id="syncRunList"></div>
@@ -322,10 +331,10 @@
           <article class="panel" id="operations">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Operations</p>
+                <p class="eyebrow">운영</p>
                 <h2>제품화 체크</h2>
               </div>
-              <span class="status-pill attention" id="operationsStatus">Checking</span>
+              <span class="status-pill attention" id="operationsStatus">점검 중</span>
             </div>
             <div class="check-list" id="operationsChecks"></div>
           </article>
@@ -333,7 +342,7 @@
           <article class="panel" id="users">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Access</p>
+                <p class="eyebrow">접근 권한</p>
                 <h2>사용자 관리</h2>
               </div>
               <span class="status-pill stable" id="userCount">0</span>
@@ -341,10 +350,10 @@
             <form class="user-admin-form" id="userCreateForm">
               <input id="userEmailInput" name="email" type="email" autocomplete="off" placeholder="email@company.com" required />
               <input id="userNameInput" name="display_name" type="text" minlength="2" maxlength="120" placeholder="표시 이름" required />
-              <select id="userRoleInput" name="role" aria-label="User role">
-                <option value="viewer">viewer</option>
-                <option value="pmo">pmo</option>
-                <option value="admin">admin</option>
+              <select id="userRoleInput" name="role" aria-label="사용자 역할">
+                <option value="viewer">조회자</option>
+                <option value="pmo">PMO</option>
+                <option value="admin">관리자</option>
               </select>
               <input id="userPasswordInput" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="초기 비밀번호" required />
               <button class="primary-button" id="userSubmitButton" type="submit">계정 생성</button>
@@ -354,12 +363,12 @@
               <table>
                 <thead>
                   <tr>
-                    <th>User</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Last login</th>
-                    <th>Sessions</th>
-                    <th>Action</th>
+                    <th>사용자</th>
+                    <th>역할</th>
+                    <th>상태</th>
+                    <th>최근 로그인</th>
+                    <th>세션</th>
+                    <th>작업</th>
                   </tr>
                 </thead>
                 <tbody id="userRows"></tbody>
@@ -370,12 +379,12 @@
           <article class="panel" id="audit">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Audit</p>
+                <p class="eyebrow">감사</p>
                 <h2>운영 감사 로그</h2>
               </div>
               <div class="panel-actions">
                 <span class="status-pill stable" id="auditCount">0</span>
-                <button class="icon-button" id="auditRefreshButton" type="button" aria-label="Refresh audit log" title="Refresh">↻</button>
+                <button class="icon-button" id="auditRefreshButton" type="button" aria-label="감사 로그 새로고침" title="새로고침">↻</button>
               </div>
             </div>
             <div class="audit-list" id="auditList"></div>
@@ -384,30 +393,57 @@
           <article class="panel" id="settings">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">Settings</p>
+                <p class="eyebrow">설정</p>
                 <h2>플랫폼 설정</h2>
               </div>
-              <span class="status-pill attention">Adapter</span>
+              <span class="status-pill attention">어댑터</span>
             </div>
             <dl class="definition-list settings-engine">
               <div>
-                <dt>Mode</dt>
-                <dd id="settingsEngineMode">PM Engine</dd>
+                <dt>모드</dt>
+                <dd id="settingsEngineMode">PM 엔진</dd>
               </div>
               <div>
-                <dt>Boundary</dt>
+                <dt>경계</dt>
                 <dd id="settingsEngineBoundary">pm-engine-api</dd>
               </div>
               <div>
-                <dt>Runtime</dt>
-                <dd id="settingsEngineRuntime">Dry-run protected</dd>
+                <dt>실행 상태</dt>
+                <dd id="settingsEngineRuntime">모의 실행 보호</dd>
               </div>
             </dl>
             <div class="settings-layout">
               <div class="settings-grid" id="settingsCards"></div>
               <div class="settings-editor">
-                <select id="settingsKeySelect" aria-label="Setting key"></select>
-                <textarea id="settingsJsonInput" spellcheck="false" aria-label="Setting JSON"></textarea>
+                <select id="settingsKeySelect" aria-label="설정 항목"></select>
+                <div class="settings-form" id="pmEngineForm">
+                  <label>
+                    <span>어댑터</span>
+                    <select id="pmEngineAdapterSelect">
+                      <option value="openproject">OpenProject</option>
+                      <option value="mock">모의 엔진</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>모드</span>
+                    <select id="pmEngineModeSelect">
+                      <option value="ce-api-adapter">CE API 어댑터</option>
+                      <option value="mock">모의 실행</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>경계</span>
+                    <input id="pmEngineBoundaryInput" type="text" value="pm-engine-api" />
+                  </label>
+                  <label class="toggle-line">
+                    <input id="pmEngineEnabledInput" type="checkbox" />
+                    <span>실제 동기화 허용</span>
+                  </label>
+                </div>
+                <details class="settings-advanced">
+                  <summary>고급 JSON</summary>
+                  <textarea id="settingsJsonInput" spellcheck="false" aria-label="설정 JSON"></textarea>
+                </details>
                 <div class="settings-actions">
                   <p class="form-status" id="settingsStatus"></p>
                   <button class="primary-button" id="settingsSaveButton" type="button">설정 저장</button>
@@ -423,26 +459,26 @@
       <form class="dialog-panel" id="projectForm" method="dialog">
         <div class="dialog-header">
           <div>
-            <p class="eyebrow">Portfolio</p>
+            <p class="eyebrow">프로젝트</p>
             <h2 id="projectDialogTitle">프로젝트 생성</h2>
           </div>
-          <button class="icon-button" id="projectDialogClose" type="button" aria-label="Close project dialog" title="Close">×</button>
+          <button class="icon-button" id="projectDialogClose" type="button" aria-label="프로젝트 창 닫기" title="닫기">×</button>
         </div>
         <div class="form-grid">
           <label>
-            <span>Project</span>
+            <span>프로젝트</span>
             <input id="projectNameInput" name="name" type="text" minlength="2" maxlength="120" required />
           </label>
           <label>
-            <span>Owner</span>
+            <span>담당</span>
             <input id="projectOwnerInput" name="owner" type="text" minlength="2" maxlength="80" value="PMO" required />
           </label>
           <label>
-            <span>Template</span>
+            <span>템플릿</span>
             <select id="projectTemplateSelect" name="template_key" required></select>
           </label>
           <label>
-            <span>Start</span>
+            <span>시작일</span>
             <input id="projectStartInput" name="start_date" type="date" required />
           </label>
         </div>
@@ -458,22 +494,22 @@
       <form class="dialog-panel" id="passwordForm" method="dialog">
         <div class="dialog-header">
           <div>
-            <p class="eyebrow">Security</p>
+            <p class="eyebrow">보안</p>
             <h2 id="passwordDialogTitle">비밀번호 변경</h2>
           </div>
-          <button class="icon-button" id="passwordDialogClose" type="button" aria-label="Close password dialog" title="Close">×</button>
+          <button class="icon-button" id="passwordDialogClose" type="button" aria-label="비밀번호 창 닫기" title="닫기">×</button>
         </div>
         <div class="form-grid">
           <label>
-            <span>Current</span>
+            <span>현재 비밀번호</span>
             <input id="currentPasswordInput" name="current_password" type="password" autocomplete="current-password" required />
           </label>
           <label>
-            <span>New</span>
+            <span>새 비밀번호</span>
             <input id="newPasswordInput" name="new_password" type="password" minlength="8" autocomplete="new-password" required />
           </label>
           <label>
-            <span>Confirm</span>
+            <span>새 비밀번호 확인</span>
             <input id="confirmPasswordInput" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required />
           </label>
         </div>
@@ -486,6 +522,6 @@
     </dialog>
 
     <script src="./config.js"></script>
-    <script src="./app.js?v=20260602-rbac-hidden"></script>
+    <script src="./app.js?v=20260602-ko-main"></script>
   </body>
 </html>
