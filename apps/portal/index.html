@@ -131,20 +131,17 @@
               <div style="--span: 10"><span>전환</span></div>
               <div style="--span: 5"><span>안정화</span></div>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>프로젝트</th>
-                    <th>담당</th>
-                    <th>상태</th>
-                    <th>템플릿</th>
-                    <th>시작일</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody id="projectRows"></tbody>
-              </table>
+            <div class="project-picker" aria-label="프로젝트 선택">
+              <label for="projectSelectInput">
+                <span>프로젝트 선택</span>
+                <select id="projectSelectInput"></select>
+              </label>
+              <div class="project-picker-summary" id="projectSelectSummary">
+                <span id="projectSelectOwner">담당 -</span>
+                <span id="projectSelectTemplate">템플릿 -</span>
+                <span class="status-pill attention" id="projectSelectStatus">선택</span>
+              </div>
+              <button class="secondary-button" id="projectApprovalButton" type="button" disabled>자동 승인</button>
             </div>
             <div class="project-detail" id="projectDetail">
               <div class="panel-header compact-header">

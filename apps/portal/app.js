@@ -880,54 +880,41 @@ function renderProjectImportControls() {
 function renderProjects() {
   const rows = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
   const canMutate = canMutateWork();
-  document.querySelector("#projectRows").innerHTML = rows.length
+  const selectableRows = rows.filter((project) => project.id);
+  const selectedProject = rows.find((project) => project.id === state.selectedProjectId) || selectableRows[0] || rows[0];
+  const projectSelect = document.querySelector("#projectSelectInput");
+  projectSelect.innerHTML = rows.length
     ? rows
         .map((project) => {
-          const canRequestApproval = canMutate && project.id && ["Draft", "Rejected", "Review"].includes(project.status);
-          const isSelected = project.id && project.id === state.selectedProjectId;
-          const approvalActionLabel = project.status === "Approved"
-            ? "승인 완료"
-            : canRequestApproval
-              ? "자동 승인"
-              : "승인 대기";
-          return `
-        <tr class="${isSelected ? "selected-row" : ""}">
-          <td>${escapeHtml(project.name)}</td>
-          <td>${escapeHtml(project.owner)}</td>
-          <td><span class="status-pill ${statusClass(project.status)}">${statusLabel(project.status)}</span></td>
-          <td>${escapeHtml(project.template_key)}</td>
-          <td>${escapeHtml(project.start_date)}</td>
-          <td>
-            <div class="table-actions">
-              <button
-                class="table-action"
-                type="button"
-                data-project-action="plan"
-                data-project-id="${project.id || ""}"
-                ${project.id ? "" : "disabled"}
-              >
-                계획
-              </button>
-              <button
-                class="table-action"
-                type="button"
-                data-project-action="approval"
-                data-project-id="${project.id || ""}"
-                ${canRequestApproval ? "" : "disabled"}
-              >
-                ${approvalActionLabel}
-              </button>
-            </div>
-          </td>
-        </tr>
-      `;
+          const label = [
+            project.name,
+            project.owner ? `담당 ${project.owner}` : "",
+            statusLabel(project.status),
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return `<option value="${escapeHtml(project.id || "")}" ${project.id ? "" : "disabled"}>${escapeHtml(label)}</option>`;
         })
         .join("")
-    : `
-      <tr class="empty-row">
-        <td colspan="6">등록된 프로젝트 없음</td>
-      </tr>
-    `;
+    : '<option value="">등록된 프로젝트 없음</option>';
+  projectSelect.value = selectedProject?.id || "";
+  projectSelect.disabled = !selectableRows.length;
+
+  document.querySelector("#projectSelectOwner").textContent = selectedProject?.owner ? `담당 ${selectedProject.owner}` : "담당 -";
+  document.querySelector("#projectSelectTemplate").textContent = selectedProject?.template_key ? `템플릿 ${selectedProject.template_key}` : "템플릿 -";
+  const selectStatus = document.querySelector("#projectSelectStatus");
+  selectStatus.textContent = selectedProject ? statusLabel(selectedProject.status) : "선택";
+  selectStatus.className = `status-pill ${statusClass(selectedProject?.status)}`;
+
+  const canRequestApproval = Boolean(canMutate && selectedProject?.id && ["Draft", "Rejected", "Review"].includes(selectedProject.status));
+  const approvalButton = document.querySelector("#projectApprovalButton");
+  approvalButton.dataset.projectId = selectedProject?.id || "";
+  approvalButton.disabled = !canRequestApproval;
+  approvalButton.textContent = selectedProject?.status === "Approved"
+    ? "승인 완료"
+    : canRequestApproval
+      ? "자동 승인"
+      : "승인 대기";
 }
 
 function renderProjectPlan() {
@@ -2427,14 +2414,14 @@ document.querySelector("#syncPreflightButton").addEventListener("click", loadPro
 document.querySelector("#syncDryRunButton").addEventListener("click", dryRunProjectSync);
 document.querySelector("#syncPullButton").addEventListener("click", pullProjectSync);
 document.querySelector("#syncRunButton").addEventListener("click", runProjectSync);
-document.querySelector("#projectRows").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-project-action]");
-  if (!button || button.disabled) return;
-  if (button.dataset.projectAction === "plan") {
-    loadProjectPlan(button.dataset.projectId);
-    return;
-  }
-  requestProjectApproval(button.dataset.projectId);
+document.querySelector("#projectSelectInput").addEventListener("change", (event) => {
+  if (!event.target.value) return;
+  loadProjectPlan(event.target.value);
+});
+document.querySelector("#projectApprovalButton").addEventListener("click", (event) => {
+  const projectId = event.currentTarget.dataset.projectId;
+  if (!projectId || event.currentTarget.disabled) return;
+  requestProjectApproval(projectId);
 });
 document.querySelector("#approvalList").addEventListener("click", (event) => {
   const button = event.target.closest("[data-approval-action]");

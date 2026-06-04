@@ -69,8 +69,13 @@ class WbsPlatformContracts(unittest.TestCase):
         for snippet in (
             'id="projectWbsDownloadButton"',
             'id="projectWbsFileInput"',
+            'id="projectSelectInput"',
+            'id="projectApprovalButton"',
+            'class="project-picker"',
             "downloadProjectWbsExcel",
             "uploadProjectWbsExcel",
+            "projectSelectInput\").addEventListener(\"change\"",
+            "projectApprovalButton\").addEventListener(\"click\"",
             "/api/projects/${encodeURIComponent(state.selectedProjectId)}/imports/preview",
             "projectWbsDownloadButton\").addEventListener(\"click\", downloadProjectWbsExcel",
             "projectWbsFileInput\").addEventListener(\"change\", uploadProjectWbsExcel",
@@ -83,6 +88,7 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS)
         self.assertNotIn("slice(0, 5)", PORTAL_JS)
+        self.assertNotIn("projectRows", PORTAL_HTML + PORTAL_JS)
 
     def test_portal_fallback_templates_cover_project_types(self):
         for snippet in (
