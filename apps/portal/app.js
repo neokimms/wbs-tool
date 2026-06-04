@@ -900,8 +900,11 @@ function renderProjects() {
   projectSelect.value = selectedProject?.id || "";
   projectSelect.disabled = !selectableRows.length;
 
+  const planMatchesSelection = selectedProject?.id && state.projectPlan?.project?.id === selectedProject.id;
   document.querySelector("#projectSelectOwner").textContent = selectedProject?.owner ? `담당 ${selectedProject.owner}` : "담당 -";
-  document.querySelector("#projectSelectTemplate").textContent = selectedProject?.template_key ? `템플릿 ${selectedProject.template_key}` : "템플릿 -";
+  document.querySelector("#projectSelectRows").textContent = planMatchesSelection && state.projectPlan?.summary
+    ? `작업 ${state.projectPlan.summary.total_rows}행`
+    : "작업 -";
   const selectStatus = document.querySelector("#projectSelectStatus");
   selectStatus.textContent = selectedProject ? statusLabel(selectedProject.status) : "선택";
   selectStatus.className = `status-pill ${statusClass(selectedProject?.status)}`;
@@ -928,6 +931,7 @@ function renderProjectPlan() {
   document.querySelector("#projectDetailRows").textContent = plan?.summary
     ? `${plan.summary.pending_work_packages}/${plan.summary.total_rows} 대기`
     : "-";
+  document.querySelector("#projectSelectRows").textContent = plan?.summary ? `작업 ${plan.summary.total_rows}행` : "작업 -";
   document.querySelector("#projectDetailSync").textContent = plan?.openproject?.project_already_synced
     ? `동기화 완료 #${plan.openproject.project_id}`
     : plan
@@ -947,7 +951,7 @@ function renderProjectPlan() {
       ? "수행 WBS 항목 없음"
       : isFiltered
         ? "조건에 맞는 WBS 항목 없음"
-        : "프로젝트 행의 계획 버튼을 선택하세요";
+        : "상단에서 프로젝트를 선택하면 WBS 작업 리스트가 표시됩니다";
   document.querySelector("#projectPlanRows").innerHTML = rows.length
     ? rows
         .map(
