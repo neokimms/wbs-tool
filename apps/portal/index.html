@@ -36,7 +36,7 @@
         </div>
         <nav class="nav-list">
           <a class="active" href="#dashboard">대시보드</a>
-          <a href="#portfolio">프로젝트</a>
+          <a href="#portfolio">WBS 계획</a>
           <a href="#templates">표준 WBS</a>
           <a href="#approvals">승인 이력</a>
           <a href="#imports">Excel 반영</a>
@@ -114,7 +114,7 @@
             <div class="panel-header">
               <div>
                 <p class="eyebrow">프로젝트</p>
-                <h2>프로젝트 현황</h2>
+                <h2>WBS 계획</h2>
               </div>
               <div class="segmented" role="tablist" aria-label="프로젝트 보기">
                 <button class="selected" type="button" data-portfolio-tab="pmo">PMO</button>
@@ -131,18 +131,6 @@
               <div style="--span: 10"><span>전환</span></div>
               <div style="--span: 5"><span>안정화</span></div>
             </div>
-            <div class="project-picker" aria-label="프로젝트 선택">
-              <label for="projectSelectInput">
-                <span>프로젝트 선택</span>
-                <select id="projectSelectInput"></select>
-              </label>
-              <div class="project-picker-summary" id="projectSelectSummary">
-                <span id="projectSelectOwner">담당 -</span>
-                <span id="projectSelectTemplate">템플릿 -</span>
-                <span class="status-pill attention" id="projectSelectStatus">선택</span>
-              </div>
-              <button class="secondary-button" id="projectApprovalButton" type="button" disabled>자동 승인</button>
-            </div>
             <div class="project-detail" id="projectDetail">
               <div class="panel-header compact-header">
                 <div>
@@ -150,6 +138,18 @@
                   <h2 id="projectDetailTitle">프로젝트 계획</h2>
                 </div>
                 <span class="status-pill attention" id="projectDetailStatus">선택</span>
+              </div>
+              <div class="project-picker" aria-label="프로젝트 선택">
+                <label for="projectSelectInput">
+                  <span>프로젝트 선택</span>
+                  <select id="projectSelectInput"></select>
+                </label>
+                <div class="project-picker-summary" id="projectSelectSummary">
+                  <span id="projectSelectOwner">담당 -</span>
+                  <span id="projectSelectTemplate">템플릿 -</span>
+                  <span class="status-pill attention" id="projectSelectStatus">선택</span>
+                </div>
+                <button class="secondary-button" id="projectApprovalButton" type="button" disabled>자동 승인</button>
               </div>
               <dl class="definition-list detail-definitions">
                 <div>

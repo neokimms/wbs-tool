@@ -120,7 +120,7 @@ class WbsPlatformContracts(unittest.TestCase):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + PORTAL_CSS + GUIDE_CONTENT + GUIDE_RENDERER)
         for menu in (
             "대시보드",
-            "프로젝트",
+            "WBS 계획",
             "표준 WBS",
             "Excel 반영",
             "OpenProject",
