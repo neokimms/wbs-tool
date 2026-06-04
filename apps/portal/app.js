@@ -22,28 +22,14 @@ const fallbackTemplates = [
     name: "데이터 이관 WBS",
     project_type: "Data Migration",
     description: "소스 분석, 매핑, 정제, 리허설, 본이관, 검증 중심의 데이터 이관 템플릿",
-    phases: [
-      { code: "1", name: "소스 분석", weight: 15 },
-      { code: "2", name: "매핑 설계", weight: 15 },
-      { code: "3", name: "정제 및 변환", weight: 25 },
-      { code: "4", name: "리허설", weight: 20 },
-      { code: "5", name: "본이관", weight: 15 },
-      { code: "6", name: "검증", weight: 10 },
-    ],
+    phases: [],
   },
   {
     key: "maintenance",
     name: "유지보수 운영 WBS",
     project_type: "Maintenance",
     description: "접수, 영향도 분석, 조치, 검증, 릴리스, 회고 중심의 유지보수 템플릿",
-    phases: [
-      { code: "1", name: "요청 접수", weight: 10 },
-      { code: "2", name: "영향도 분석", weight: 20 },
-      { code: "3", name: "조치", weight: 30 },
-      { code: "4", name: "검증", weight: 20 },
-      { code: "5", name: "릴리스", weight: 15 },
-      { code: "6", name: "회고", weight: 5 },
-    ],
+    phases: [],
   },
 ];
 
@@ -172,8 +158,6 @@ const state = {
   importDiffRows: [],
   importJobs: [],
   pendingImportJobId: null,
-  pendingProjectImportJobId: null,
-  projectImportStatus: "",
   selectedImportJobId: null,
   templateVersions: [],
   pmPreflight: fallbackPreflight,
@@ -185,15 +169,368 @@ const state = {
   projectWbsSearch: "",
   projectPhaseFilter: "",
   projectTypeFilter: "",
-  projectQuickFilter: "",
-  projectPlanView: "list",
-  selectedWbsCode: null,
-  collapsedPhaseCodes: new Set(),
-  portfolioView: "pmo",
-  approvalLimit: 5,
-  approvalsHasMore: false,
   userSelectedTemplate: false,
   userSelectedSyncProject: false,
+  guideSelectedView: "dashboard",
+  portfolioFilter: "all",
+  importType: "standard",   // "standard" | "custom"
+  wbsExpanded: {},    // code → boolean (기본 expanded)
+  wbsPlanProjectId: null,
+  wbsPlanRows: [],          // 편집 중인 클라이언트 사이드 행
+  wbsPlanDirty: false,      // 저장 안 된 변경 있음
+  wbsPlanEditCode: null,    // 현재 수정 중인 WBS 코드 (null=신규)
+  wbsPlanSearch: "",
+  wbsPlanPhaseFilter: "",
+  wbsPlanTypeFilter: "",
+};
+
+/* ── 사용자 가이드 콘텐츠 정의 ─────────────────────────────────────── */
+
+const WBS_GUIDE_MENUS = [
+  { id: "dashboard",  label: "대시보드" },
+  { id: "portfolio",  label: "프로젝트" },
+  { id: "templates",  label: "표준 WBS" },
+  { id: "approvals",  label: "승인 이력" },
+  { id: "imports",    label: "Excel 반영" },
+  { id: "sync",       label: "OpenProject" },
+  { id: "operations", label: "운영 점검" },
+  { id: "users",      label: "사용자" },
+  { id: "audit",      label: "감사 로그" },
+  { id: "settings",   label: "설정" },
+];
+
+const WBS_GUIDE_CONTENTS = {
+  dashboard: {
+    kind: "overview",
+    hero: {
+      eyebrow: "사용자 가이드",
+      title: "WBS 포털 개요",
+      description: "PMO와 프로젝트 팀이 WBS 기준선을 관리하고 OpenProject로 작업 패키지를 동기화하는 통합 운영 포털입니다. 로그인 후 역할에 따라 접근 가능한 메뉴가 달라집니다.",
+      tags: ["PMO", "WBS", "OpenProject", "승인"],
+    },
+    summary: [
+      { id: "admin",  label: "관리자",  value: "admin",   description: "사용자 관리, 설정 변경, 전체 메뉴 접근 가능", tone: "good" },
+      { id: "pmo",    label: "PMO",     value: "pmo",     description: "프로젝트 생성, WBS 업로드, 승인 처리 가능", tone: "info" },
+      { id: "viewer", label: "조회자",  value: "viewer",  description: "대시보드, 프로젝트, 표준 WBS, 승인 이력 조회 전용", tone: "neutral" },
+    ],
+    actions: [
+      { id: "go-portfolio", label: "프로젝트 현황 보기",  description: "등록된 프로젝트 목록과 WBS 계획을 확인합니다.", targetView: "portfolio", tone: "good" },
+      { id: "go-templates", label: "표준 WBS 다운로드",  description: "회사 표준 WBS 템플릿을 Excel로 받아 작성합니다.", targetView: "templates", tone: "info" },
+      { id: "go-imports",   label: "Excel 업로드 시작",  description: "작성한 WBS Excel을 업로드하고 검증합니다.", targetView: "imports",   tone: "info" },
+    ],
+    resources: [
+      { id: "wbs-concept", title: "WBS 코드 체계",       description: "부모 코드에 순서 번호를 붙여 계층을 표현합니다. 마일스톤은 M1, M2... 접두사를 사용합니다.", meta: "WBS 코드 규칙" },
+      { id: "workflow",    title: "프로젝트 상태 흐름",   description: "초안 → 검토 → 승인 → 동기화 완료 순서로 진행됩니다. 반려 시 초안으로 돌아갑니다.", meta: "워크플로우" },
+    ],
+  },
+
+  portfolio: {
+    kind: "procedure",
+    hero: {
+      eyebrow: "프로젝트",
+      title: "프로젝트 생성부터 OpenProject 동기화까지",
+      description: "PMO 권한으로 프로젝트를 생성하고, WBS를 반영한 뒤, 승인을 거쳐 OpenProject 작업 패키지로 동기화합니다.",
+      tags: ["프로젝트 생성", "WBS 반영", "승인", "동기화"],
+    },
+    steps: [
+      {
+        id: "create",  order: 1, title: "프로젝트 생성",
+        outcome: "프로젝트명, 담당자, 템플릿, 시작일을 입력해 초안 상태로 등록합니다.",
+        targetView: "portfolio", status: "ready",
+        checks: ["프로젝트 생성 버튼 → 다이얼로그 입력", "템플릿은 SI 구축 / 데이터 이관 / 유지보수 중 선택"],
+      },
+      {
+        id: "upload-wbs", order: 2, title: "WBS Excel 업로드 (선택)",
+        outcome: "표준 WBS 대신 팀이 작성한 커스텀 WBS를 프로젝트에 반영합니다.",
+        targetView: "imports", status: "ready",
+        checks: ["Excel 반영 메뉴에서 템플릿 다운로드", "WBS 작성 후 업로드 → 검증 통과 확인", "반영 버튼으로 프로젝트에 적용"],
+      },
+      {
+        id: "approval", order: 3, title: "승인 요청",
+        outcome: "PMO가 프로젝트 행의 자동 승인 버튼을 누르면 기준선이 잠깁니다.",
+        targetView: "portfolio", status: "ready",
+        checks: ["프로젝트 목록에서 해당 프로젝트의 자동 승인 버튼 클릭", "승인 이력 메뉴에서 상태 확인"],
+        caution: "승인 전에는 실제 OpenProject 동기화가 차단됩니다.",
+      },
+      {
+        id: "sync", order: 4, title: "OpenProject 동기화",
+        outcome: "승인된 WBS 항목을 OpenProject 작업 패키지로 생성합니다.",
+        targetView: "sync", status: "ready",
+        checks: ["OpenProject 메뉴 → 점검 버튼으로 연결 상태 확인", "모의 실행으로 payload 사전 검토", "동기화 버튼 클릭 (admin/PMO 권한 + 승인 상태 필요)"],
+      },
+    ],
+    guardrails: [
+      "프로젝트 상태가 '승인'이어야 실제 동기화가 가능합니다.",
+      "동기화 후 프로젝트 상태는 '동기화 완료'로 자동 변경됩니다.",
+    ],
+  },
+
+  templates: {
+    kind: "task-list",
+    hero: {
+      eyebrow: "표준 WBS",
+      title: "회사 표준 WBS 템플릿 관리",
+      description: "SI 구축, 데이터 이관, 유지보수 유형별 표준 WBS 템플릿을 Excel로 다운로드하고, 수정 후 업로드해 갱신합니다.",
+      tags: ["SI 구축", "데이터 이관", "유지보수", "Excel"],
+    },
+    tasks: [
+      {
+        id: "download", title: "표준 WBS 다운로드",
+        description: "템플릿 선택 후 다운로드 버튼 또는 상단 Excel 다운로드 버튼을 클릭합니다. WBS 코드, 작업명, 유형, 가중치가 포함된 워크시트를 받습니다.",
+        status: "ready", required: true, targetView: "templates",
+        checks: ["템플릿 선택 드롭다운에서 유형 선택", "Excel 다운로드 버튼 클릭", "Guide 시트에서 작성 규칙 확인"],
+      },
+      {
+        id: "edit", title: "WBS 항목 작성·수정",
+        description: "Excel의 WBS 시트에서 항목을 추가하거나 수정합니다. WBS 코드는 비워도 레벨과 순서 기준으로 자동 생성됩니다.",
+        status: "ready", required: true,
+        checks: ["작업명(필수), 유형, 담당자, 가중치 입력", "가중치 합계가 부모와 일치하도록 조정", "코드는 비워도 무방"],
+      },
+      {
+        id: "upload", title: "수정된 Excel 업로드",
+        description: "Excel 반영 메뉴에서 수정된 파일을 업로드하면 계층·일정·가중치 검증이 자동 실행됩니다.",
+        status: "ready", required: true, targetView: "imports",
+        checks: ["Excel 업로드 버튼 클릭 후 파일 선택", "정상/오류 행 수 확인", "diff 비교로 변경 내용 검토"],
+      },
+      {
+        id: "renumber", title: "WBS 코드 정렬 (선택)",
+        description: "항목 순서가 바뀐 경우 코드 정렬 버튼을 눌러 계층 구조에 맞게 코드를 재정렬합니다.",
+        status: "ready", required: false,
+        checks: ["코드 정렬 버튼 클릭", "결과 미리보기에서 변경 행 수 확인"],
+      },
+    ],
+    guardrails: [
+      "템플릿 변경 시 버전이 자동 저장됩니다. 이전 버전은 템플릿 버전 목록에서 확인할 수 있습니다.",
+      "검증 오류가 있으면 반영 버튼이 비활성화됩니다. 오류 Excel 다운로드로 상세 내용을 확인하세요.",
+    ],
+  },
+
+  approvals: {
+    kind: "reference",
+    hero: {
+      eyebrow: "승인 이력",
+      title: "WBS 기준선 승인 정책",
+      description: "PMO가 프로젝트의 WBS 기준선 잠금을 요청하고, PMO Lead가 승인 또는 반려합니다. 내부 PMO 기준선은 자동 승인됩니다.",
+      tags: ["승인", "반려", "기준선", "자동 승인"],
+    },
+    summary: [
+      { id: "pending",  label: "대기",      value: "Pending",  description: "승인 요청이 접수되어 PMO Lead의 검토를 기다리는 상태", tone: "warn" },
+      { id: "approved", label: "승인",      value: "Approved", description: "기준선이 잠겨 실제 OpenProject 동기화가 허용됩니다.", tone: "good" },
+      { id: "rejected", label: "반려",      value: "Rejected", description: "WBS 수정이 필요한 상태. 프로젝트를 초안으로 되돌려 재작업합니다.", tone: "bad" },
+    ],
+    resources: [
+      { id: "auto-approve",   title: "자동 승인 정책",     description: "프로젝트 행의 자동 승인 버튼을 클릭하면 내부 PMO 기준선으로 즉시 승인됩니다.", meta: "기본 정책" },
+      { id: "manual-approve", title: "수동 승인/반려",     description: "승인 이력 목록에서 대기 상태 항목의 승인 또는 반려 버튼을 클릭합니다. PMO/admin 권한 필요.", meta: "수동 처리" },
+      { id: "baseline",       title: "기준선 잠금 효과",   description: "승인 완료 시 WBS 행이 스냅샷으로 저장되어 버전 이력이 보존됩니다.", meta: "기준선" },
+    ],
+    guardrails: [
+      "승인 처리는 PMO 또는 admin 권한이 필요합니다.",
+      "반려 후에는 프로젝트가 자동으로 '검토' 상태로 돌아갑니다.",
+    ],
+  },
+
+  imports: {
+    kind: "procedure",
+    hero: {
+      eyebrow: "Excel 반영",
+      title: "WBS Excel 업로드 절차",
+      description: "Excel 파일을 업로드해 계층·일정·가중치를 검증하고, diff 비교 후 반영합니다. 오류가 있으면 오류 Excel로 상세 내용을 확인할 수 있습니다.",
+      tags: ["Excel", "검증", "diff", "반영"],
+    },
+    steps: [
+      {
+        id: "download-template", order: 1, title: "템플릿 다운로드",
+        outcome: "작성 기준이 담긴 Excel 워크북을 받습니다.",
+        targetView: "templates", status: "ready",
+        checks: ["상단 Excel 다운로드 버튼 또는 표준 WBS 메뉴에서 다운로드", "Guide 시트의 작성 규칙 확인"],
+      },
+      {
+        id: "fill-wbs", order: 2, title: "WBS 작성",
+        outcome: "WBS 시트에 항목을 입력합니다. WBS 코드는 생략 가능합니다.",
+        status: "ready",
+        checks: ["작업명 필수 입력", "가중치 0-100 범위 입력", "부모 코드가 있는 경우 해당 코드 입력"],
+      },
+      {
+        id: "upload", order: 3, title: "파일 업로드",
+        outcome: "파일을 업로드하면 자동 검증이 실행됩니다.",
+        status: "ready",
+        checks: ["Excel 업로드 라벨 클릭 후 .xlsx 파일 선택", "정상/오류 행 수 및 문제 목록 확인"],
+        caution: "오류가 1건이라도 있으면 반영 버튼이 비활성화됩니다.",
+      },
+      {
+        id: "review-diff", order: 4, title: "변경 비교 확인",
+        outcome: "기존 데이터 대비 추가·변경·삭제 행을 확인합니다.",
+        status: "ready",
+        checks: ["변경 비교 섹션에서 추가/변경/삭제 항목 검토", "예상과 다른 변경이 있으면 Excel 재수정"],
+      },
+      {
+        id: "apply", order: 5, title: "반영",
+        outcome: "검증 통과 후 반영 버튼을 눌러 데이터베이스에 저장합니다.",
+        status: "ready",
+        checks: ["반영 버튼 클릭 (PMO/admin 권한 필요)", "반영 후 프로젝트 메뉴에서 WBS 계획 확인"],
+      },
+    ],
+    questions: [
+      { id: "error-excel",  question: "오류가 있을 때 어디서 내용을 확인하나요?", answer: "오류 Excel 버튼이 활성화되면 클릭해 다운로드하세요. Issues 시트에 행 번호, 필드, 오류 메시지가 정리되어 있습니다." },
+      { id: "auto-code",    question: "WBS 코드를 비워두면 어떻게 되나요?",       answer: "레벨 값과 행 순서를 기반으로 코드가 자동 생성됩니다. 자동 생성된 코드는 경고로 표시됩니다." },
+      { id: "weight-warn",  question: "가중치 합 경고가 나오면 어떻게 하나요?",    answer: "형제 노드 가중치 합이 부모 가중치와 달라도 업로드는 가능합니다. 다만 진척률 계산이 부정확해질 수 있으므로 가급적 일치시키세요." },
+    ],
+  },
+
+  sync: {
+    kind: "procedure",
+    hero: {
+      eyebrow: "OpenProject",
+      title: "OpenProject 동기화 절차",
+      description: "WBS 기준선이 승인된 프로젝트를 OpenProject 작업 패키지로 동기화합니다. 사전 점검 → 모의 실행 → 실제 동기화 순서로 진행합니다.",
+      tags: ["preflight", "dry-run", "동기화", "작업 패키지"],
+    },
+    steps: [
+      {
+        id: "preflight", order: 1, title: "사전 점검",
+        outcome: "OpenProject API 연결 상태, 토큰 설정, 인증 사용자를 확인합니다.",
+        status: "ready",
+        checks: ["프로젝트 선택 드롭다운에서 동기화 대상 선택", "점검 버튼 클릭 → 체크 항목 결과 확인", "API 루트, 동기화 설정, API 토큰, 인증 사용자 모두 '정상' 확인"],
+        caution: "API 토큰이 설정되지 않으면 실제 동기화가 차단됩니다.",
+      },
+      {
+        id: "dry-run", order: 2, title: "모의 실행",
+        outcome: "실제 작업 패키지를 생성하지 않고 payload를 사전 검토합니다.",
+        status: "ready",
+        checks: ["모의 실행 버튼 클릭", "payload 미리보기에서 전송될 데이터 확인", "대기 행 수가 예상과 일치하는지 확인"],
+      },
+      {
+        id: "actual-sync", order: 3, title: "실제 동기화",
+        outcome: "프로젝트 WBS 항목을 OpenProject에 작업 패키지로 생성합니다.",
+        status: "ready",
+        checks: ["동기화 버튼 클릭 (승인 상태 + API 준비 완료 시에만 활성화)", "최근 실행 목록에서 생성된 작업 패키지 수 확인"],
+        caution: "동기화 버튼은 프로젝트 상태가 '승인'이고 preflight가 준비됐을 때만 활성화됩니다.",
+      },
+    ],
+    runModes: [
+      {
+        id: "mock",   name: "모의 엔진",      trigger: "PM_ENGINE_ADAPTER=mock 환경 변수 설정",
+        facts: [{ label: "용도", value: "로컬 개발·데모 환경에서 실제 OpenProject 없이 동기화 흐름 검증" }],
+      },
+      {
+        id: "actual", name: "CE API 어댑터",  trigger: "OPENPROJECT_SYNC_ENABLED=true + API 토큰 설정",
+        facts: [{ label: "용도", value: "실제 온프레미스 OpenProject CE와 연동" }],
+      },
+    ],
+    questions: [
+      { id: "sync-disabled", question: "동기화 버튼이 비활성화되어 있습니다.",   answer: "① 프로젝트 상태가 '승인'인지 확인, ② preflight 점검에서 모든 항목이 정상인지 확인, ③ OPENPROJECT_SYNC_ENABLED=true 설정 여부 확인." },
+      { id: "already-synced", question: "이미 동기화된 항목은 어떻게 되나요?", answer: "코드별로 이미 생성된 작업 패키지는 건너뜁니다. 신규 항목만 추가 생성됩니다." },
+    ],
+  },
+
+  operations: {
+    kind: "troubleshooting",
+    hero: {
+      eyebrow: "운영 점검",
+      title: "제품화 체크리스트 문제 해결",
+      description: "18개 헬스체크 항목을 확인하고, 오류 또는 경고 항목에 대한 조치 방법을 안내합니다.",
+      tags: ["헬스체크", "PostgreSQL", "백업", "보안"],
+    },
+    questions: [
+      { id: "db-fail",       question: "PostgreSQL 항목이 오류 상태입니다.",        answer: "API 컨테이너가 데이터베이스에 연결할 수 없는 상태입니다. docker compose logs wbs-api 로 에러를 확인하고, DATABASE_URL 환경 변수와 postgres 서비스 상태를 점검하세요." },
+      { id: "schema-fail",   question: "스키마 마이그레이션 항목이 실패합니다.",    answer: "WBS_RUN_MIGRATIONS_ON_STARTUP=true 설정을 확인하세요. 필요하면 wbs-api 컨테이너를 재시작하면 마이그레이션이 재실행됩니다." },
+      { id: "backup-warn",   question: "백업 리허설 경고가 표시됩니다.",             answer: "scripts/backup-postgres.sh를 실행해 최신 백업을 생성하세요. 백업 파일은 backups/postgres/ 에 저장됩니다." },
+      { id: "cors-warn",     question: "CORS 정책 경고가 표시됩니다.",               answer: "WBS_ALLOW_FILE_ORIGIN=true로 file:// origin이 허용된 상태입니다. 운영 환경에서는 false로 변경하고 PORTAL_ORIGIN을 정확한 도메인으로 설정하세요." },
+      { id: "op-warn",       question: "OpenProject preflight 항목이 경고입니다.",  answer: "OPENPROJECT_SYNC_ENABLED=false이거나 API 토큰이 없는 경우입니다. 모의 실행 모드에서는 정상이며, 실 동기화가 필요한 경우에만 설정하세요." },
+      { id: "setting-warn",  question: "설정 레지스트리 항목이 경고입니다.",         answer: "시스템 설정이 3건 미만입니다. 설정 메뉴에서 PM 엔진 어댑터 설정을 저장하면 항목이 추가됩니다." },
+      { id: "user-locked",   question: "계정 잠금 경고가 표시됩니다.",               answer: "로그인 5회 실패로 잠긴 계정이 있습니다. 사용자 메뉴에서 해당 계정의 세션 종료 후 비밀번호를 재설정하거나, 15분 후 자동 해제를 기다리세요." },
+    ],
+    decisions: [
+      { id: "critical", title: "전체 상태가 '오류'",  description: "오류 항목을 우선 해결합니다. PostgreSQL 연결, 스키마 마이그레이션, 접근 제어 순서로 확인하세요." },
+      { id: "watch",    title: "전체 상태가 '주의'",  description: "서비스는 작동 중이지만 개선이 필요합니다. 백업, CORS, OpenProject 설정을 순서대로 검토하세요." },
+    ],
+  },
+
+  users: {
+    kind: "task-list",
+    hero: {
+      eyebrow: "사용자 관리",
+      title: "포털 사용자 계정 관리",
+      description: "admin 권한으로 포털 사용자를 생성하고, 역할을 설정하고, 보안 정책을 적용합니다.",
+      tags: ["계정 생성", "역할", "비밀번호", "세션"],
+    },
+    tasks: [
+      {
+        id: "create-user", title: "계정 생성",
+        description: "이메일, 표시 이름, 역할, 초기 비밀번호를 입력합니다. 계정 생성 후 사용자에게 초기 비밀번호 변경을 안내하세요.",
+        status: "ready", required: true, ownerRole: "admin",
+        checks: ["이메일은 회사 도메인 사용 권장", "역할: 관리자/PMO/조회자 중 선택", "비밀번호 8자 이상"],
+      },
+      {
+        id: "set-role", title: "역할 변경",
+        description: "사용자 목록에서 역할 드롭다운을 변경하고 저장 버튼을 클릭합니다.",
+        status: "ready", required: false, ownerRole: "admin",
+        checks: ["admin: 전체 관리 권한", "pmo: 프로젝트/WBS/승인 작업 권한", "viewer: 조회 전용"],
+      },
+      {
+        id: "reset-pw", title: "비밀번호 초기화",
+        description: "사용자 행에서 새 비밀번호를 입력하고 저장하면 즉시 변경되며 다음 로그인 시 변경을 강제합니다.",
+        status: "ready", required: false, ownerRole: "admin",
+        checks: ["비밀번호 입력란에 신규 비밀번호 입력 후 저장", "사용자는 다음 로그인 시 비밀번호 변경 화면으로 이동"],
+      },
+      {
+        id: "revoke", title: "세션 종료",
+        description: "특정 사용자의 모든 활성 세션을 즉시 종료합니다. 계정 탈취 의심 시 즉시 실행하세요.",
+        status: "ready", required: false, ownerRole: "admin",
+        checks: ["세션 종료 버튼 클릭 → 즉시 적용", "해당 사용자는 재로그인 필요"],
+      },
+    ],
+    guardrails: [
+      "사용자 관리는 admin 권한 전용입니다.",
+      "로그인 5회 실패 시 15분간 계정이 잠깁니다. 운영 점검 메뉴에서 잠긴 계정 수를 확인할 수 있습니다.",
+    ],
+  },
+
+  audit: {
+    kind: "reference",
+    hero: {
+      eyebrow: "감사 로그",
+      title: "운영 감사 이벤트 안내",
+      description: "포털에서 발생하는 주요 행위가 자동으로 기록됩니다. 최근 30건을 조회할 수 있으며 admin/PMO 권한이 필요합니다.",
+      tags: ["감사", "이벤트", "보안", "로그"],
+    },
+    summary: [
+      { id: "retention", label: "보존 기간",  value: "365일",  description: "기본 보존 기간이며 WBS_AUDIT_RETENTION_DAYS 환경 변수로 변경 가능합니다.", tone: "info" },
+      { id: "access",    label: "접근 권한",  value: "PMO+",   description: "admin 및 pmo 역할만 감사 로그를 조회할 수 있습니다.", tone: "warn" },
+    ],
+    resources: [
+      { id: "auth-events",    title: "인증 이벤트",          description: "로그인, 로그아웃, 로그인 실패, 계정 잠금, 비밀번호 변경이 기록됩니다.", meta: "auth.*" },
+      { id: "project-events", title: "프로젝트 이벤트",      description: "프로젝트 생성, 상태 변경, 승인 생성·완료·반려가 기록됩니다.", meta: "project.* / approval.*" },
+      { id: "import-events",  title: "Excel 반영 이벤트",    description: "미리보기, 반영, 프로젝트 WBS 반영 시 행위자와 파일명이 저장됩니다.", meta: "import.*" },
+      { id: "sync-events",    title: "동기화 이벤트",        description: "모의 실행, 실제 동기화 결과가 행위자, 엔진, 생성된 작업 패키지 수와 함께 기록됩니다.", meta: "pm_engine.*" },
+      { id: "setting-events", title: "설정·사용자 이벤트",   description: "설정 변경, 사용자 생성·수정, 세션 종료 이벤트가 저장됩니다.", meta: "setting.* / user.*" },
+    ],
+  },
+
+  settings: {
+    kind: "reference",
+    hero: {
+      eyebrow: "설정",
+      title: "플랫폼 설정 가이드",
+      description: "PM 엔진 어댑터 등 플랫폼 동작에 영향을 주는 설정을 관리합니다. admin 권한이 필요합니다.",
+      tags: ["PM 엔진", "어댑터", "환경 변수"],
+    },
+    summary: [
+      { id: "mock",   label: "모의 엔진",  value: "mock",        description: "실제 OpenProject 없이 동기화 흐름을 테스트합니다. 개발·데모 환경 전용.", tone: "warn" },
+      { id: "real",   label: "CE 어댑터", value: "openproject",  description: "온프레미스 OpenProject CE와 실제 연동합니다. 운영 환경 권장.", tone: "good" },
+    ],
+    resources: [
+      { id: "env-sync",    title: "OPENPROJECT_SYNC_ENABLED",  description: "true로 설정해야 실제 동기화 버튼이 활성화됩니다.", meta: "환경 변수" },
+      { id: "env-token",   title: "OPENPROJECT_API_TOKEN",     description: "OpenProject API key. 없으면 실 동기화가 차단됩니다.", meta: "환경 변수" },
+      { id: "env-url",     title: "OPENPROJECT_BASE_URL",      description: "온프레미스 OpenProject 주소. docker compose 기준 기본값: http://openproject", meta: "환경 변수" },
+      { id: "env-adapter", title: "PM_ENGINE_ADAPTER",         description: "openproject(기본) 또는 mock. 설정 메뉴의 PM 엔진 어댑터와 연동됩니다.", meta: "환경 변수" },
+      { id: "env-session", title: "WBS_SESSION_TTL_HOURS",     description: "세션 유지 시간(기본 12시간). 보안 정책에 맞게 조정하세요.", meta: "환경 변수" },
+    ],
+    guardrails: [
+      "설정 변경은 admin 권한 전용입니다.",
+      "PM 엔진 어댑터 설정 오류 시 OpenProject 동기화 전체가 차단됩니다. 변경 전 반드시 사전 점검을 실행하세요.",
+    ],
+  },
 };
 
 async function request(path, options = {}) {
@@ -219,40 +556,6 @@ async function request(path, options = {}) {
 
   const contentType = response.headers.get("content-type") || "";
   return contentType.includes("application/json") ? response.json() : response;
-}
-
-function filenameFromDisposition(value, fallback) {
-  const match = String(value || "").match(/filename="?([^";]+)"?/i);
-  return match ? decodeURIComponent(match[1]) : fallback;
-}
-
-async function downloadFile(path, fallbackFilename) {
-  const headers = {};
-  if (state.authToken) {
-    headers.Authorization = `Bearer ${state.authToken}`;
-  }
-
-  const response = await fetch(`${API_BASE}${path}`, { headers });
-  if (!response.ok) {
-    let detail = `다운로드 실패: ${response.status}`;
-    try {
-      const errorBody = await response.json();
-      detail = typeof errorBody.detail === "string" ? errorBody.detail : detail;
-    } catch (error) {
-      detail = response.statusText || detail;
-    }
-    throw new Error(detail);
-  }
-
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filenameFromDisposition(response.headers.get("content-disposition"), fallbackFilename);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(url);
 }
 
 function escapeHtml(value) {
@@ -322,7 +625,6 @@ function statusLabel(status) {
     Blocked: "차단",
     Error: "오류",
     Preflight: "사전 점검",
-    Pulled: "가져오기 완료",
     Queued: "대기",
     Running: "실행 중",
     Updated: "갱신 완료",
@@ -409,20 +711,11 @@ function engineModeLabel(value) {
   return labels[value] || value || "-";
 }
 
-function displayNameLabel(value) {
-  if (!value) return "";
-  const labels = {
-    "Mock PM Engine": "모의 PM 엔진",
-  };
-  return labels[value] || value;
-}
-
 function syncModeLabel(value) {
   const labels = {
     dry_run: "모의 실행",
     actual: "실제 실행",
     history: "이력 조회",
-    pull: "가져오기",
   };
   return labels[value] || value || "-";
 }
@@ -481,10 +774,7 @@ function preflightMessageLabel(value) {
     .replace("OpenProject endpoint returned an error", "OpenProject 엔드포인트 오류 반환")
     .replace("Endpoint is reachable", "엔드포인트 연결 가능")
     .replace("OpenProject API is unreachable", "OpenProject API에 연결할 수 없음")
-    .replace("OpenProject API request failed", "OpenProject API 요청 실패")
-    .replace("Project has no known OpenProject work packages to pull", "가져올 OpenProject 작업 패키지가 아직 없습니다")
-    .replace("OPENPROJECT_API_TOKEN is required for OpenProject pull sync.", "OpenProject 가져오기에 OPENPROJECT_API_TOKEN이 필요합니다")
-    .replace("No known OpenProject work packages could be pulled", "가져올 수 있는 OpenProject 작업 패키지가 없습니다");
+    .replace("OpenProject API request failed", "OpenProject API 요청 실패");
 }
 
 function operationCheckMessage(value) {
@@ -539,7 +829,6 @@ function settingCategoryLabel(value) {
 function eventTypeLabel(value) {
   const labels = {
     "pm_engine.sync_recorded": "PM 엔진 동기화",
-    "pm_engine.pull_recorded": "PM 엔진 가져오기",
     "auth.login_locked": "로그인 잠금",
     "auth.login_failed": "로그인 실패",
     "auth.login": "로그인",
@@ -559,7 +848,6 @@ function eventTypeLabel(value) {
     "import.created": "Excel 업로드",
     "import.applied": "Excel 반영",
     "project_wbs.import_applied": "프로젝트 WBS 반영",
-    "project_wbs.import_previewed": "프로젝트 WBS 미리보기",
     "template.resequenced": "WBS 코드 정렬",
   };
   return labels[value] || value || "-";
@@ -569,7 +857,6 @@ function auditSummaryLabel(value) {
   if (!value) return "-";
   return String(value)
     .replace("PM engine sync", "PM 엔진 동기화")
-    .replace("PM engine pull", "PM 엔진 가져오기")
     .replace("User created:", "사용자 생성:")
     .replace("User updated:", "사용자 수정:")
     .replace("Setting updated:", "설정 변경:")
@@ -585,7 +872,6 @@ function auditSummaryLabel(value) {
     .replace("Excel import rejected:", "Excel 업로드 반려:")
     .replace("Excel import applied:", "Excel 반영:")
     .replace("Project WBS import applied:", "프로젝트 WBS 반영:")
-    .replace("Project WBS import preview:", "프로젝트 WBS 미리보기:")
     .replace("WBS codes resequenced:", "WBS 코드 정렬:");
 }
 
@@ -656,8 +942,13 @@ function canAccessView(viewId) {
   if (viewId === "users") return canManageUsers();
   if (viewId === "audit") return canViewAudit();
   if (viewId === "settings") return canViewSettings();
+  if (viewId === "wbs-plan") return Boolean(state.currentUser);
+  if (viewId === "guide") return Boolean(state.currentUser);
   return true;
 }
+
+/* 역할 레벨 */
+const ROLE_LEVEL = { viewer: 1, pmo: 2, admin: 3 };
 
 function renderAuthState() {
   const isAuthenticated = Boolean(state.currentUser && state.authToken);
@@ -666,14 +957,25 @@ function renderAuthState() {
     ? `${state.currentUser.display_name} · ${roleLabel(state.currentUser.role)}`
     : "-";
 
+  /* ── 역할 기반 메뉴 표시/숨김 ── */
+  const userLevel = ROLE_LEVEL[state.currentUser?.role] || 0;
+  document.querySelectorAll(".nav-list a[data-min-role]").forEach((link) => {
+    const minLevel = ROLE_LEVEL[link.dataset.minRole] || 1;
+    link.classList.toggle("nav-role-hidden", userLevel < minLevel);
+    link.hidden = userLevel < minLevel;
+  });
+
+  /* ── 패널 접근 제어 (기존 toggleNavAndPanel 유지) ── */
   toggleNavAndPanel("#operations", canAccessOperations());
   toggleNavAndPanel("#users", canManageUsers());
   toggleNavAndPanel("#audit", canViewAudit());
   toggleNavAndPanel("#settings", canViewSettings());
+
   const canMutate = canMutateWork();
   document.querySelector("#createProjectButton").disabled = !canMutate;
   document.querySelector("#renumberButton").disabled = !canMutate;
-  document.querySelector(".file-button").classList.toggle("disabled-control", !canMutate);
+  const templateUploadLabel = document.querySelector("#tplTabImport .file-button");
+  if (templateUploadLabel) templateUploadLabel.classList.toggle("disabled-control", !canMutate);
   document.querySelector("#excelFileInput").disabled = !canMutate;
   if (!canAccessView(document.body.dataset.portalView)) {
     applyPortalView("#dashboard", { updateHistory: true, scrollToTop: false });
@@ -681,36 +983,303 @@ function renderAuthState() {
 }
 
 function renderMetrics() {
-  document.querySelector("#projectCount").textContent = state.dashboard.metrics.projects;
-  document.querySelector("#templateCount").textContent = state.dashboard.metrics.templates;
-  document.querySelector("#approvalCount").textContent = state.dashboard.metrics.pending_approvals || 0;
-  document.querySelector("#syncStatus").textContent = syncStateLabel(state.pmPreflight?.state);
+  // metric-grid DOM 요소는 제거됨 — portfolioMeta에서 요약 표시
+  renderPortfolioMeta();
+}
+
+function renderPortfolioMeta() {
+  const meta = document.querySelector("#portfolioMeta");
+  if (!meta) return;
+  const total   = state.dashboard.metrics.projects || state.projects.length;
+  const pending = state.dashboard.metrics.pending_approvals || 0;
+  const syncLbl = syncStateLabel(state.pmPreflight?.state);
+  const syncCls = syncStateClass(state.pmPreflight?.state);
+  meta.innerHTML = `
+    <span><strong>${total}</strong>개 프로젝트</span>
+    <span><strong>${pending}</strong>건 승인 대기</span>
+    <span>OpenProject <span class="status-pill ${syncCls}" style="font-size:0.72rem;padding:1px 7px">${escapeHtml(syncLbl)}</span></span>
+  `;
+}
+
+function renderPortfolioFilter() {
+  document.querySelectorAll("#portfolioFilter .filter-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.filter === state.portfolioFilter);
+  });
 }
 
 function renderTemplates() {
+  /* ── 표준 WBS 목록 ── */
   const templateList = document.querySelector("#templateList");
-  templateList.innerHTML = state.templates
-    .map(
-      (template) => `
-        <article class="template-item">
-          <div class="template-item-header">
-            <div>
-              <strong>${escapeHtml(template.name)}</strong>
-              <span>${escapeHtml(projectTypeLabel(template.project_type))}${template.item_count ? ` · ${escapeHtml(template.item_count)}개 항목` : ""}</span>
-            </div>
-            <button
-              class="secondary-button template-download-button"
-              type="button"
-              data-template-download="${escapeHtml(template.key)}"
-            >
-              Excel
-            </button>
+  if (templateList) {
+    templateList.innerHTML = state.templates
+      .map((template) => {
+        const meta = [
+          escapeHtml(projectTypeLabel(template.project_type)),
+          template.item_count ? `${template.item_count}개 항목` : null,
+        ].filter(Boolean).join(" · ");
+        return `
+        <div class="template-card">
+          <div class="template-card-info">
+            <strong>${escapeHtml(template.name)}</strong>
+            <span>${meta}</span>
+            <span class="tpl-sep">|</span>
+            <p>${escapeHtml(template.description)}</p>
           </div>
-          <p>${escapeHtml(template.description)}</p>
-        </article>
-      `,
-    )
-    .join("");
+          <div style="display:flex;gap:5px;flex-shrink:0">
+            <button class="secondary-button" type="button"
+              data-template-preview="${escapeHtml(template.key)}"
+              style="font-size:0.76rem;padding:0 10px;min-height:26px"
+              title="웹에서 미리보기">🔍 미리보기</button>
+            <button class="secondary-button" type="button"
+              data-template-download="${escapeHtml(template.key)}"
+              style="font-size:0.76rem;padding:0 10px;min-height:26px"
+              title="${escapeHtml(template.name)} Excel 다운로드">↓ Excel</button>
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  /* ── 일반 WBS (프로젝트별) 목록 ── */
+  renderCustomWbsList();
+}
+
+function renderCustomWbsList() {
+  const container = document.querySelector("#customWbsList");
+  if (!container) return;
+
+  const projects = state.apiConnected ? state.projects : fallbackProjects;
+  if (!projects.length) {
+    container.innerHTML = `<div class="custom-wbs-empty">등록된 프로젝트가 없습니다. 프로젝트를 먼저 생성하세요.</div>`;
+    return;
+  }
+
+  container.innerHTML = projects.map((p) => {
+    const wbsCount = p.id && state.wbsPlanProjectId === p.id ? state.wbsPlanRows.length : null;
+    const countText = wbsCount != null ? `WBS ${wbsCount}개 항목` : "";
+    const meta = p.metadata || {};
+    const desc = [
+      escapeHtml(projectTypeLabel(p.template_key)),
+      countText ? escapeHtml(countText) : null,
+    ].filter(Boolean).join(" · ");
+    return `
+      <div class="template-card">
+        <div class="template-card-info">
+          <strong>${escapeHtml(p.name)}</strong>
+          <span>${desc}</span>
+          ${meta.description ? `<span class="tpl-sep">|</span><p>${escapeHtml(meta.description)}</p>` : ""}
+        </div>
+        <span class="status-pill ${statusClass(p.status)}" style="flex-shrink:0">${statusLabel(p.status)}</span>
+        <div style="display:flex;gap:5px;flex-shrink:0">
+          <button class="secondary-button" type="button"
+            data-custom-wbs-preview="${escapeHtml(p.id || "")}"
+            ${p.id ? "" : "disabled"}
+            style="font-size:0.76rem;padding:0 10px;min-height:26px"
+            title="${escapeHtml(p.name)} WBS 미리보기">🔍 미리보기</button>
+          <button class="secondary-button" type="button"
+            data-custom-wbs-upload="${escapeHtml(p.id || "")}"
+            ${(p.id && ["Draft","Review","Rejected"].includes(p.status) && canMutateWork()) ? "" : "disabled"}
+            style="font-size:0.76rem;padding:0 10px;min-height:26px">↑ Excel</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+/* 일반 WBS 목록에서 빠른 업로드 (선택 프로젝트 → Excel 업로드 탭 이동) */
+function openCustomWbsUploadTab(projectId) {
+  // Excel 업로드 탭 활성화
+  document.querySelectorAll(".tpl-tab").forEach((btn) => {
+    const isImport = btn.dataset.tplTab === "import";
+    btn.classList.toggle("active", isImport);
+    btn.setAttribute("aria-selected", isImport ? "true" : "false");
+  });
+  document.querySelector("#templates").dataset.activeTab = "import";
+  document.getElementById("tplTabList").hidden   = true;
+  document.getElementById("tplTabImport").hidden = false;
+  // 일반 WBS 모드 선택
+  setImportType("custom");
+  // 프로젝트 선택
+  const sel = document.querySelector("#importProjectSelect");
+  if (sel && projectId) sel.value = projectId;
+}
+
+/* 일반 WBS 미리보기 — templateDrawer 재사용 */
+async function openProjectWbsPreview(projectId) {
+  const project = state.projects.find((p) => p.id === projectId);
+  if (!project) return;
+
+  const drawer = document.querySelector("#templateDrawer");
+  document.querySelector("#templateDrawerTitle").textContent = project.name;
+  document.querySelector("#templateDrawerEyebrow").textContent =
+    `일반 WBS · ${projectTypeLabel(project.template_key)} · ${statusLabel(project.status)}`;
+  document.querySelector("#templateDrawerDownload").dataset.templateKey = project.template_key;
+  document.querySelector("#templateDrawerContent").innerHTML =
+    `<div class="template-preview-loading">WBS 항목 불러오는 중…</div>`;
+  drawer.hidden = false;
+
+  try {
+    // 캐시된 데이터 우선 사용
+    let rows = state.wbsPlanProjectId === projectId ? state.wbsPlanRows : null;
+    if (!rows || !rows.length) {
+      rows = await request(`/api/projects/${encodeURIComponent(projectId)}/wbs-items`);
+    }
+
+    if (!rows || !rows.length) {
+      document.querySelector("#templateDrawerContent").innerHTML =
+        `<div class="wbs-board-empty"><strong>WBS 항목 없음</strong><span>Excel 업로드 또는 WBS 관리 메뉴에서 항목을 추가하세요.</span></div>`;
+      return;
+    }
+
+    // 표준 WBS 렌더러 재사용 (template 객체 대신 project 메타로 요약)
+    const fakeTemplate = {
+      name: project.name,
+      project_type: project.template_key,
+      description: project.metadata?.description || "",
+      phases: state.templates.find((t) => t.key === project.template_key)?.phases || [],
+    };
+    renderTemplatePreview(fakeTemplate, rows);
+  } catch (error) {
+    document.querySelector("#templateDrawerContent").innerHTML =
+      `<p style="color:var(--red);padding:16px">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   표준 WBS 미리보기 드로어
+══════════════════════════════════════════════════════ */
+
+function openTemplateDrawer(templateKey) {
+  const template = state.templates.find((t) => t.key === templateKey);
+  if (!template) return;
+
+  const drawer = document.querySelector("#templateDrawer");
+  document.querySelector("#templateDrawerTitle").textContent = template.name;
+  document.querySelector("#templateDrawerEyebrow").textContent = `표준 WBS · ${projectTypeLabel(template.project_type)}`;
+  document.querySelector("#templateDrawerDownload").dataset.templateKey = templateKey;
+  document.querySelector("#templateDrawerContent").innerHTML = `<div class="template-preview-loading">항목 불러오는 중…</div>`;
+  drawer.hidden = false;
+
+  // 비동기로 항목 로드
+  loadTemplatePreview(templateKey, template);
+}
+
+function closeTemplateDrawer() {
+  document.querySelector("#templateDrawer").hidden = true;
+}
+
+async function loadTemplatePreview(templateKey, template) {
+  try {
+    const data = await request(`/api/templates/${encodeURIComponent(templateKey)}/items`);
+    renderTemplatePreview(data.template || template, data.rows || []);
+  } catch (error) {
+    document.querySelector("#templateDrawerContent").innerHTML =
+      `<p style="color:var(--red);padding:16px">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderTemplatePreview(template, rows) {
+  const content = document.querySelector("#templateDrawerContent");
+  if (!content) return;
+
+  const rowByCode = new Map(rows.map((r) => [r.code, r]));
+  const childMap  = {};
+  rows.forEach((r) => {
+    if (r.parent_code) {
+      if (!childMap[r.parent_code]) childMap[r.parent_code] = [];
+      childMap[r.parent_code].push(r.code);
+    }
+  });
+
+  // 유형별 통계
+  const typeCounts = {};
+  rows.forEach((r) => { typeCounts[r.item_type || "작업"] = (typeCounts[r.item_type || "작업"] || 0) + 1; });
+
+  // 단계별 가중치
+  const phases = template.phases || [];
+
+  // 요약
+  const summaryHtml = `
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">개요</h3>
+      <div class="tpl-summary">
+        <dl class="tpl-summary-item"><dt>유형</dt><dd>${escapeHtml(projectTypeLabel(template.project_type))}</dd></dl>
+        <dl class="tpl-summary-item"><dt>전체 항목</dt><dd>${rows.length}개</dd></dl>
+        ${Object.entries(typeCounts).map(([type, cnt]) =>
+          `<dl class="tpl-summary-item"><dt>${escapeHtml(itemTypeLabel(type))}</dt><dd>${cnt}개</dd></dl>`
+        ).join("")}
+      </div>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin:0">${escapeHtml(template.description || "")}</p>
+    </div>`;
+
+  // 단계 범례 (가중치 바)
+  const phaseLegend = phases.length ? `
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">단계 구성</h3>
+      <div class="drawer-phase-bar">
+        ${phases.map((ph) => `
+          <div class="drawer-phase-row">
+            <span>${escapeHtml(ph.name)}</span>
+            <div class="drawer-phase-track"><div class="drawer-phase-fill" style="width:${ph.weight || 0}%"></div></div>
+            <span>${ph.weight || 0}%</span>
+          </div>`).join("")}
+      </div>
+    </div>` : "";
+
+  // 계층 트리 렌더링 (DFS)
+  const treeItems = [];
+  const visited   = new Set();
+
+  function getDepth(row) {
+    let d = 0, cur = row, seen = new Set([row.code]);
+    while (cur?.parent_code && !seen.has(cur.parent_code)) {
+      seen.add(cur.parent_code); cur = rowByCode.get(cur.parent_code); d++;
+    }
+    return d;
+  }
+
+  function walk(code) {
+    if (visited.has(code)) return;
+    visited.add(code);
+    const row = rowByCode.get(code);
+    if (!row) return;
+    const depth = getDepth(row);
+    const meta = row.metadata || {};
+    const hasInspect = meta.inspection_required;
+    const hasDeliverable = meta.deliverable_type;
+
+    treeItems.push(`
+      <div class="tpl-tree-item" data-type="${escapeHtml(row.item_type || "작업")}" style="--depth:${depth}">
+        <div class="tpl-item-indent">${depth > 0 ? "└" : ""}</div>
+        <div class="tpl-item-body">
+          <code class="tpl-item-code">${escapeHtml(row.code)}</code>
+          <span class="tpl-item-name">${escapeHtml(row.name)}</span>
+          <div class="tpl-item-meta">
+            <span class="tpl-type-badge">${escapeHtml(itemTypeLabel(row.item_type || "작업"))}</span>
+            ${row.weight != null ? `<span class="tpl-weight">${row.weight}%</span>` : ""}
+            ${hasDeliverable ? `<span class="tpl-type-badge" style="--tc:#6264a7">📄 ${escapeHtml(hasDeliverable)}</span>` : ""}
+            ${hasInspect    ? `<span class="tpl-inspect-badge">✓ 검수</span>` : ""}
+          </div>
+        </div>
+      </div>`);
+
+    (childMap[code] || []).forEach((childCode) => walk(childCode));
+  }
+
+  rows.filter((r) => !r.parent_code).forEach((r) => { if (r.code) walk(r.code); });
+  rows.forEach((r) => { if (!visited.has(r.code)) {
+    treeItems.push(`<div class="tpl-tree-item" data-type="${escapeHtml(r.item_type||"작업")}" style="--depth:0">
+      <div class="tpl-item-indent"></div>
+      <div class="tpl-item-body"><code class="tpl-item-code">${escapeHtml(r.code)}</code><span class="tpl-item-name">${escapeHtml(r.name)}</span></div>
+    </div>`);
+  }});
+
+  const treeHtml = `
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">WBS 항목 (${rows.length}개)</h3>
+      <div class="tpl-tree">${treeItems.join("")}</div>
+    </div>`;
+
+  content.innerHTML = summaryHtml + phaseLegend + treeHtml;
 }
 
 function defaultTemplateKey() {
@@ -809,49 +1378,7 @@ function rowSearchText(row) {
     .toLowerCase();
 }
 
-function isRiskType(value) {
-  return ["리스크", "이슈", "변경요청", "Risk", "Issue", "Change Request"].includes(value);
-}
-
-function matchesPortfolioView(row) {
-  if (state.portfolioView === "risk") return isRiskType(row.item_type);
-  if (state.portfolioView === "delivery") return !isRiskType(row.item_type);
-  return true;
-}
-
-function isDeliverableType(value) {
-  return ["산출물", "Deliverable", "Artifact"].includes(value);
-}
-
-function rowHasOwner(row) {
-  return Boolean(String(row.owner || "").trim());
-}
-
-function rowChildren(rows) {
-  const children = new Map();
-  rows.forEach((row) => {
-    if (!row.parent_code) return;
-    children.set(row.parent_code, [...(children.get(row.parent_code) || []), row]);
-  });
-  return children;
-}
-
-function quickFilterMatches(row, rows, filterKey) {
-  if (!filterKey) return true;
-  const children = rowChildren(rows);
-  if (filterKey === "unsynced") return !row.already_synced;
-  if (filterKey === "ownerless") return !rowHasOwner(row);
-  if (filterKey === "risk") return isRiskType(row.item_type);
-  if (filterKey === "deliverable") return isDeliverableType(row.item_type);
-  if (filterKey === "leaf") return !(children.get(row.code) || []).length;
-  return true;
-}
-
-function matchesQuickFilter(row, rows) {
-  return quickFilterMatches(row, rows, state.projectQuickFilter);
-}
-
-function baseFilteredProjectPlanRows() {
+function filteredProjectPlanRows() {
   const rows = projectPlanRows();
   const rowByCode = projectRowMap(rows);
   const rootCode = projectRootCode(rows);
@@ -860,507 +1387,366 @@ function baseFilteredProjectPlanRows() {
   return rows.filter((row) => {
     const matchesSearch = !query || rowSearchText(row).includes(query);
     const matchesType = !state.projectTypeFilter || row.item_type === state.projectTypeFilter;
-    const matchesPortfolio = matchesPortfolioView(row);
     const matchesPhase = !state.projectPhaseFilter
       || row.code === state.projectPhaseFilter
       || phaseCodeForRow(row, rowByCode, rootCode) === state.projectPhaseFilter;
-    return matchesSearch && matchesType && matchesPortfolio && matchesPhase;
+    return matchesSearch && matchesType && matchesPhase;
   });
-}
-
-function filteredProjectPlanRows() {
-  const rows = projectPlanRows();
-  return baseFilteredProjectPlanRows().filter((row) => matchesQuickFilter(row, rows));
-}
-
-function displayProjectPlanRows(rows, allRows = projectPlanRows()) {
-  const rootCode = projectRootCode(allRows);
-  const displayRows = rows.filter((row) => row.code !== rootCode);
-  return displayRows.length || rows.length !== 1 ? displayRows : rows;
 }
 
 function resetProjectPlanFilters() {
   state.projectWbsSearch = "";
   state.projectPhaseFilter = "";
   state.projectTypeFilter = "";
-  state.projectQuickFilter = "";
-  state.selectedWbsCode = null;
-  state.collapsedPhaseCodes = new Set();
-}
-
-function renderPortfolioTabs() {
-  document.querySelectorAll("[data-portfolio-tab]").forEach((button) => {
-    const selected = button.dataset.portfolioTab === state.portfolioView;
-    button.classList.toggle("selected", selected);
-    button.setAttribute("aria-selected", selected ? "true" : "false");
-  });
-}
-
-function fallbackTimelinePhases() {
-  const project = state.projects.find((item) => item.id === state.selectedProjectId) || state.projects[0];
-  const templateKey = project?.template_key || defaultTemplateKey();
-  const template = state.templates.find((item) => item.key === templateKey) || state.templates[0] || fallbackTemplates[0];
-  return template.phases || fallbackTemplates[0].phases;
-}
-
-function projectTimelinePhases() {
-  const rows = projectPlanRows();
-  if (!rows.length) return fallbackTimelinePhases();
-  const rootCode = projectRootCode(rows);
-  const phases = rows.filter((row) => row.parent_code === rootCode);
-  if (phases.length) return phases;
-  return rows.filter((row) => !row.parent_code);
-}
-
-function renderProjectTimeline() {
-  const timeline = document.querySelector("#projectTimeline");
-  const phases = projectTimelinePhases().filter((phase) => phase.name || phase.subject);
-  const safePhases = phases.length ? phases : fallbackTemplates[0].phases;
-  timeline.style.setProperty(
-    "--timeline-columns",
-    safePhases.map((phase) => `${Math.max(1, Number(phase.weight) || 1)}fr`).join(" "),
-  );
-  timeline.innerHTML = safePhases
-    .map((phase) => {
-      const weight = Math.max(1, Number(phase.weight) || 1);
-      return `<div style="--span: ${weight}"><span>${escapeHtml(phase.name || phase.subject)}</span></div>`;
-    })
-    .join("");
 }
 
 function renderProjectPlanFilters() {
-  const rows = projectPlanRows();
-  const rootCode = projectRootCode(rows);
-  const phases = rows.filter((row) => row.parent_code === rootCode);
-  const types = [...new Set(rows.map((row) => row.item_type).filter(Boolean))];
-
-  if (!phases.some((phase) => phase.code === state.projectPhaseFilter)) {
-    state.projectPhaseFilter = "";
-  }
-  if (!types.includes(state.projectTypeFilter)) {
-    state.projectTypeFilter = "";
-  }
-
-  const searchInput = document.querySelector("#projectWbsSearchInput");
-  searchInput.value = state.projectWbsSearch;
-  searchInput.disabled = !rows.length;
-
-  const phaseFilter = document.querySelector("#projectPhaseFilter");
-  phaseFilter.innerHTML = [
-    '<option value="">전체 단계</option>',
-    ...phases.map((phase) => `<option value="${escapeHtml(phase.code)}">${escapeHtml(phase.name)}</option>`),
-  ].join("");
-  phaseFilter.value = state.projectPhaseFilter;
-  phaseFilter.disabled = !rows.length;
-
-  const typeFilter = document.querySelector("#projectTypeFilter");
-  typeFilter.innerHTML = [
-    '<option value="">전체 유형</option>',
-    ...types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(itemTypeLabel(type))}</option>`),
-  ].join("");
-  typeFilter.value = state.projectTypeFilter;
-  typeFilter.disabled = !rows.length;
+  // #projectWbsSearchInput 등 DOM이 제거됨 — 무시
 }
 
-function rowTitle(row) {
-  return row.name || row.subject || "작업명 없음";
-}
+const PORTFOLIO_FILTER_STATUSES = {
+  all:      null,
+  active:   ["Draft", "Review", "Approved"],
+  closed:   ["Synced", "Closed"],
+  rejected: ["Rejected"],
+};
 
-function rowSyncState(row) {
-  const pulled = row.metadata?.openproject_pull || {};
-  const percentValue = pulled.percent_complete !== null && pulled.percent_complete !== undefined
-    ? Number(pulled.percent_complete)
-    : row.already_synced
-      ? 100
-      : 0;
-  const percent = Number.isFinite(percentValue) ? Math.max(0, Math.min(100, percentValue)) : 0;
-  const label = pulled.status
-    ? `${pulled.status}${pulled.percent_complete !== null && pulled.percent_complete !== undefined ? ` ${percent}%` : ""}`
-    : row.already_synced
-      ? "동기화 완료"
-      : "동기화 대기";
-  return {
-    label,
-    percent,
-    className: statusClass(pulled.status || (row.already_synced ? "synced" : "pending")),
-  };
-}
+const PHASE_COLORS = ["#0071e3", "#1f9d55", "#b7791f", "#7356bf", "#d92d20", "#0891b2", "#9333ea"];
 
-function rowParentText(row, rowByCode) {
-  if (!row.parent_code) return "최상위";
-  const parent = rowByCode.get(row.parent_code);
-  return parent ? `${parent.code} ${rowTitle(parent)}` : row.parent_code;
-}
-
-function rowPhaseText(row, rowByCode, rootCode) {
-  const phaseCode = phaseCodeForRow(row, rowByCode, rootCode);
-  const phase = rowByCode.get(phaseCode);
-  if (phase) return rowTitle(phase);
-  if (row.parent_code === rootCode) return rowTitle(row);
-  return "공통";
-}
-
-function boardColumnForRow(row) {
-  if (isRiskType(row.item_type)) return "risk";
-  if (!rowHasOwner(row)) return "ownerless";
-  if (row.already_synced) return "synced";
-  return "ready";
-}
-
-function boardColumns() {
-  return [
-    { key: "ready", label: "수행 대기" },
-    { key: "synced", label: "동기화 완료" },
-    { key: "risk", label: "리스크/이슈" },
-    { key: "ownerless", label: "담당 미지정" },
-  ];
-}
-
-function renderWbsViewSwitch() {
-  document.querySelectorAll("[data-wbs-view]").forEach((button) => {
-    const selected = button.dataset.wbsView === state.projectPlanView;
-    button.classList.toggle("selected", selected);
-    button.setAttribute("aria-selected", selected ? "true" : "false");
-  });
-}
-
-function quickFilterDefinitions(baseRows, allRows) {
-  const count = (key) => baseRows.filter((row) => quickFilterMatches(row, allRows, key)).length;
-  return [
-    { key: "", label: "전체", count: baseRows.length },
-    { key: "unsynced", label: "미동기화", count: count("unsynced") },
-    { key: "ownerless", label: "담당자 없음", count: count("ownerless") },
-    { key: "risk", label: "리스크", count: count("risk") },
-    { key: "deliverable", label: "산출물", count: count("deliverable") },
-    { key: "leaf", label: "실행 작업", count: count("leaf") },
-  ];
-}
-
-function renderWbsQuickFilters(baseRows, allRows) {
-  const filters = quickFilterDefinitions(baseRows, allRows);
-  const activeFilterExists = filters.some((filter) => filter.key === state.projectQuickFilter);
-  if (!activeFilterExists) state.projectQuickFilter = "";
-  document.querySelector("#wbsQuickFilters").innerHTML = filters
-    .map((filter) => {
-      const selected = filter.key === state.projectQuickFilter;
-      return `
-        <button
-          class="wbs-filter-chip ${selected ? "selected" : ""}"
-          type="button"
-          data-wbs-filter="${escapeHtml(filter.key)}"
-          aria-pressed="${selected ? "true" : "false"}"
-        >
-          ${escapeHtml(filter.label)} <span>${escapeHtml(filter.count)}</span>
-        </button>
-      `;
-    })
-    .join("");
-}
-
-function renderWbsWorkCard(row, rowByCode, options = {}) {
-  const depth = Math.max(0, rowDepth(row, rowByCode) - 1);
-  const sync = rowSyncState(row);
-  const selected = row.code === state.selectedWbsCode;
-  const riskClass = isRiskType(row.item_type) ? " risk-item" : "";
-  const compactClass = options.compact ? " compact" : "";
-  return `
-    <button
-      class="wbs-work-card${selected ? " selected" : ""}${riskClass}${compactClass}"
-      type="button"
-      data-wbs-code="${escapeHtml(row.code)}"
-      style="--depth: ${depth}; --progress: ${sync.percent}%"
-    >
-      <span class="wbs-work-card-main">
-        <span class="wbs-code-badge">${escapeHtml(row.code)}</span>
-        <span class="wbs-work-title">${escapeHtml(rowTitle(row))}</span>
-      </span>
-      <span class="wbs-work-meta">
-        <span class="status-pill ${statusClass(row.item_type)}">${escapeHtml(itemTypeLabel(row.item_type))}</span>
-        <span>${escapeHtml(row.owner || "담당자 없음")}</span>
-        <span>가중치 ${escapeHtml(row.weight ?? "-")}</span>
-        <span>${escapeHtml(rowParentText(row, rowByCode))}</span>
-      </span>
-      <span class="wbs-work-progress" aria-hidden="true"><span></span></span>
-      <span class="wbs-work-footer">
-        <span><span class="sync-dot ${sync.className}"></span>${escapeHtml(sync.label)}</span>
-        <span>${escapeHtml(sync.percent)}%</span>
-      </span>
-    </button>
-  `;
-}
-
-function renderWbsEmptyState(emptyText) {
-  return `
-    <article class="wbs-empty-state">
-      <strong>${escapeHtml(emptyText)}</strong>
-      <span>검색어, 단계, 유형, 빠른 필터를 조정해 보세요.</span>
-    </article>
-  `;
-}
-
-function phaseGroupsForRows(rows, allRows, rowByCode, rootCode) {
-  const phases = allRows.filter((row) => row.parent_code === rootCode);
-  const groups = phases.map((phase) => ({
-    key: phase.code,
-    phase,
-    rows: [],
-  }));
-  const groupByKey = new Map(groups.map((group) => [group.key, group]));
-  const misc = { key: "__misc", phase: null, rows: [] };
-
-  rows.forEach((row) => {
-    const phaseCode = row.parent_code === rootCode ? row.code : phaseCodeForRow(row, rowByCode, rootCode);
-    const group = groupByKey.get(phaseCode) || misc;
-    group.rows.push(row);
-  });
-
-  return [...groups, misc].filter((group) => group.rows.length);
-}
-
-function renderProjectPlanList(rows, rowByCode, emptyText) {
-  return rows.length
-    ? rows.map((row) => renderWbsWorkCard(row, rowByCode)).join("")
-    : renderWbsEmptyState(emptyText);
-}
-
-function renderProjectPlanGroups(rows, allRows, rowByCode, rootCode, emptyText) {
-  if (!rows.length) return renderWbsEmptyState(emptyText);
-  return phaseGroupsForRows(rows, allRows, rowByCode, rootCode)
-    .map((group) => {
-      const collapsed = state.collapsedPhaseCodes.has(group.key);
-      const phaseRows = group.phase && group.rows.length > 1
-        ? group.rows.filter((row) => row.code !== group.phase.code)
-        : group.rows;
-      const cardRows = phaseRows.length ? phaseRows : group.rows;
-      const weight = cardRows.reduce((sum, row) => sum + (Number(row.weight) || 0), 0);
-      return `
-        <article class="wbs-phase-group ${collapsed ? "collapsed" : ""}">
-          <button class="wbs-phase-header" type="button" data-group-toggle="${escapeHtml(group.key)}">
-            <span>${collapsed ? "▸" : "▾"}</span>
-            <strong>${escapeHtml(group.phase ? rowTitle(group.phase) : "기타 작업")}</strong>
-            <small>${escapeHtml(cardRows.length)}개 작업 · 가중치 ${escapeHtml(weight)}</small>
-          </button>
-          <div class="wbs-phase-body">
-            ${collapsed ? "" : cardRows.map((row) => renderWbsWorkCard(row, rowByCode)).join("")}
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function renderProjectPlanBoard(rows, rowByCode, emptyText) {
-  if (!rows.length) return renderWbsEmptyState(emptyText);
-  return `
-    <div class="wbs-board">
-      ${boardColumns()
-        .map((column) => {
-          const columnRows = rows.filter((row) => boardColumnForRow(row) === column.key);
-          return `
-            <section class="wbs-board-column">
-              <div class="wbs-board-header">
-                <strong>${escapeHtml(column.label)}</strong>
-                <span>${escapeHtml(columnRows.length)}</span>
-              </div>
-              <div class="wbs-board-items">
-                ${columnRows.length
-                  ? columnRows.map((row) => renderWbsWorkCard(row, rowByCode, { compact: true })).join("")
-                  : '<p class="wbs-board-empty">항목 없음</p>'}
-              </div>
-            </section>
-          `;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-function renderWbsDetailDrawer(rows, rowByCode, rootCode) {
-  const title = document.querySelector("#wbsDetailTitle");
-  const content = document.querySelector("#wbsDetailContent");
-  const row = rows.find((item) => item.code === state.selectedWbsCode);
-
-  if (!row) {
-    title.textContent = "WBS 항목을 선택하세요";
-    content.innerHTML = '<p class="empty-detail">왼쪽 작업을 선택하면 상세 정보가 표시됩니다.</p>';
-    return;
-  }
-
-  const sync = rowSyncState(row);
-  const phaseText = rowPhaseText(row, rowByCode, rootCode);
-  title.textContent = rowTitle(row);
-  content.innerHTML = `
-    <div class="wbs-detail-summary">
-      <span class="wbs-code-badge">${escapeHtml(row.code)}</span>
-      <span class="status-pill ${statusClass(row.item_type)}">${escapeHtml(itemTypeLabel(row.item_type))}</span>
-      <span class="status-pill ${sync.className}">${escapeHtml(sync.label)}</span>
-    </div>
-    <div class="wbs-detail-progress" style="--progress: ${sync.percent}%">
-      <span><strong>${escapeHtml(sync.percent)}%</strong> 진행률</span>
-      <i aria-hidden="true"><b></b></i>
-    </div>
-    <dl class="wbs-detail-list">
-      <div><dt>단계</dt><dd>${escapeHtml(phaseText)}</dd></div>
-      <div><dt>상위 WBS</dt><dd>${escapeHtml(rowParentText(row, rowByCode))}</dd></div>
-      <div><dt>담당자</dt><dd>${escapeHtml(row.owner || "담당자 없음")}</dd></div>
-      <div><dt>가중치</dt><dd>${escapeHtml(row.weight ?? "-")}</dd></div>
-      <div><dt>동기화</dt><dd>${escapeHtml(row.already_synced ? "OpenProject 반영 완료" : "동기화 대기")}</dd></div>
-      <div><dt>작업 유형</dt><dd>${escapeHtml(itemTypeLabel(row.item_type))}</dd></div>
-    </dl>
-  `;
-}
-
-function renderProjectImportControls() {
-  const hasProject = Boolean(state.selectedProjectId);
-  const canMutate = canMutateWork() && hasProject;
-  document.querySelector("#projectWbsDownloadButton").disabled = !hasProject;
-  document.querySelector("#projectWbsFileInput").disabled = !canMutate;
-  document.querySelector("label[for='projectWbsFileInput']").classList.toggle("disabled-control", !canMutate);
-  document.querySelector("#applyProjectImportButton").disabled = !canMutate || !state.pendingProjectImportJobId;
-  document.querySelector("#projectImportStatus").textContent = state.projectImportStatus;
+function renderPhaseBar(plan) {
+  const bar = document.querySelector("#projectPhaseBar");
+  if (!bar) return;
+  const phases = plan?.template?.phases || [];
+  if (!phases.length) { bar.hidden = true; return; }
+  const total = phases.reduce((s, p) => s + (p.weight || 0), 0) || 100;
+  bar.innerHTML = phases.map((phase, i) => {
+    const pct = ((phase.weight || 0) / total * 100).toFixed(1);
+    const col = PHASE_COLORS[i % PHASE_COLORS.length];
+    return `<div class="phase-bar-segment" style="flex:${pct};background:${col}" title="${escapeHtml(phase.name)} ${pct}%">${pct > 8 ? escapeHtml(phase.name) : ""}</div>`;
+  }).join("");
+  bar.hidden = false;
 }
 
 function renderProjects() {
-  const rows = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
+  const all = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
+  const allowedStatuses = PORTFOLIO_FILTER_STATUSES[state.portfolioFilter];
+  const rows = allowedStatuses ? all.filter((p) => allowedStatuses.includes(p.status)) : all;
   const canMutate = canMutateWork();
-  const selectableRows = rows.filter((project) => project.id);
-  const selectedProject = rows.find((project) => project.id === state.selectedProjectId) || selectableRows[0] || rows[0];
-  const projectSelect = document.querySelector("#projectSelectInput");
-  projectSelect.innerHTML = rows.length
-    ? rows
-        .map((project) => {
-          const label = [
-            project.name,
-            project.owner ? `담당 ${project.owner}` : "",
-            statusLabel(project.status),
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return `<option value="${escapeHtml(project.id || "")}" ${project.id ? "" : "disabled"}>${escapeHtml(label)}</option>`;
-        })
-        .join("")
-    : '<option value="">등록된 프로젝트 없음</option>';
-  projectSelect.value = selectedProject?.id || "";
-  projectSelect.disabled = !selectableRows.length;
 
-  const planMatchesSelection = selectedProject?.id && state.projectPlan?.project?.id === selectedProject.id;
-  document.querySelector("#projectSelectOwner").textContent = selectedProject?.owner ? `담당 ${selectedProject.owner}` : "담당 -";
-  document.querySelector("#projectSelectRows").textContent = planMatchesSelection && state.projectPlan?.summary
-    ? `작업 ${state.projectPlan.summary.total_rows}행`
-    : "작업 -";
-  const selectStatus = document.querySelector("#projectSelectStatus");
-  selectStatus.textContent = selectedProject ? statusLabel(selectedProject.status) : "선택";
-  selectStatus.className = `status-pill ${statusClass(selectedProject?.status)}`;
+  renderPortfolioFilter();
 
-  const canRequestApproval = Boolean(canMutate && selectedProject?.id && ["Draft", "Rejected", "Review"].includes(selectedProject.status));
-  const approvalButton = document.querySelector("#projectApprovalButton");
-  approvalButton.dataset.projectId = selectedProject?.id || "";
-  approvalButton.disabled = !canRequestApproval;
-  approvalButton.title = selectedProject?.status === "Approved"
-    ? "프로젝트 승인 완료"
-    : canRequestApproval
-      ? "프로젝트 자동 승인"
-      : "승인 요청 대기";
-  approvalButton.setAttribute("aria-label", approvalButton.title);
-  approvalButton.textContent = selectedProject?.status === "Approved"
-    ? "완료"
-    : canRequestApproval
-      ? "승인"
-      : "대기";
+  document.querySelector("#projectRows").innerHTML = rows.length
+    ? rows.map((project) => {
+        const canRequestApproval = canMutate && project.id && ["Draft", "Rejected", "Review"].includes(project.status);
+        const isSelected = project.id && project.id === state.selectedProjectId;
+        const approvalActionLabel = project.status === "Approved"
+          ? "승인 완료"
+          : project.status === "Review"
+            ? "승인 요청 중"
+            : canRequestApproval ? "승인 요청" : "승인 대기";
+        return `
+          <tr class="${isSelected ? "selected-row" : ""}">
+            <td>
+              <span class="project-name-link"
+                data-project-action="detail" data-project-id="${project.id || ""}"
+                role="button" tabindex="0">${escapeHtml(project.name)}</span>
+            </td>
+            <td>${escapeHtml(project.owner)}</td>
+            <td><span class="status-pill ${statusClass(project.status)}">${statusLabel(project.status)}</span></td>
+            <td>${escapeHtml(projectTypeLabel(project.template_key))}</td>
+            <td>${escapeHtml(project.start_date || "-")}</td>
+            <td>
+              <div class="table-actions">
+                <button class="table-action" type="button"
+                  data-project-action="plan" data-project-id="${project.id || ""}"
+                  ${project.id ? "" : "disabled"}>WBS 관리</button>
+                <button class="table-action" type="button"
+                  data-project-action="approval" data-project-id="${project.id || ""}"
+                  ${canRequestApproval ? "" : "disabled"}>${escapeHtml(approvalActionLabel)}</button>
+              </div>
+            </td>
+          </tr>`;
+      }).join("")
+    : `<tr class="empty-row"><td colspan="6">${allowedStatuses ? "해당 상태의 프로젝트 없음" : "등록된 프로젝트 없음"}</td></tr>`;
 }
 
 function renderProjectPlan() {
-  const plan = state.projectPlan;
-  const project = plan?.project;
-  document.querySelector("#projectDetailTitle").textContent = project?.name || "프로젝트 계획";
-  const status = document.querySelector("#projectDetailStatus");
-  status.textContent = project ? statusLabel(project.status) : "선택";
-  status.className = `status-pill ${project ? statusClass(project.status) : "attention"}`;
-  document.querySelector("#projectDetailTemplate").textContent = plan?.template?.name || "-";
-  document.querySelector("#projectDetailRows").textContent = plan?.summary
-    ? `${plan.summary.pending_work_packages}/${plan.summary.total_rows} 대기`
-    : "-";
-  document.querySelector("#projectSelectRows").textContent = plan?.summary ? `작업 ${plan.summary.total_rows}행` : "작업 -";
-  document.querySelector("#projectDetailSync").textContent = plan?.openproject?.project_already_synced
-    ? `동기화 완료 #${plan.openproject.project_id}`
-    : plan
-      ? "미동기화"
-      : "-";
-  document.querySelector("#projectDetailBaseline").textContent = plan ? baselineText(plan.baseline) : "-";
+  // WBS 계획은 #wbs-plan 패널(renderWbsPlan)에서 처리
+}
 
-  renderProjectPlanFilters();
-  renderWbsViewSwitch();
+/* ══════════════════════════════════════════════════════
+   프로젝트 상세 드로어
+══════════════════════════════════════════════════════ */
 
-  const allRows = projectPlanRows();
-  const baseRows = displayProjectPlanRows(baseFilteredProjectPlanRows(), allRows);
-  renderWbsQuickFilters(baseRows, allRows);
+function openProjectDrawer(projectId) {
+  const project = state.projects.find((p) => p.id === projectId);
+  if (!project) return;
 
-  const rows = filteredProjectPlanRows();
-  const displayRows = displayProjectPlanRows(rows, allRows);
-  const rowByCode = projectRowMap(allRows);
-  const rootCode = projectRootCode(allRows);
-  const isFiltered = Boolean(
-    state.projectWbsSearch
-    || state.projectPhaseFilter
-    || state.projectTypeFilter
-    || state.projectQuickFilter
-    || state.portfolioView !== "pmo",
-  );
-  const emptyText = state.portfolioView === "risk" && allRows.length
-    ? "리스크/이슈 WBS 항목 없음"
-    : state.portfolioView === "delivery" && allRows.length
-      ? "수행 WBS 항목 없음"
-      : isFiltered
-        ? "조건에 맞는 WBS 항목 없음"
-        : "상단에서 프로젝트를 선택하면 WBS 작업 리스트가 표시됩니다";
+  document.querySelector("#drawerProjectName").textContent = project.name;
+  const statusEl = document.querySelector("#drawerProjectStatus");
+  statusEl.textContent = statusLabel(project.status);
+  statusEl.className = `status-pill ${statusClass(project.status)}`;
 
-  if (!displayRows.some((row) => row.code === state.selectedWbsCode)) {
-    state.selectedWbsCode = displayRows[0]?.code || null;
+  renderProjectDrawerContent(project);
+
+  const drawer = document.querySelector("#projectDrawer");
+  drawer.hidden = false;
+  document.querySelector("#drawerClose").focus();
+}
+
+function closeProjectDrawer() {
+  document.querySelector("#projectDrawer").hidden = true;
+}
+
+function renderProjectDrawerContent(project) {
+  const meta = project.metadata || {};
+  const canMutate = canMutateWork();
+  const canRequestApproval = canMutate && project.id && ["Draft", "Rejected", "Review"].includes(project.status);
+
+  // 관련 승인 이력
+  const relatedApprovals = state.approvals.filter((a) => a.project_id === project.id || a.project_name === project.name).slice(0, 3);
+
+  // WBS 현황 (state.wbsPlanRows가 있는 경우)
+  const wbsRows = state.wbsPlanProjectId === project.id ? state.wbsPlanRows : [];
+  const wbsSummary = wbsRows.length
+    ? (() => {
+        const phases = wbsRows.filter((r) => r.item_type === "단계");
+        const tasks  = wbsRows.filter((r) => r.item_type === "작업");
+        const miles  = wbsRows.filter((r) => r.item_type === "마일스톤");
+        return `${wbsRows.length}개 항목 (단계 ${phases.length} / 작업 ${tasks.length} / 마일스톤 ${miles.length})`;
+      })()
+    : null;
+
+  const template = state.templates.find((t) => t.key === project.template_key);
+  const phases = template?.phases || [];
+
+  document.querySelector("#drawerContent").innerHTML = `
+    <!-- 빠른 액션 -->
+    <div class="drawer-section">
+      <div class="drawer-actions">
+        <button type="button" class="primary-action" data-drawer-action="wbs" data-project-id="${escapeHtml(project.id)}">WBS 관리 열기</button>
+        <button type="button" data-drawer-action="approval" data-project-id="${escapeHtml(project.id)}" ${canRequestApproval ? "" : "disabled"}>승인 요청</button>
+        <button type="button" data-drawer-action="sync" data-project-id="${escapeHtml(project.id)}">OpenProject 연계</button>
+      </div>
+    </div>
+
+    <!-- 기본 정보 -->
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">기본 정보</h3>
+      <div class="drawer-info-grid">
+        <dl class="drawer-info-item">
+          <dt>담당자</dt>
+          <dd>${escapeHtml(project.owner || "-")}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>PM</dt>
+          <dd>${escapeHtml(meta.project_manager || "-")}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>시작일</dt>
+          <dd>${escapeHtml(project.start_date || "-")}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>종료 예정일</dt>
+          <dd>${escapeHtml(meta.end_date || "-")}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>고객사 / 발주처</dt>
+          <dd>${escapeHtml(meta.client_name || "-")}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>예산</dt>
+          <dd>${escapeHtml(meta.budget || "-")}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>유형</dt>
+          <dd>${escapeHtml(projectTypeLabel(project.template_key))}</dd>
+        </dl>
+        <dl class="drawer-info-item">
+          <dt>OpenProject</dt>
+          <dd>${project.openproject_project_id ? `#${escapeHtml(project.openproject_project_id)}` : "미연결"}</dd>
+        </dl>
+      </div>
+      ${meta.description ? `
+        <div>
+          <p class="drawer-section-title" style="margin-bottom:6px">프로젝트 개요</p>
+          <p class="drawer-description">${escapeHtml(meta.description)}</p>
+        </div>` : ""}
+    </div>
+
+    <!-- 표준 WBS 단계 구성 -->
+    ${phases.length ? `
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">WBS 단계 구성 (${escapeHtml(template.name)})</h3>
+      <div class="drawer-phase-bar">
+        ${phases.map((ph) => `
+          <div class="drawer-phase-row">
+            <span>${escapeHtml(ph.name)}</span>
+            <div class="drawer-phase-track">
+              <div class="drawer-phase-fill" style="width:${ph.weight || 0}%"></div>
+            </div>
+            <span>${ph.weight || 0}%</span>
+          </div>`).join("")}
+      </div>
+    </div>` : ""}
+
+    <!-- WBS 현황 (로드된 경우) -->
+    ${wbsSummary ? `
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">WBS 현황</h3>
+      <p style="font-size:0.86rem;color:var(--text-muted)">${escapeHtml(wbsSummary)}</p>
+    </div>` : ""}
+
+    <!-- 승인 이력 -->
+    <div class="drawer-section">
+      <h3 class="drawer-section-title">승인 이력</h3>
+      ${relatedApprovals.length
+        ? relatedApprovals.map((a) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-muted)">
+            <div>
+              <strong style="font-size:0.84rem;display:block">${escapeHtml(a.title || "-")}</strong>
+              <small style="color:var(--text-muted)">${escapeHtml(a.requester || "-")} · ${a.created_at ? formatTimestamp(a.created_at) : "-"}</small>
+            </div>
+            <span class="status-pill ${statusClass(a.status)}">${statusLabel(a.status)}</span>
+          </div>`).join("")
+        : `<p style="font-size:0.84rem;color:var(--text-muted)">승인 이력 없음</p>`}
+    </div>
+  `;
+}
+
+/* ── 승인 프로세스 단계 정의 ─────────────────────── */
+const PIPE_STEPS = [
+  { label: "초안",   statuses: ["Draft"] },
+  { label: "검토",   statuses: ["Review"] },
+  { label: "승인",   statuses: ["Approved"] },
+  { label: "동기화", statuses: ["Synced", "Closed"] },
+];
+
+function pipeActiveIndex(status) {
+  if (status === "Rejected") return 1;      // 검토 단계에서 반려
+  for (let i = 0; i < PIPE_STEPS.length; i++) {
+    if (PIPE_STEPS[i].statuses.includes(status)) return i;
+  }
+  return 0;
+}
+
+function renderApprovalPipelineCard(project, approval) {
+  const canMutate   = canMutateWork();
+  const activeIdx   = pipeActiveIndex(project.status);
+  const isRejected  = project.status === "Rejected";
+  const isPending   = approval?.status === "Pending";
+  const isApproved  = project.status === "Approved" || project.status === "Synced" || project.status === "Closed";
+
+  /* D-day */
+  let ddayHtml = "";
+  if (isPending && approval.due_date) {
+    const days = Math.ceil((new Date(approval.due_date) - new Date()) / 86400000);
+    const label = days >= 0 ? `D-${days}` : `D+${Math.abs(days)} 초과`;
+    ddayHtml = `<span class="pipe-dday ${days < 0 ? "overdue" : ""}">${escapeHtml(label)}</span>`;
   }
 
-  const list = document.querySelector("#projectPlanRows");
-  if (state.projectPlanView === "group") {
-    list.innerHTML = renderProjectPlanGroups(displayRows, allRows, rowByCode, rootCode, emptyText);
-  } else if (state.projectPlanView === "board") {
-    list.innerHTML = renderProjectPlanBoard(displayRows, rowByCode, emptyText);
-  } else {
-    list.innerHTML = renderProjectPlanList(displayRows, rowByCode, emptyText);
+  /* 파이프라인 스텝 HTML */
+  const stepsHtml = PIPE_STEPS.map((step, idx) => {
+    let dotClass = "empty";
+    if (isRejected && idx === 1) dotClass = "rejected";          // 검토 단계에서 반려
+    else if (idx < activeIdx)    dotClass = "done";
+    else if (idx === activeIdx)  dotClass = isPending ? "pending" : "active";
+
+    const connClass = idx < activeIdx ? "done" : "";
+    const symbol    = dotClass === "done" ? "✓" : dotClass === "rejected" ? "✗" : String(idx + 1);
+
+    return `
+      <div class="pipe-step">
+        <div class="pipe-dot ${dotClass}">${symbol}</div>
+        <span class="pipe-step-label">${escapeHtml(step.label)}</span>
+      </div>
+      ${idx < PIPE_STEPS.length - 1 ? `<div class="pipe-connector ${connClass}"></div>` : ""}`;
+  }).join("");
+
+  /* 푸터 */
+  let footerHtml = "";
+  if (isPending && canMutate) {
+    footerHtml = `
+      <div class="pipe-footer-meta">
+        <span class="pipe-requester">요청자: ${escapeHtml(approval.requester || "-")}</span>
+        ${ddayHtml}
+      </div>
+      <div class="pipe-actions">
+        <button class="pipe-reject-btn"  type="button"
+          data-approval-action="reject"  data-approval-id="${escapeHtml(approval.id)}">반려</button>
+        <button class="pipe-approve-btn" type="button"
+          data-approval-action="approve" data-approval-id="${escapeHtml(approval.id)}">승인</button>
+      </div>`;
+  } else if (isPending && !canMutate) {
+    footerHtml = `<div class="pipe-footer-meta"><span class="pipe-requester">요청자: ${escapeHtml(approval.requester || "-")}</span>${ddayHtml}<span>PMO 승인 대기 중</span></div>`;
+  } else if (isApproved && approval) {
+    footerHtml = `<div class="pipe-footer-meta">
+      <span>${approval.decided_at ? formatTimestamp(approval.decided_at) : ""} 승인 완료</span>
+      ${approval.reviewer ? `<span>· ${escapeHtml(approval.reviewer)}</span>` : ""}
+    </div>`;
+  } else if (isRejected && approval) {
+    footerHtml = `
+      <div class="pipe-footer-meta pipe-footer-rejected">
+        <span>반려 · ${escapeHtml(approval.decision_comment || "WBS 수정 필요")}</span>
+      </div>
+      ${(canMutate && project.id) ? `
+        <div class="pipe-actions">
+          <button class="pipe-approve-btn" type="button" style="background:#e8f0fd;border-color:#bfdbfe;color:var(--blue)"
+            data-project-action="plan" data-project-id="${escapeHtml(project.id)}">WBS 수정</button>
+          <button class="pipe-approve-btn" type="button"
+            data-approval-action-project="reapply" data-project-id="${escapeHtml(project.id)}">재승인 요청</button>
+        </div>` : ""}`;
+  } else if (!approval && project.id && ["Draft"].includes(project.status)) {
+    footerHtml = `<div class="pipe-footer-meta"><span>WBS 등록 후 승인 요청 가능</span></div>`;
   }
-  renderWbsDetailDrawer(displayRows, rowByCode, rootCode);
+
+  return `
+    <div class="approval-pipe-card ${isPending ? "pending" : ""} ${isRejected ? "rejected" : ""}">
+      <div class="pipe-header">
+        <div class="pipe-project-info">
+          <span class="pipe-project-name">${escapeHtml(project.name)}</span>
+          <span class="status-pill ${statusClass(project.status)}" style="font-size:0.7rem">${statusLabel(project.status)}</span>
+        </div>
+        <span class="pipe-type">${escapeHtml(projectTypeLabel(project.template_key))}</span>
+      </div>
+      <div class="pipe-steps">${stepsHtml}</div>
+      ${footerHtml ? `<div class="pipe-footer">${footerHtml}</div>` : ""}
+    </div>`;
 }
 
 function renderApprovals() {
   const approvalStatus = document.querySelector("#approvalStatus");
-  const pendingCount = state.approvals.filter((approval) => approval.status === "Pending").length;
-  approvalStatus.textContent = pendingCount ? `승인 대기 ${pendingCount}건` : "자동";
-  approvalStatus.className = `status-pill ${pendingCount ? "attention" : "stable"}`;
+  const pendingCount   = state.approvals.filter((a) => a.status === "Pending").length;
+  approvalStatus.textContent = pendingCount ? `승인 대기 ${pendingCount}건` : "정상";
+  approvalStatus.className   = `status-pill ${pendingCount ? "attention" : "stable"}`;
 
-  const rows = state.approvals.length ? state.approvals : fallbackApprovals;
-  document.querySelector("#approvalList").innerHTML = rows
-    .map((approval) => {
-      const isPending = canMutateWork() && approval.status === "Pending" && approval.id;
-      return `
-        <article class="approval-item">
-          <div>
-            <strong>${approval.title}</strong>
-            <span>${approval.project_name} · ${approval.request_type}</span>
-          </div>
-          <div class="approval-meta">
-            <span class="status-pill ${statusClass(approval.status)}">${statusLabel(approval.status)}</span>
-            <small>${approval.requester || "PMO"} → ${approval.reviewer || "PMO Lead"}</small>
-            <small>${approvalCommentLabel(approval.decision_comment) || approval.due_date || "자동 처리"}</small>
-          </div>
-          <div class="approval-actions">
-            <button class="secondary-button" type="button" data-approval-action="reject" data-approval-id="${approval.id || ""}" ${isPending ? "" : "disabled"}>반려</button>
-            <button class="primary-button" type="button" data-approval-action="approve" data-approval-id="${approval.id || ""}" ${isPending ? "" : "disabled"}>승인</button>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-  const loadMoreButton = document.querySelector("#approvalLoadMoreButton");
-  loadMoreButton.hidden = !state.approvalsHasMore;
-  loadMoreButton.textContent = `더 보기 (${state.approvalLimit}건 표시 중)`;
+  const container = document.querySelector("#approvalPipelineList");
+  if (!container) return;
+
+  const projects = state.apiConnected ? state.projects : fallbackProjects;
+  if (!projects.length) {
+    container.innerHTML = `<p style="color:var(--text-muted);font-size:0.84rem;padding:8px">등록된 프로젝트가 없습니다.</p>`;
+    return;
+  }
+
+  /* 프로젝트별 최신 승인 맵 */
+  const latestApproval = {};
+  state.approvals.forEach((a) => {
+    const existing = latestApproval[a.project_id];
+    if (!existing || new Date(a.created_at) > new Date(existing.created_at)) {
+      latestApproval[a.project_id] = a;
+    }
+  });
+
+  /* 정렬: 승인 대기 먼저 → 최근 생성순 */
+  const sorted = [...projects].sort((a, b) => {
+    const aPending = latestApproval[a.id]?.status === "Pending" ? 1 : 0;
+    const bPending = latestApproval[b.id]?.status === "Pending" ? 1 : 0;
+    if (aPending !== bPending) return bPending - aPending;
+    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+  });
+
+  container.innerHTML = sorted.map((p) => renderApprovalPipelineCard(p, latestApproval[p.id])).join("");
 }
 
 function renderImportPreview() {
@@ -1409,7 +1795,47 @@ function renderImportDiff() {
 
 function renderApplyButton() {
   const applyButton = document.querySelector("#applyImportButton");
-  applyButton.disabled = !canMutateWork() || !state.pendingImportJobId;
+  const hasPending  = Boolean(state.pendingImportJobId);
+  const canMutate   = canMutateWork();
+
+  if (state.importType === "custom") {
+    const projectId = document.querySelector("#importProjectSelect")?.value;
+    applyButton.disabled = !canMutate || !hasPending || !projectId;
+    applyButton.textContent = "프로젝트에 반영";
+  } else {
+    applyButton.disabled = !canMutate || !hasPending;
+    applyButton.textContent = "반영";
+  }
+}
+
+function setImportType(type) {
+  state.importType = type;
+  const panel = document.querySelector("#tplTabImport");
+  if (panel) panel.dataset.importType = type;
+
+  // 토글 버튼 상태
+  document.querySelectorAll(".type-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.importType === type);
+  });
+
+  // 안내 문구 토글
+  const stdNotice = document.querySelector("#importStdNotice");
+  const cstNotice = document.querySelector("#importCstNotice");
+  if (stdNotice) stdNotice.hidden = type !== "standard";
+  if (cstNotice) cstNotice.hidden = type !== "custom";
+
+  renderApplyButton();
+}
+
+function renderImportProjectSelect() {
+  const sel = document.querySelector("#importProjectSelect");
+  if (!sel) return;
+  const projects = (state.apiConnected ? state.projects : fallbackProjects)
+    .filter((p) => p.id && ["Draft","Review","Rejected"].includes(p.status));
+  sel.innerHTML = [
+    `<option value="">프로젝트 선택…</option>`,
+    ...projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} [${statusLabel(p.status)}]</option>`),
+  ].join("");
 }
 
 function upsertImportJob(job) {
@@ -1516,7 +1942,6 @@ function renderSyncProjectSelect() {
   const canActualSync = canSyncAction && Boolean(state.pmPreflight?.ready_for_actual_sync);
   document.querySelector("#syncPreflightButton").disabled = !canSyncAction;
   document.querySelector("#syncDryRunButton").disabled = !canSyncAction;
-  document.querySelector("#syncPullButton").disabled = !canSyncAction;
   document.querySelector("#syncRunButton").disabled = !canActualSync;
   document.querySelector("#syncRunButton").title = canActualSync
     ? "OpenProject 작업 패키지를 생성하거나 갱신합니다"
@@ -1591,8 +2016,6 @@ function renderSyncRuns() {
         .map((run) => {
           const countText = run.status === "Synced"
             ? `${run.created_work_packages || 0}개 생성`
-            : run.status === "Pulled"
-              ? `${run.synced_work_packages || 0}행 갱신`
             : `${run.pending_work_packages || 0}/${run.total_rows || 0} 대기`;
           return `
             <article class="sync-run">
@@ -1729,47 +2152,6 @@ function selectedSetting() {
   return settings.find((setting) => setting.key === state.selectedSettingKey) || settings[0] || null;
 }
 
-function pmEngineFormValue(baseValue = {}) {
-  const adapter = document.querySelector("#pmEngineAdapterSelect").value || "openproject";
-  return {
-    ...baseValue,
-    adapter,
-    display_name: adapter === "mock" ? "Mock PM Engine" : "OpenProject",
-    mode: document.querySelector("#pmEngineModeSelect").value || "ce-api-adapter",
-    enabled: document.querySelector("#pmEngineEnabledInput").checked,
-    dependency_boundary: document.querySelector("#pmEngineBoundaryInput").value.trim() || "pm-engine-api",
-    actual_sync_control: baseValue.actual_sync_control || "OPENPROJECT_SYNC_ENABLED",
-  };
-}
-
-function renderPmEngineForm(setting) {
-  const isPmEngine = setting?.key === "pm_engine";
-  const form = document.querySelector("#pmEngineForm");
-  form.hidden = !isPmEngine;
-  if (!isPmEngine) return;
-
-  const value = setting.value || {};
-  document.querySelector("#pmEngineAdapterSelect").value = value.adapter || "openproject";
-  document.querySelector("#pmEngineModeSelect").value = value.mode || "ce-api-adapter";
-  document.querySelector("#pmEngineBoundaryInput").value = value.dependency_boundary || "pm-engine-api";
-  document.querySelector("#pmEngineEnabledInput").checked = value.enabled !== false;
-  form.querySelectorAll("input, select").forEach((control) => {
-    control.disabled = !canManageUsers();
-  });
-}
-
-function syncPmEngineFormToJson() {
-  const setting = selectedSetting();
-  if (setting?.key !== "pm_engine") return;
-  let baseValue = {};
-  try {
-    baseValue = JSON.parse(document.querySelector("#settingsJsonInput").value || "{}");
-  } catch (error) {
-    baseValue = setting.value || {};
-  }
-  document.querySelector("#settingsJsonInput").value = JSON.stringify(pmEngineFormValue(baseValue), null, 2);
-}
-
 function renderSettingsPanel() {
   const panel = document.querySelector("#settings");
   if (!panel) return;
@@ -1805,44 +2187,612 @@ function renderSettingsPanel() {
     `;
 
   const engine = state.settings?.pm_engine || state.pmPreflight?.engine || {};
-  document.querySelector("#settingsEngineMode").textContent = `${displayNameLabel(engine.display_name) || engineModeLabel(engine.adapter || "openproject")} · ${engineModeLabel(engine.mode || "adapter")}`;
+  document.querySelector("#settingsEngineMode").textContent = `${engine.display_name || engineModeLabel(engine.adapter || "openproject")} · ${engineModeLabel(engine.mode || "adapter")}`;
   document.querySelector("#settingsEngineBoundary").textContent = engine.dependency_boundary || "pm-engine-api";
   document.querySelector("#settingsEngineRuntime").textContent = engine.enabled ? "실제 동기화 허용" : "모의 실행 보호";
   document.querySelector("#settingsJsonInput").value = setting ? JSON.stringify(setting.value || {}, null, 2) : "{}";
-  renderPmEngineForm(setting);
   document.querySelector("#settingsJsonInput").disabled = !setting || !canManageUsers();
   document.querySelector("#settingsSaveButton").disabled = !setting || !canManageUsers();
   document.querySelector("#settingsStatus").textContent = state.settingsStatus;
 }
 
-function renderGuidePanel() {
-  const guideContent = document.querySelector("#guideContent");
-  if (!guideContent) return;
+/* ── 사용자 가이드 렌더링 ───────────────────────────────────────────── */
 
-  if (window.WbsGuideRenderer?.renderGuide && window.WBS_PORTAL_GUIDE_CONTENT) {
-    guideContent.innerHTML = window.WbsGuideRenderer.renderGuide(window.WBS_PORTAL_GUIDE_CONTENT);
+function guideToneClass(tone) {
+  const map = { good: "good", warn: "warn", bad: "bad", info: "info", blocked: "info", neutral: "" };
+  return map[tone] || "";
+}
+
+function guideNavButton(targetView, label, tone) {
+  if (!targetView) return "";
+  const cls = `guide-nav-btn ${guideToneClass(tone)}`;
+  return `<button class="${cls}" type="button" data-guide-navigate="${escapeHtml(targetView)}">${escapeHtml(label)} →</button>`;
+}
+
+function renderGuideHero(hero) {
+  const tags = (hero.tags || []).map((t) => `<span class="guide-tag">${escapeHtml(t)}</span>`).join("");
+  return `
+    <div class="guide-hero">
+      <p class="guide-hero-eyebrow">${escapeHtml(hero.eyebrow || "")}</p>
+      <h3>${escapeHtml(hero.title)}</h3>
+      ${hero.description ? `<p>${escapeHtml(hero.description)}</p>` : ""}
+      ${tags ? `<div class="guide-tag-row">${tags}</div>` : ""}
+    </div>`;
+}
+
+function renderGuideSummary(items) {
+  if (!items || !items.length) return "";
+  const cards = items.map((item) => `
+    <div class="guide-summary-card ${guideToneClass(item.tone)}">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
+    </div>`).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">핵심 요약</h4>
+      <div class="guide-summary-grid">${cards}</div>
+    </div>`;
+}
+
+function renderGuideActions(actions) {
+  if (!actions || !actions.length) return "";
+  const items = actions.map((action) => `
+    <div class="guide-action-item">
+      <div>
+        <strong>${escapeHtml(action.label)}</strong>
+        ${action.description ? `<span>${escapeHtml(action.description)}</span>` : ""}
+      </div>
+      ${guideNavButton(action.targetView, "이동", action.tone)}
+    </div>`).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">바로 실행</h4>
+      <div class="guide-action-list">${items}</div>
+    </div>`;
+}
+
+function renderGuideSteps(steps) {
+  if (!steps || !steps.length) return "";
+  const sorted = [...steps].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const items = sorted.map((step) => {
+    const checks = (step.checks || []).map((c) => `<li>${escapeHtml(c)}</li>`).join("");
+    const caution = step.caution ? `<div class="guide-caution">⚠ ${escapeHtml(step.caution)}</div>` : "";
+    return `
+      <div class="guide-step ${escapeHtml(step.status || "")}">
+        <div class="guide-step-num">${escapeHtml(String(step.order || ""))}</div>
+        <div class="guide-step-body">
+          <strong>${escapeHtml(step.title)}</strong>
+          ${step.outcome ? `<p>${escapeHtml(step.outcome)}</p>` : ""}
+          ${checks ? `<ul class="guide-check-list">${checks}</ul>` : ""}
+          ${caution}
+          ${guideNavButton(step.targetView, "관련 화면", "info")}
+        </div>
+      </div>`;
+  }).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">절차</h4>
+      <div class="guide-timeline">${items}</div>
+    </div>`;
+}
+
+function renderGuideTasks(tasks) {
+  if (!tasks || !tasks.length) return "";
+  const items = tasks.map((task) => {
+    const checks = (task.checks || []).map((c) => `<li>${escapeHtml(c)}</li>`).join("");
+    const badge = task.required
+      ? `<span class="status-pill attention" style="font-size:0.7rem">필수</span>`
+      : `<span class="status-pill" style="font-size:0.7rem;background:var(--surface-muted)">선택</span>`;
+    return `
+      <div class="guide-task ${escapeHtml(task.status || "")}">
+        <div class="guide-task-header">
+          <strong>${escapeHtml(task.title)}</strong>
+          ${badge}
+        </div>
+        ${task.description ? `<p>${escapeHtml(task.description)}</p>` : ""}
+        ${checks ? `<ul class="guide-check-list">${checks}</ul>` : ""}
+        ${guideNavButton(task.targetView, "관련 화면", "info")}
+      </div>`;
+  }).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">작업 목록</h4>
+      <div class="guide-task-list">${items}</div>
+    </div>`;
+}
+
+function renderGuideRunModes(modes) {
+  if (!modes || !modes.length) return "";
+  const items = modes.map((mode) => {
+    const facts = (mode.facts || []).map((f) => `
+      <div class="guide-summary-card" style="min-height:auto">
+        <span>${escapeHtml(f.label)}</span>
+        <strong style="font-size:0.84rem">${escapeHtml(f.value)}</strong>
+      </div>`).join("");
+    return `
+      <div class="guide-task">
+        <strong>${escapeHtml(mode.name)}</strong>
+        ${mode.trigger ? `<p>${escapeHtml(mode.trigger)}</p>` : ""}
+        ${facts ? `<div class="guide-summary-grid">${facts}</div>` : ""}
+      </div>`;
+  }).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">실행 방식</h4>
+      <div class="guide-task-list">${items}</div>
+    </div>`;
+}
+
+function renderGuideQuestions(questions) {
+  if (!questions || !questions.length) return "";
+  const items = questions.map((q) => `
+    <div class="guide-qa-item">
+      <details>
+        <summary>${escapeHtml(q.question)}</summary>
+        <p class="guide-qa-answer">${escapeHtml(q.answer)}</p>
+        ${guideNavButton(q.targetView, "관련 화면", "info")}
+      </details>
+    </div>`).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">자주 묻는 상황</h4>
+      <div class="guide-qa-list">${items}</div>
+    </div>`;
+}
+
+function renderGuideResources(resources) {
+  if (!resources || !resources.length) return "";
+  const items = resources.map((r) => `
+    <div class="guide-resource-item">
+      <div>
+        <strong>${escapeHtml(r.title)}</strong>
+        ${r.description ? `<p>${escapeHtml(r.description)}</p>` : ""}
+        ${r.meta ? `<span>${escapeHtml(r.meta)}</span>` : ""}
+      </div>
+      ${guideNavButton(r.targetView, "이동", "info")}
+    </div>`).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">참고 자료</h4>
+      <div class="guide-resource-list">${items}</div>
+    </div>`;
+}
+
+function renderGuideGuardrails(guardrails) {
+  if (!guardrails || !guardrails.length) return "";
+  const items = guardrails.map((g) => {
+    const text = typeof g === "string" ? g : (g.text || "");
+    return `<div class="guide-guardrail-item">${escapeHtml(text)}</div>`;
+  }).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">안전 기준</h4>
+      <div class="guide-guardrail-list">${items}</div>
+    </div>`;
+}
+
+function renderGuideDecisions(decisions) {
+  if (!decisions || !decisions.length) return "";
+  const items = decisions.map((d) => `
+    <div class="guide-summary-card" style="border-left: 3px solid var(--blue)">
+      <strong>${escapeHtml(d.title)}</strong>
+      <p>${escapeHtml(d.description)}</p>
+    </div>`).join("");
+  return `
+    <div class="guide-panel">
+      <h4 class="guide-panel-title">확인 순서</h4>
+      <div class="guide-summary-grid">${items}</div>
+    </div>`;
+}
+
+function renderGuidePanel() {
+  const viewId = state.guideSelectedView || "dashboard";
+  const guide = WBS_GUIDE_CONTENTS[viewId];
+
+  const menuHtml = WBS_GUIDE_MENUS.map((menu) => {
+    const isActive = menu.id === viewId;
+    return `<button class="guide-menu-btn ${isActive ? "active" : ""}" type="button" data-guide-view="${escapeHtml(menu.id)}">${escapeHtml(menu.label)}</button>`;
+  }).join("");
+  document.querySelector("#guideMenu").innerHTML = menuHtml;
+
+  const labelMap = { overview: "개요", "empty-state": "첫 시작", "task-list": "작업 목록", procedure: "절차", troubleshooting: "문제 해결", reference: "참고" };
+  document.querySelector("#guideViewLabel").textContent = labelMap[guide?.kind] || "가이드";
+
+  if (!guide) {
+    document.querySelector("#guideContent").innerHTML = `<p style="color:var(--text-muted)">가이드 콘텐츠가 없습니다.</p>`;
     return;
   }
 
-  guideContent.innerHTML = `
-    <div class="guide-empty">
-      <strong>가이드 콘텐츠 로딩 대기</strong>
-      <p>가이드 콘텐츠 파일을 불러오면 WBS 포털 사용법이 여기에 표시됩니다.</p>
-    </div>
-  `;
+  const sections = [
+    renderGuideHero(guide.hero),
+    renderGuideSummary(guide.summary),
+    renderGuideActions(guide.actions),
+    renderGuideSteps(guide.steps),
+    renderGuideTasks(guide.tasks),
+    renderGuideRunModes(guide.runModes),
+    renderGuideQuestions(guide.questions),
+    renderGuideResources(guide.resources),
+    renderGuideGuardrails(guide.guardrails),
+    renderGuideDecisions(guide.decisions),
+  ].filter(Boolean).join("");
+
+  document.querySelector("#guideContent").innerHTML = sections;
+}
+
+/* ══════════════════════════════════════════════════════
+   WBS 계획 — CRUD
+══════════════════════════════════════════════════════ */
+
+function wbsPlanFilteredRows() {
+  const rows = state.wbsPlanRows;
+  const q = state.wbsPlanSearch.trim().toLowerCase();
+  return rows.filter((row) => {
+    const matchSearch = !q || [row.code, row.parent_code, row.name, row.item_type, row.owner]
+      .filter(Boolean).join(" ").toLowerCase().includes(q);
+    const matchPhase = !state.wbsPlanPhaseFilter || row.code === state.wbsPlanPhaseFilter
+      || (row.parent_code && row.parent_code.startsWith(state.wbsPlanPhaseFilter));
+    const matchType = !state.wbsPlanTypeFilter || row.item_type === state.wbsPlanTypeFilter;
+    return matchSearch && matchPhase && matchType;
+  });
+}
+
+function renderWbsPlanFilters() {
+  const rows = state.wbsPlanRows;
+  const roots = rows.filter((r) => !r.parent_code);
+  const root  = roots.length === 1 ? roots[0] : null;
+  const phases = root ? rows.filter((r) => r.parent_code === root.code) : [];
+  const types  = [...new Set(rows.map((r) => r.item_type).filter(Boolean))];
+
+  const phaseFilter = document.querySelector("#wbsPlanPhaseFilter");
+  phaseFilter.innerHTML = ['<option value="">전체 단계</option>',
+    ...phases.map((p) => `<option value="${escapeHtml(p.code)}">${escapeHtml(p.name)}</option>`)
+  ].join("");
+  phaseFilter.value = state.wbsPlanPhaseFilter;
+  phaseFilter.disabled = !phases.length;
+
+  const typeFilter = document.querySelector("#wbsPlanTypeFilter");
+  typeFilter.innerHTML = ['<option value="">전체 유형</option>',
+    ...types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(itemTypeLabel(t))}</option>`)
+  ].join("");
+  typeFilter.value = state.wbsPlanTypeFilter;
+  typeFilter.disabled = !types.length;
+
+  const searchInput = document.querySelector("#wbsPlanSearch");
+  searchInput.value = state.wbsPlanSearch;
+  searchInput.disabled = !rows.length;
+}
+
+function renderWbsPlanProjectList() {
+  const select = document.querySelector("#wbsPlanProjectSelect");
+  if (!select) return;
+  const projects = state.apiConnected ? state.projects : fallbackProjects;
+  const validProjects = projects.filter((p) => p.id);
+  select.innerHTML = [
+    `<option value="">프로젝트 선택…</option>`,
+    ...validProjects.map((p) =>
+      `<option value="${escapeHtml(p.id)}"
+        ${p.id === state.wbsPlanProjectId ? "selected" : ""}
+       >${escapeHtml(p.name)}  [${statusLabel(p.status)}]</option>`
+    ),
+  ].join("");
+  select.disabled = !validProjects.length;
+}
+
+/* WBS 행 깊이 계산 */
+function wbsItemDepth(row, rowByCode) {
+  let depth = 0;
+  let cur = row;
+  const seen = new Set([row.code]);
+  while (cur?.parent_code && !seen.has(cur.parent_code)) {
+    seen.add(cur.parent_code);
+    cur = rowByCode.get(cur.parent_code);
+    depth++;
+  }
+  return depth;
+}
+
+/* 부모→자식 맵 */
+function buildChildMap(rows) {
+  const map = {};
+  rows.forEach((r) => {
+    if (r.parent_code) {
+      if (!map[r.parent_code]) map[r.parent_code] = [];
+      map[r.parent_code].push(r.code);
+    }
+  });
+  return map;
+}
+
+/* 코드가 펼쳐진 상태인지 */
+function isWbsExpanded(code) {
+  return state.wbsExpanded[code] !== false; // undefined = expanded by default
+}
+
+/* WBS 보드 단일 행 HTML */
+function renderWbsBoardItem(row, depth, hasChildren, canMutate) {
+  const type     = row.item_type || "작업";
+  const typeLabel = itemTypeLabel(type);
+  const isPhase   = type === "단계" || type === "프로젝트";
+  const isMile    = type === "마일스톤";
+  const expanded  = hasChildren ? isWbsExpanded(row.code) : true;
+  const syncedCls = row.already_synced ? "synced" : "";
+
+  const dateStr = (row.start_date || row.finish_date)
+    ? `${row.start_date || ""} ~ ${row.finish_date || ""}`.trim().replace(/^~ |~ $/, "")
+    : "";
+
+  return `
+    <div class="wbs-item ${isPhase ? "wbs-phase" : ""} ${isMile ? "wbs-milestone" : ""}"
+         role="listitem"
+         data-code="${escapeHtml(row.code || "")}"
+         data-type="${escapeHtml(type)}"
+         style="--depth:${depth}">
+      <div class="wbs-item-gutter">
+        ${hasChildren
+          ? `<button class="wbs-expand-btn" type="button"
+               data-wbs-toggle="${escapeHtml(row.code)}"
+               aria-label="${expanded ? "접기" : "펼치기"}"
+               aria-expanded="${expanded}">${expanded ? "▼" : "▶"}</button>`
+          : `<span class="wbs-leaf"></span>`}
+      </div>
+      <div class="wbs-item-body">
+        <div class="wbs-item-main">
+          ${row.code ? `<code class="wbs-code">${escapeHtml(row.code)}</code>` : ""}
+          <span class="wbs-name">${escapeHtml(row.name || "")}</span>
+        </div>
+        <div class="wbs-item-meta">
+          <span class="wbs-type-badge" data-type="${escapeHtml(type)}">${escapeHtml(typeLabel)}</span>
+          ${row.owner   ? `<span class="wbs-owner">👤 ${escapeHtml(row.owner)}</span>` : ""}
+          ${row.weight != null ? `<span class="wbs-weight">${row.weight}%</span>` : ""}
+          ${dateStr     ? `<span class="wbs-dates">📅 ${escapeHtml(dateStr)}</span>` : ""}
+          <span class="wbs-sync-badge ${syncedCls}">${row.already_synced ? "✓ 동기화" : "대기"}</span>
+        </div>
+      </div>
+      <div class="wbs-item-actions">
+        <button type="button" class="add-child-btn"
+          data-wbs-add-child="${escapeHtml(row.code || "")}"
+          ${canMutate && row.code ? "" : "disabled"}>＋ 하위</button>
+        <button type="button"
+          data-wbs-edit="${escapeHtml(row.code || "")}"
+          ${canMutate ? "" : "disabled"}>수정</button>
+        <button type="button" class="delete-btn"
+          data-wbs-delete="${escapeHtml(row.code || "")}"
+          ${canMutate ? "" : "disabled"}>삭제</button>
+      </div>
+    </div>`;
+}
+
+function renderWbsPlanTable() {
+  const canMutate  = canMutateWork();
+  const hasProject = Boolean(state.wbsPlanProjectId);
+
+  document.querySelector("#wbsAddRowButton").disabled       = !hasProject || !canMutate;
+  document.querySelector("#wbsSaveButton").disabled         = !hasProject || !canMutate || !state.wbsPlanDirty;
+  document.querySelector("#wbsPlanDownloadButton").disabled = !hasProject;
+  const ulLabel = document.querySelector("#wbsPlanUploadLabel");
+  const ulInput = document.querySelector("#wbsPlanExcelInput");
+  if (ulLabel) ulLabel.setAttribute("aria-disabled", (!hasProject || !canMutate) ? "true" : "false");
+  if (ulLabel) ulLabel.classList.toggle("disabled-control", !hasProject || !canMutate);
+  if (ulInput) ulInput.disabled = !hasProject || !canMutate;
+
+  const project = state.projects.find((p) => p.id === state.wbsPlanProjectId);
+  // select 동기화 (다른 경로로 projectId가 변경된 경우 대비)
+  const selectEl = document.querySelector("#wbsPlanProjectSelect");
+  if (selectEl && state.wbsPlanProjectId && selectEl.value !== state.wbsPlanProjectId) {
+    selectEl.value = state.wbsPlanProjectId;
+  }
+
+  renderWbsPlanFilters();
+
+  const allRows   = state.wbsPlanRows;
+  const rowByCode = new Map(allRows.map((r) => [r.code, r]));
+  const childMap  = buildChildMap(allRows);
+  const filtered  = wbsPlanFilteredRows();
+
+  const countEl = document.querySelector("#wbsBoardCount");
+  if (countEl) countEl.textContent = filtered.length ? `${filtered.length}개 항목` : "";
+
+  const board = document.querySelector("#wbsBoardRows");
+  if (!board) return;
+
+  if (!hasProject) {
+    board.innerHTML = `<div class="wbs-board-empty"><strong>프로젝트를 선택하세요</strong><span>좌측 목록에서 프로젝트를 클릭하면<br>WBS 항목이 표시됩니다.</span></div>`;
+    return;
+  }
+
+  if (!filtered.length) {
+    board.innerHTML = `<div class="wbs-board-empty"><strong>WBS 항목 없음</strong><span>행 추가 버튼이나 Excel 업로드로<br>WBS를 시작하세요.</span></div>`;
+    return;
+  }
+
+  /* 계층 순서 정렬 (DFS) + 숨김 처리 */
+  const rendered  = [];
+  const visited   = new Set();
+
+  function walkRow(code) {
+    if (visited.has(code)) return;
+    visited.add(code);
+    const row = rowByCode.get(code);
+    if (!row) return;
+
+    const depth      = wbsItemDepth(row, rowByCode);
+    const children   = childMap[code] || [];
+    const hasChildren = children.length > 0;
+    const expanded   = isWbsExpanded(code);
+
+    rendered.push(renderWbsBoardItem(row, depth, hasChildren, canMutate));
+
+    if (hasChildren && expanded) {
+      children.forEach((childCode) => walkRow(childCode));
+    }
+  }
+
+  /* 루트 노드(parent_code 없음) 먼저 */
+  const roots = filtered.filter((r) => !r.parent_code);
+  roots.forEach((r) => { if (r.code) walkRow(r.code); });
+
+  /* 루트에 없지만 filtered에 있는 행 (필터로 중간 노드 없어진 경우) */
+  filtered.forEach((r) => {
+    if (!visited.has(r.code)) {
+      const depth = wbsItemDepth(r, rowByCode);
+      rendered.push(renderWbsBoardItem(r, depth, false, canMutate));
+    }
+  });
+
+  board.innerHTML = rendered.join("");
+}
+
+function renderWbsPlan() {
+  renderWbsPlanProjectList();
+  renderWbsPlanTable();
+}
+
+async function loadWbsPlanProject(projectId) {
+  if (!projectId) return;
+  state.wbsPlanProjectId = projectId;
+  state.wbsPlanDirty  = false;
+  state.wbsExpanded   = {};        // 새 프로젝트: 전체 펼침
+  state.wbsPlanSearch = "";
+  state.wbsPlanPhaseFilter = "";
+  state.wbsPlanTypeFilter  = "";
+  const statusEl = document.querySelector("#wbsPlanStatus");
+  if (statusEl) statusEl.textContent = "";
+
+  try {
+    const rows = await request(`/api/projects/${encodeURIComponent(projectId)}/wbs-items`);
+    state.wbsPlanRows = rows.map((r) => ({ ...r }));
+  } catch {
+    // sync-plan 기반 폴백
+    try {
+      const plan = await request(`/api/projects/${encodeURIComponent(projectId)}/sync-plan`);
+      state.wbsPlanRows = (plan.rows || []).map((r) => ({ ...r }));
+    } catch {
+      state.wbsPlanRows = [];
+    }
+  }
+  renderWbsPlan();
+}
+
+function openWbsRowDialog(mode, row = null) {
+  const dialog = document.querySelector("#wbsRowDialog");
+  const form   = document.querySelector("#wbsRowForm");
+  form.reset();
+  document.querySelector("#wbsRowFormStatus").textContent = "";
+  document.querySelector("#wbsRowDialogTitle").textContent = mode === "add" ? "행 추가" : "행 수정";
+  state.wbsPlanEditCode = mode === "edit" ? (row?.code || null) : null;
+
+  if (row) {
+    document.querySelector("#wbsRowCode").value       = row.code       || "";
+    document.querySelector("#wbsRowParentCode").value = row.parent_code || "";
+    document.querySelector("#wbsRowName").value       = row.name        || "";
+    document.querySelector("#wbsRowItemType").value   = row.item_type   || "작업";
+    document.querySelector("#wbsRowOwner").value      = row.owner       || "";
+    document.querySelector("#wbsRowWeight").value     = row.weight != null ? row.weight : "";
+    document.querySelector("#wbsRowStartDate").value  = row.start_date  || "";
+    document.querySelector("#wbsRowFinishDate").value = row.finish_date || "";
+  }
+  dialog.showModal();
+  document.querySelector("#wbsRowName").focus();
+}
+
+function closeWbsRowDialog() {
+  document.querySelector("#wbsRowDialog").close();
+}
+
+function applyWbsRowForm() {
+  const code       = document.querySelector("#wbsRowCode").value.trim()       || null;
+  const parentCode = document.querySelector("#wbsRowParentCode").value.trim() || null;
+  const name       = document.querySelector("#wbsRowName").value.trim();
+  const itemType   = document.querySelector("#wbsRowItemType").value;
+  const owner      = document.querySelector("#wbsRowOwner").value.trim()      || null;
+  const weightRaw  = document.querySelector("#wbsRowWeight").value;
+  const weight     = weightRaw !== "" ? parseFloat(weightRaw) : null;
+  const startDate  = document.querySelector("#wbsRowStartDate").value         || null;
+  const finishDate = document.querySelector("#wbsRowFinishDate").value        || null;
+
+  if (!name) {
+    document.querySelector("#wbsRowFormStatus").textContent = "작업명은 필수입니다.";
+    return false;
+  }
+
+  const newRow = { code, parent_code: parentCode, name, item_type: itemType, owner, weight, start_date: startDate, finish_date: finishDate };
+
+  if (state.wbsPlanEditCode) {
+    // 수정
+    const idx = state.wbsPlanRows.findIndex((r) => r.code === state.wbsPlanEditCode);
+    if (idx >= 0) {
+      state.wbsPlanRows[idx] = { ...state.wbsPlanRows[idx], ...newRow };
+      // 코드가 변경된 경우 하위 항목 parent_code도 업데이트
+      if (code && code !== state.wbsPlanEditCode) {
+        state.wbsPlanRows.forEach((r) => {
+          if (r.parent_code === state.wbsPlanEditCode) r.parent_code = code;
+        });
+      }
+    }
+  } else {
+    // 추가 — 임시 코드가 없으면 null로 저장 (서버에서 자동 생성)
+    state.wbsPlanRows.push(newRow);
+  }
+
+  state.wbsPlanDirty = true;
+  closeWbsRowDialog();
+  renderWbsPlanTable();
+  return true;
+}
+
+function deleteWbsRow(code) {
+  if (!code) return;
+  if (!window.confirm(`"${code}" 행을 삭제하시겠습니까? 하위 항목도 함께 삭제됩니다.`)) return;
+
+  // 해당 코드 및 모든 하위 항목 제거
+  const toRemove = new Set();
+  function collectChildren(parentCode) {
+    state.wbsPlanRows.forEach((r) => {
+      if (r.parent_code === parentCode && !toRemove.has(r.code)) {
+        toRemove.add(r.code);
+        collectChildren(r.code);
+      }
+    });
+  }
+  toRemove.add(code);
+  collectChildren(code);
+
+  state.wbsPlanRows = state.wbsPlanRows.filter((r) => !toRemove.has(r.code));
+  state.wbsPlanDirty = true;
+  renderWbsPlanTable();
+}
+
+async function saveWbsPlan() {
+  if (!state.wbsPlanProjectId || !state.wbsPlanDirty) return;
+  const statusEl = document.querySelector("#wbsPlanStatus");
+  const saveBtn  = document.querySelector("#wbsSaveButton");
+  saveBtn.disabled = true;
+  statusEl.textContent = "저장 중…";
+
+  try {
+    const result = await request(`/api/projects/${encodeURIComponent(state.wbsPlanProjectId)}/wbs-items`, {
+      method: "POST",
+      body: JSON.stringify({ rows: state.wbsPlanRows, source: "portal-editor" }),
+    });
+    state.wbsPlanRows  = (result.rows || []).map((r) => ({ ...r }));
+    state.wbsPlanDirty = false;
+    statusEl.textContent = `저장 완료 — ${result.summary?.rows ?? 0}행`;
+    renderWbsPlanTable();
+  } catch (error) {
+    statusEl.textContent = error.message;
+    saveBtn.disabled = false;
+  }
 }
 
 function renderAll() {
   renderAuthState();
   renderMetrics();
-  renderGuidePanel();
-  renderPortfolioTabs();
-  renderProjectTimeline();
   renderTemplates();
   renderTemplateSelect();
+  renderImportProjectSelect();
   renderProjects();
   renderProjectPlan();
-  renderProjectImportControls();
   renderApprovals();
   renderImportPreview();
   renderImportDiff();
@@ -1857,6 +2807,8 @@ function renderAll() {
   renderUsersPanel();
   renderAuditPanel();
   renderSettingsPanel();
+  renderWbsPlan();
+  renderGuidePanel();
 }
 
 async function loadData() {
@@ -1865,7 +2817,7 @@ async function loadData() {
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
-      request(`/api/approvals?limit=${state.approvalLimit + 1}`),
+      request("/api/approvals"),
       request("/api/pm-engine/preflight"),
       canAccessOperations() ? request("/api/operations/health") : Promise.resolve(restrictedOperationsHealth),
       request("/api/imports?limit=8"),
@@ -1877,8 +2829,7 @@ async function loadData() {
     state.dashboard = dashboard;
     state.templates = templates;
     state.projects = projects;
-    state.approvalsHasMore = approvals.length > state.approvalLimit;
-    state.approvals = approvals.slice(0, state.approvalLimit);
+    state.approvals = approvals;
     state.pmPreflight = pmPreflight;
     state.operationsHealth = operationsHealth;
     state.importJobs = importJobs;
@@ -1922,7 +2873,6 @@ async function loadData() {
       status: "critical",
       checks: [{ key: "operations", label: "운영 상태", status: "fail", message: error.message }],
     };
-    state.approvalsHasMore = false;
     state.syncRuns = [];
     state.importJobs = [];
     state.templateVersions = [];
@@ -1956,7 +2906,12 @@ async function createProject(event) {
     name: document.querySelector("#projectNameInput").value.trim(),
     template_key: document.querySelector("#projectTemplateSelect").value,
     owner: document.querySelector("#projectOwnerInput").value.trim(),
-    start_date: document.querySelector("#projectStartInput").value,
+    start_date: document.querySelector("#projectStartInput").value || null,
+    end_date: document.querySelector("#projectEndInput")?.value || null,
+    description: document.querySelector("#projectDescInput")?.value.trim() || null,
+    client_name: document.querySelector("#projectClientInput")?.value.trim() || null,
+    budget: document.querySelector("#projectBudgetInput")?.value.trim() || null,
+    project_manager: document.querySelector("#projectManagerInput")?.value.trim() || null,
   };
 
   submitButton.disabled = true;
@@ -2057,8 +3012,6 @@ async function loadProjectPlan(projectId, options = {}) {
   const shouldRender = options.render !== false;
   if (state.selectedProjectId && state.selectedProjectId !== projectId) {
     resetProjectPlanFilters();
-    state.pendingProjectImportJobId = null;
-    state.projectImportStatus = "";
   }
   state.selectedProjectId = projectId;
 
@@ -2107,18 +3060,22 @@ async function loadSyncRuns(projectId, options = {}) {
 async function requestProjectApproval(projectId) {
   if (!projectId) return;
 
+  const project = state.projects.find((p) => p.id === projectId);
+  const requester = state.currentUser?.display_name || state.currentUser?.email || "PMO";
+
   try {
     const approval = await request("/api/approvals", {
       method: "POST",
       body: JSON.stringify({
         project_id: projectId,
-        requester: "PMO",
+        requester,
         reviewer: "PMO Lead",
         due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        auto_approve_internal: true,
+        auto_approve_internal: false,   // 수동 승인: Pending 상태로 생성
         metadata: {
           source: "wbs-portal",
-          approval_scope: "internal",
+          approval_scope: "manual",
+          project_name: project?.name,
         },
       }),
     });
@@ -2166,8 +3123,7 @@ async function loadImportJob(jobId) {
 
   try {
     const result = await request(`/api/imports/${encodeURIComponent(jobId)}`);
-    const target = String(result.description || "").startsWith("프로젝트 WBS") ? "project" : "template";
-    renderImportResult(result, { target });
+    renderImportResult(result);
   } catch (error) {
     renderImportResult({
       status: "Rejected",
@@ -2185,10 +3141,8 @@ function selectedTemplate() {
   return state.templates.find((template) => template.key === selectedKey) || state.templates[0] || fallbackTemplates[0];
 }
 
-function renderImportResult(result, options = {}) {
-  const target = options.target || "template";
-  state.pendingImportJobId = target === "template" && result.status === "Preview" && result.id ? result.id : null;
-  state.pendingProjectImportJobId = target === "project" && result.status === "Preview" && result.id ? result.id : null;
+function renderImportResult(result) {
+  state.pendingImportJobId = result.status === "Preview" && result.id ? result.id : null;
   state.selectedImportJobId = result.id || null;
   upsertImportJob(result);
   document.querySelector("#importStatus").textContent = statusLabel(result.status);
@@ -2208,48 +3162,112 @@ function renderImportResult(result, options = {}) {
   renderImportPreview();
   renderImportDiff();
   renderApplyButton();
-  renderProjectImportControls();
   renderImportHistory();
 }
 
-async function downloadTemplateExcel() {
+/* ── 인증 포함 Excel 다운로드 헬퍼 ──────────────── */
+async function authenticatedDownload(url, filename) {
+  try {
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${state.authToken}` },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(typeof err.detail === "string" ? err.detail : `다운로드 실패 (${resp.status})`);
+    }
+    const blob = await resp.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    alert(`Excel 다운로드 실패: ${error.message}`);
+  }
+}
+
+function downloadTemplateExcel() {
   const template = selectedTemplate();
-  await downloadTemplateExcelByKey(template.key, `${template.key}-wbs-template.xlsx`);
+  authenticatedDownload(
+    `${API_BASE}/api/templates/${encodeURIComponent(template.key)}/excel`,
+    `${template.name}.xlsx`,
+  );
 }
 
-async function downloadTemplateExcelByKey(templateKey, fallbackFilename) {
-  try {
-    await downloadFile(`/api/templates/${encodeURIComponent(templateKey)}/excel`, fallbackFilename || `${templateKey}-wbs-template.xlsx`);
-  } catch (error) {
-    document.querySelector("#importStatus").textContent = "다운로드 실패";
-    document.querySelector("#importIssues").innerHTML = `<li>${escapeHtml(error.message)}</li>`;
-  }
+/* WBS 계획 패널용: 선택 프로젝트의 템플릿 Excel 다운로드 */
+function downloadWbsPlanExcel() {
+  const project = state.projects.find((p) => p.id === state.wbsPlanProjectId);
+  if (!project) { alert("프로젝트를 먼저 선택하세요."); return; }
+  const templateKey = project.template_key || "si-standard";
+  const template    = state.templates.find((t) => t.key === templateKey);
+  const filename    = `${project.name}_WBS양식.xlsx`;
+  authenticatedDownload(
+    `${API_BASE}/api/templates/${encodeURIComponent(templateKey)}/excel`,
+    filename,
+  );
 }
 
-async function downloadProjectWbsExcel() {
-  if (!state.selectedProjectId) return;
-  const button = document.querySelector("#projectWbsDownloadButton");
-  button.disabled = true;
-  state.projectImportStatus = "Excel 다운로드 준비 중";
-  renderProjectImportControls();
+/* WBS 계획 패널용: Excel 업로드 → 편집기 행 채우기 */
+async function uploadWbsPlanExcel(event) {
+  const [file] = event.target.files;
+  if (!file) return;
+
+  const project  = state.projects.find((p) => p.id === state.wbsPlanProjectId);
+  const statusEl = document.querySelector("#wbsPlanStatus");
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("template_key",  project?.template_key || "uploaded");
+  formData.append("template_name", project?.name || "WBS 업로드");
+  formData.append("project_type",  "Uploaded");
+  formData.append("description",   `${project?.name || ""} Excel 업로드`);
+
+  if (statusEl) { statusEl.textContent = "Excel 파싱 중…"; statusEl.className = "form-status"; }
+
   try {
-    await downloadFile(`/api/projects/${encodeURIComponent(state.selectedProjectId)}/excel`, "project-wbs.xlsx");
-    state.projectImportStatus = "Excel 다운로드를 시작했습니다.";
+    const preview = await request("/api/templates/import/preview", { method: "POST", body: formData });
+
+    const errorCount = preview.errors?.length ?? 0;
+    const rows       = (preview.rows || []).filter((r) => r.name);  // 빈 행 제외
+
+    if (errorCount && !rows.length) {
+      if (statusEl) statusEl.textContent = `오류 ${errorCount}건 — 업로드 불가`;
+      return;
+    }
+
+    // 편집기 행을 업로드된 내용으로 교체 (바로 저장하지 않고 사용자가 검토 후 저장)
+    state.wbsPlanRows  = rows.map((r) => ({
+      code:        r.code        || null,
+      parent_code: r.parent_code || null,
+      name:        r.name,
+      item_type:   r.item_type   || "작업",
+      owner:       r.owner       || null,
+      weight:      r.weight      ?? null,
+      start_date:  r.start_date  || null,
+      finish_date: r.finish_date || null,
+    }));
+    state.wbsPlanDirty = true;
+
+    const warnMsg = errorCount ? ` (경고 ${errorCount}건 포함)` : "";
+    if (statusEl) statusEl.textContent = `${rows.length}행 로드됨${warnMsg} — 내용 확인 후 저장하세요`;
+    renderWbsPlanTable();
   } catch (error) {
-    state.projectImportStatus = error.message;
+    if (statusEl) statusEl.textContent = error.message;
   } finally {
-    renderProjectImportControls();
+    event.target.value = "";
   }
 }
 
-async function downloadImportErrorsExcel() {
+function downloadImportErrorsExcel() {
   const jobId = document.querySelector("#importErrorWorkbookButton").dataset.importJobId;
   if (!jobId) return;
-  try {
-    await downloadFile(`/api/imports/${encodeURIComponent(jobId)}/errors.xlsx`, "wbs-import-errors.xlsx");
-  } catch (error) {
-    document.querySelector("#importIssues").innerHTML = `<li>${escapeHtml(error.message)}</li>`;
-  }
+  authenticatedDownload(
+    `${API_BASE}/api/imports/${encodeURIComponent(jobId)}/errors.xlsx`,
+    "import_errors.xlsx",
+  );
 }
 
 async function renumberTemplateCodes() {
@@ -2326,44 +3344,18 @@ async function uploadTemplateExcel(event) {
   }
 }
 
-async function uploadProjectWbsExcel(event) {
-  const [file] = event.target.files;
-  if (!file || !state.selectedProjectId) return;
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  state.pendingProjectImportJobId = null;
-  state.projectImportStatus = "프로젝트 WBS 검증 중";
-  renderProjectImportControls();
-
-  try {
-    const result = await request(`/api/projects/${encodeURIComponent(state.selectedProjectId)}/imports/preview`, {
-      method: "POST",
-      body: formData,
-    });
-    state.projectImportStatus = result.status === "Preview"
-      ? "미리보기 생성 완료"
-      : statusLabel(result.status);
-    renderImportResult(result, { target: "project" });
-  } catch (error) {
-    state.projectImportStatus = error.message;
-    renderImportResult({
-      status: "Rejected",
-      accepted_rows: 0,
-      rejected_rows: 1,
-      errors: [{ message: error.message }],
-      warnings: [],
-      rows: [],
-    }, { target: "project" });
-  } finally {
-    event.target.value = "";
-  }
-}
-
 async function applyImportPreview() {
   if (!state.pendingImportJobId) return;
 
+  // 일반 WBS 모드: 프로젝트에 반영
+  if (state.importType === "custom") {
+    const projectId = document.querySelector("#importProjectSelect")?.value;
+    if (!projectId) { alert("프로젝트를 선택하세요."); return; }
+    await applyImportToProject(projectId);
+    return;
+  }
+
+  // 표준 WBS 모드: 템플릿에 반영
   const jobId = state.pendingImportJobId;
   state.pendingImportJobId = null;
   renderApplyButton();
@@ -2371,63 +3363,39 @@ async function applyImportPreview() {
   document.querySelector("#importStatus").className = "status-pill attention";
 
   try {
-    const result = await request(`/api/imports/${encodeURIComponent(jobId)}/apply`, {
-      method: "POST",
-    });
+    const result = await request(`/api/imports/${encodeURIComponent(jobId)}/apply`, { method: "POST" });
     renderImportResult(result);
     await loadData();
   } catch (error) {
-    renderImportResult({
-      status: "Rejected",
-      accepted_rows: 0,
-      rejected_rows: 1,
-      errors: [{ message: error.message }],
-      warnings: [],
-      rows: [],
-    });
+    renderImportResult({ status: "Rejected", accepted_rows: 0, rejected_rows: 1, errors: [{ message: error.message }], warnings: [], rows: [] });
   }
 }
 
-async function applyProjectImportPreview() {
-  if (!state.pendingProjectImportJobId || !state.selectedProjectId) return;
-
-  const jobId = state.pendingProjectImportJobId;
-  state.pendingProjectImportJobId = null;
-  state.projectImportStatus = "프로젝트 WBS 반영 중";
-  renderProjectImportControls();
+async function applyImportToProject(projectId) {
+  if (!state.pendingImportJobId) return;
+  const jobId = state.pendingImportJobId;
+  state.pendingImportJobId = null;
+  renderApplyButton();
+  document.querySelector("#importStatus").textContent = "반영 중";
+  document.querySelector("#importStatus").className = "status-pill attention";
 
   try {
-    const result = await request(`/api/projects/${encodeURIComponent(state.selectedProjectId)}/imports/${encodeURIComponent(jobId)}/apply`, {
-      method: "POST",
-    });
-    state.projectImportStatus = `프로젝트 WBS 반영 완료: ${result.summary?.rows ?? 0}행`;
-    renderImportResult({
-      id: jobId,
-      status: result.status,
-      accepted_rows: result.summary?.rows ?? result.rows?.length ?? 0,
-      rejected_rows: 0,
-      errors: [],
-      warnings: [],
-      rows: result.rows || [],
-      diff_rows: result.diff_rows || [],
-      source_file: result.import_job?.source_file || "프로젝트 WBS 업로드",
-      template_name: result.import_job?.template_name,
-      template_key: result.import_job?.template_key,
-      created_at: result.import_job?.created_at,
-      applied_at: result.import_job?.applied_at,
-    }, { target: "project" });
-    await loadProjectPlan(state.selectedProjectId, { render: false });
+    const result = await request(
+      `/api/projects/${encodeURIComponent(projectId)}/imports/${encodeURIComponent(jobId)}/apply`,
+      { method: "POST" },
+    );
+    document.querySelector("#importStatus").textContent = `반영 완료 — ${result.summary?.rows ?? 0}행`;
+    document.querySelector("#importStatus").className = "status-pill stable";
+    // WBS 계획 캐시 갱신
+    if (state.wbsPlanProjectId === projectId) {
+      state.wbsPlanRows  = (result.rows || []).map((r) => ({ ...r }));
+      state.wbsPlanDirty = false;
+      renderWbsPlan();
+    }
     await loadData();
   } catch (error) {
-    state.projectImportStatus = error.message;
-    renderImportResult({
-      status: "Rejected",
-      accepted_rows: 0,
-      rejected_rows: 1,
-      errors: [{ message: error.message }],
-      warnings: [],
-      rows: [],
-    }, { target: "project" });
+    document.querySelector("#importStatus").textContent = error.message;
+    document.querySelector("#importStatus").className = "status-pill critical";
   }
 }
 
@@ -2458,9 +3426,6 @@ async function saveSelectedSetting() {
 
   let value;
   try {
-    if (setting.key === "pm_engine") {
-      syncPmEngineFormToJson();
-    }
     value = JSON.parse(document.querySelector("#settingsJsonInput").value || "{}");
   } catch (error) {
     status.textContent = "JSON 형식을 확인하세요";
@@ -2534,32 +3499,6 @@ async function dryRunProjectSync() {
   renderAll();
 }
 
-async function pullProjectSync() {
-  const projectId = selectedSyncProjectId();
-  if (!projectId) return;
-
-  document.querySelector("#syncEngineStatus").textContent = "가져오기 중";
-  document.querySelector("#syncEngineStatus").className = "status-pill attention";
-
-  try {
-    state.syncDetail = await request(`/api/projects/${encodeURIComponent(projectId)}/sync-pull`, {
-      method: "POST",
-      body: JSON.stringify({
-        dry_run: false,
-        create_work_packages: false,
-        validate_payloads: false,
-        actor: "PMO",
-      }),
-    });
-    await loadProjectPlan(projectId, { render: false });
-    await loadSyncRuns(projectId, { render: false });
-  } catch (error) {
-    state.syncDetail = { error: error.message };
-  }
-
-  renderAll();
-}
-
 async function runProjectSync() {
   const projectId = selectedSyncProjectId();
   if (!projectId || !state.pmPreflight?.ready_for_actual_sync) return;
@@ -2586,9 +3525,10 @@ async function runProjectSync() {
   }
 }
 
-const navLinks = [...document.querySelectorAll(".nav-list a[href^='#'], .nav-guide a[href^='#']")];
+const navLinks = [...document.querySelectorAll(".nav-list a[href^='#']")];
 const viewAliases = {
-  admin: "operations",
+  admin:   "operations",
+  "wbs":   "wbs-plan",
 };
 const viewIds = new Set(navLinks.map((link) => link.hash.slice(1)));
 
@@ -2776,84 +3716,78 @@ document.querySelector("#projectDialogClose").addEventListener("click", closePro
 document.querySelector("#projectCancelButton").addEventListener("click", closeProjectDialog);
 document.querySelector("#projectForm").addEventListener("submit", createProject);
 document.querySelector("#userCreateForm").addEventListener("submit", createPortalUser);
-document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
-document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
-document.querySelector("#templateList").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-template-download]");
-  if (!button || button.disabled) return;
-  const templateKey = button.dataset.templateDownload;
-  downloadTemplateExcelByKey(templateKey, `${templateKey}-wbs-template.xlsx`);
-});
-document.querySelector("#projectWbsDownloadButton").addEventListener("click", downloadProjectWbsExcel);
 document.querySelector("#importErrorWorkbookButton").addEventListener("click", downloadImportErrorsExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);
-document.querySelector("#applyImportButton").addEventListener("click", applyImportPreview);
-document.querySelector("#applyProjectImportButton").addEventListener("click", applyProjectImportPreview);
+// #applyImportButton 이벤트는 하단 templates 클릭 핸들러 블록에서 등록
 document.querySelector("#syncRefreshButton").addEventListener("click", refreshEnginePreflight);
 document.querySelector("#syncPreflightButton").addEventListener("click", loadProjectSyncPreflight);
 document.querySelector("#syncDryRunButton").addEventListener("click", dryRunProjectSync);
-document.querySelector("#syncPullButton").addEventListener("click", pullProjectSync);
 document.querySelector("#syncRunButton").addEventListener("click", runProjectSync);
-document.querySelector("#projectSelectInput").addEventListener("change", (event) => {
-  if (!event.target.value) return;
-  loadProjectPlan(event.target.value);
-});
-document.querySelector("#projectApprovalButton").addEventListener("click", (event) => {
-  const projectId = event.currentTarget.dataset.projectId;
-  if (!projectId || event.currentTarget.disabled) return;
-  requestProjectApproval(projectId);
-});
-document.querySelector("#approvalList").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-approval-action]");
-  if (!button || button.disabled) return;
-  decideApproval(button.dataset.approvalId, button.dataset.approvalAction);
-});
-document.querySelector("#approvalLoadMoreButton").addEventListener("click", () => {
-  state.approvalLimit += 5;
-  loadData();
-});
-document.querySelector(".portfolio-tabs").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-portfolio-tab]");
+document.querySelector("#projectRows").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-project-action]");
   if (!button) return;
-  state.portfolioView = button.dataset.portfolioTab;
-  renderPortfolioTabs();
-  renderProjectPlan();
-});
-document.querySelector("#wbsViewSwitch").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-wbs-view]");
-  if (!button) return;
-  state.projectPlanView = button.dataset.wbsView;
-  renderProjectPlan();
-});
-document.querySelector("#wbsQuickFilters").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-wbs-filter]");
-  if (!button) return;
-  state.projectQuickFilter = button.dataset.wbsFilter;
-  renderProjectPlan();
-});
-document.querySelector("#projectPlanRows").addEventListener("click", (event) => {
-  const groupButton = event.target.closest("[data-group-toggle]");
-  if (groupButton) {
-    const groupKey = groupButton.dataset.groupToggle;
-    if (state.collapsedPhaseCodes.has(groupKey)) {
-      state.collapsedPhaseCodes.delete(groupKey);
-    } else {
-      state.collapsedPhaseCodes.add(groupKey);
-    }
-    renderProjectPlan();
+  const pid = button.dataset.projectId;
+  if (button.dataset.projectAction === "detail") {
+    if (pid) openProjectDrawer(pid);
     return;
   }
-
-  const card = event.target.closest("[data-wbs-code]");
-  if (!card) return;
-  state.selectedWbsCode = card.dataset.wbsCode;
-  renderProjectPlan();
+  if (button.disabled) return;
+  if (button.dataset.projectAction === "plan") {
+    if (pid) {
+      applyPortalView("#wbs-plan", { behavior: "smooth" });
+      loadWbsPlanProject(pid);
+    }
+    return;
+  }
+  requestProjectApproval(pid);
 });
-document.querySelector("#wbsDetailCloseButton").addEventListener("click", () => {
-  state.selectedWbsCode = null;
-  const rowByCode = projectRowMap(projectPlanRows());
-  renderWbsDetailDrawer([], rowByCode, projectRootCode(projectPlanRows()));
-  document.querySelectorAll(".wbs-work-card.selected").forEach((card) => card.classList.remove("selected"));
+
+/* 드로어 닫기 */
+document.querySelector("#drawerClose").addEventListener("click", closeProjectDrawer);
+document.querySelector("#drawerBackdrop").addEventListener("click", closeProjectDrawer);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !document.querySelector("#projectDrawer").hidden) {
+    closeProjectDrawer();
+  }
+});
+
+/* 드로어 내부 빠른 액션 */
+document.querySelector("#drawerContent").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-drawer-action]");
+  if (!btn) return;
+  const pid = btn.dataset.projectId;
+  if (btn.dataset.drawerAction === "wbs") {
+    closeProjectDrawer();
+    applyPortalView("#wbs-plan", { behavior: "smooth" });
+    if (pid) loadWbsPlanProject(pid);
+  } else if (btn.dataset.drawerAction === "approval") {
+    closeProjectDrawer();
+    requestProjectApproval(pid);
+  } else if (btn.dataset.drawerAction === "sync") {
+    closeProjectDrawer();
+    applyPortalView("#sync", { behavior: "smooth" });
+  }
+});
+document.querySelector("#approvalPipelineList").addEventListener("click", (event) => {
+  // 승인/반려 버튼
+  const approvalBtn = event.target.closest("[data-approval-action]");
+  if (approvalBtn && !approvalBtn.disabled) {
+    decideApproval(approvalBtn.dataset.approvalId, approvalBtn.dataset.approvalAction);
+    return;
+  }
+  // 반려 후 재승인 요청
+  const reapplyBtn = event.target.closest("[data-approval-action-project='reapply']");
+  if (reapplyBtn) {
+    requestProjectApproval(reapplyBtn.dataset.projectId);
+    return;
+  }
+  // 반려 후 WBS 수정 이동
+  const planBtn = event.target.closest("[data-project-action='plan']");
+  if (planBtn && !planBtn.disabled) {
+    const pid = planBtn.dataset.projectId;
+    applyPortalView("#wbs-plan", { behavior: "smooth" });
+    if (pid) loadWbsPlanProject(pid);
+  }
 });
 document.querySelector("#userRows").addEventListener("click", (event) => {
   const button = event.target.closest("[data-user-action]");
@@ -2864,20 +3798,11 @@ document.querySelector("#userRows").addEventListener("click", (event) => {
   }
   updatePortalUser(button.closest("tr"));
 });
-document.querySelector(".sidebar").addEventListener("click", (event) => {
+document.querySelector(".nav-list").addEventListener("click", (event) => {
   const link = event.target.closest("a[href^='#']");
   if (!link) return;
   event.preventDefault();
   applyPortalView(link.hash, { behavior: "smooth" });
-});
-document.querySelector("#guideContent").addEventListener("click", (event) => {
-  const link = event.target.closest("[data-guide-anchor]");
-  if (!link) return;
-  event.preventDefault();
-  document.getElementById(`guide-${link.dataset.guideAnchor}`)?.scrollIntoView({
-    block: "start",
-    behavior: "smooth",
-  });
 });
 document.querySelector("#auditRefreshButton").addEventListener("click", loadData);
 document.querySelector("#settingsCards").addEventListener("click", (event) => {
@@ -2892,8 +3817,6 @@ document.querySelector("#settingsKeySelect").addEventListener("change", (event) 
   state.settingsStatus = "";
   renderSettingsPanel();
 });
-document.querySelector("#pmEngineForm").addEventListener("input", syncPmEngineFormToJson);
-document.querySelector("#pmEngineForm").addEventListener("change", syncPmEngineFormToJson);
 document.querySelector("#settingsSaveButton").addEventListener("click", saveSelectedSetting);
 document.querySelector("#importHistoryList").addEventListener("click", (event) => {
   const button = event.target.closest("[data-import-job-id]");
@@ -2903,28 +3826,211 @@ document.querySelector("#importHistoryList").addEventListener("click", (event) =
 document.querySelector("#templateSelect").addEventListener("change", () => {
   state.userSelectedTemplate = true;
 });
-document.querySelector("#projectWbsSearchInput").addEventListener("input", (event) => {
-  state.projectWbsSearch = event.target.value;
-  renderProjectPlan();
-});
-document.querySelector("#projectPhaseFilter").addEventListener("change", (event) => {
-  state.projectPhaseFilter = event.target.value;
-  renderProjectPlan();
-});
-document.querySelector("#projectTypeFilter").addEventListener("change", (event) => {
-  state.projectTypeFilter = event.target.value;
-  renderProjectPlan();
-});
 document.querySelector("#syncProjectSelect").addEventListener("change", () => {
   state.userSelectedSyncProject = true;
   state.syncDetail = null;
   loadSyncRuns(selectedSyncProjectId());
 });
 document.querySelector("#excelFileInput").addEventListener("change", uploadTemplateExcel);
-document.querySelector("#projectWbsFileInput").addEventListener("change", uploadProjectWbsExcel);
+
+/* 포트폴리오 필터 */
+document.querySelector("#portfolioFilter").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-filter]");
+  if (!btn) return;
+  state.portfolioFilter = btn.dataset.filter;
+  renderProjects();
+});
+
+/* ── WBS 계획 이벤트 ──────────────────────────────── */
+
+/* 프로젝트 셀렉트 변경 */
+document.querySelector("#wbsPlanProjectSelect").addEventListener("change", (event) => {
+  const projectId = event.target.value;
+  if (!projectId) return;
+  if (projectId === state.wbsPlanProjectId) return;
+  if (state.wbsPlanDirty && !window.confirm("저장하지 않은 변경사항이 있습니다. 프로젝트를 변경하시겠습니까?")) {
+    // 되돌리기
+    event.target.value = state.wbsPlanProjectId || "";
+    return;
+  }
+  loadWbsPlanProject(projectId);
+});
+
+/* WBS 보드 — 수정 / 삭제 / 하위추가 / 펼치기 */
+document.querySelector("#wbsBoardRows").addEventListener("click", (event) => {
+  const editBtn     = event.target.closest("[data-wbs-edit]");
+  const deleteBtn   = event.target.closest("[data-wbs-delete]");
+  const addChildBtn = event.target.closest("[data-wbs-add-child]");
+  const toggleBtn   = event.target.closest("[data-wbs-toggle]");
+
+  if (editBtn && !editBtn.disabled) {
+    const row = state.wbsPlanRows.find((r) => r.code === editBtn.dataset.wbsEdit);
+    if (row) openWbsRowDialog("edit", row);
+    return;
+  }
+  if (deleteBtn && !deleteBtn.disabled) {
+    deleteWbsRow(deleteBtn.dataset.wbsDelete);
+    return;
+  }
+  if (addChildBtn && !addChildBtn.disabled) {
+    // 하위 항목 추가: 부모 코드 자동 설정
+    const parentCode = addChildBtn.dataset.wbsAddChild;
+    openWbsRowDialog("add", { code: null, parent_code: parentCode, item_type: "작업" });
+    return;
+  }
+  if (toggleBtn) {
+    const code = toggleBtn.dataset.wbsToggle;
+    state.wbsExpanded[code] = !isWbsExpanded(code);
+    renderWbsPlanTable();
+    return;
+  }
+});
+
+/* WBS 계획 Excel 다운로드 */
+document.querySelector("#wbsPlanDownloadButton").addEventListener("click", downloadWbsPlanExcel);
+
+/* WBS 계획 Excel 업로드 */
+document.querySelector("#wbsPlanExcelInput").addEventListener("change", uploadWbsPlanExcel);
+
+/* WBS 행 추가 버튼 */
+document.querySelector("#wbsAddRowButton").addEventListener("click", () => {
+  openWbsRowDialog("add");
+});
+
+/* WBS 저장 버튼 */
+document.querySelector("#wbsSaveButton").addEventListener("click", () => {
+  saveWbsPlan();
+});
+
+/* WBS 행 다이얼로그 닫기/취소 */
+document.querySelector("#wbsRowDialogClose").addEventListener("click",  closeWbsRowDialog);
+document.querySelector("#wbsRowCancelButton").addEventListener("click", closeWbsRowDialog);
+
+/* WBS 행 다이얼로그 제출 */
+document.querySelector("#wbsRowForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyWbsRowForm();
+});
+
+/* WBS 계획 필터 */
+document.querySelector("#wbsPlanSearch").addEventListener("input", (event) => {
+  state.wbsPlanSearch = event.target.value;
+  renderWbsPlanTable();
+});
+document.querySelector("#wbsPlanPhaseFilter").addEventListener("change", (event) => {
+  state.wbsPlanPhaseFilter = event.target.value;
+  renderWbsPlanTable();
+});
+document.querySelector("#wbsPlanTypeFilter").addEventListener("change", (event) => {
+  state.wbsPlanTypeFilter = event.target.value;
+  renderWbsPlanTable();
+});
+
+/* ── 표준 WBS 개별 다운로드 (인증 포함) ──────────── */
+document.querySelector("#templateList").addEventListener("click", (event) => {
+  // 미리보기 버튼
+  const previewBtn = event.target.closest("[data-template-preview]");
+  if (previewBtn) {
+    openTemplateDrawer(previewBtn.dataset.templatePreview);
+    return;
+  }
+  // 다운로드 버튼
+  const dlBtn = event.target.closest("[data-template-download]");
+  if (dlBtn) {
+    const key      = dlBtn.dataset.templateDownload;
+    const template = state.templates.find((t) => t.key === key);
+    const filename = template ? `${template.name}.xlsx` : `${key}.xlsx`;
+    if (key) authenticatedDownload(`${API_BASE}/api/templates/${encodeURIComponent(key)}/excel`, filename);
+  }
+});
+
+/* ── 템플릿 드로어 이벤트 ───────────────────────── */
+document.querySelector("#templateDrawerClose").addEventListener("click", closeTemplateDrawer);
+document.querySelector("#templateDrawerBackdrop").addEventListener("click", closeTemplateDrawer);
+document.querySelector("#templateDrawerDownload").addEventListener("click", () => {
+  const key = document.querySelector("#templateDrawerDownload").dataset.templateKey;
+  if (!key) return;
+  const template = state.templates.find((t) => t.key === key);
+  const filename  = template ? `${template.name}.xlsx` : `${key}.xlsx`;
+  authenticatedDownload(`${API_BASE}/api/templates/${encodeURIComponent(key)}/excel`, filename);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !document.querySelector("#templateDrawer").hidden) {
+    closeTemplateDrawer();
+  }
+});
+
+/* ── 승인 이력 이벤트 (테이블 구조) ─────────────────── */
+/* 기존 approvalList 이벤트는 approvalRows로 이동 */
+
 window.addEventListener("popstate", () => applyPortalView(window.location.hash, {
   updateHistory: false,
 }));
 
-renderGuidePanel();
+/* 가이드 메뉴 탭 클릭 */
+document.querySelector("#guideMenu").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-guide-view]");
+  if (!btn) return;
+  state.guideSelectedView = btn.dataset.guideView;
+  renderGuidePanel();
+});
+
+/* 가이드 내부 '이동' 버튼 클릭 → 해당 포털 뷰로 이동 */
+document.querySelector("#guideContent").addEventListener("click", (event) => {
+  const btn = event.target.closest("[data-guide-navigate]");
+  if (!btn) return;
+  const targetView = btn.dataset.guideNavigate;
+  if (targetView) {
+    applyPortalView(`#${targetView}`, { behavior: "smooth" });
+  }
+});
+
+/* ── 표준 WBS 탭 전환 ──────────────────────────── */
+/* ── 표준 WBS 패널 탭 전환 + 일반 WBS 버튼 ─────── */
+document.querySelector("#templates").addEventListener("click", (event) => {
+  // 탭 전환
+  const tab = event.target.closest("[data-tpl-tab]");
+  if (tab) {
+    const tabId = tab.dataset.tplTab;
+    document.querySelectorAll(".tpl-tab").forEach((btn) => {
+      const isActive = btn.dataset.tplTab === tabId;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    document.querySelector("#templates").dataset.activeTab = tabId;
+    document.getElementById("tplTabList").hidden   = tabId !== "list";
+    document.getElementById("tplTabImport").hidden = tabId !== "import";
+    return;
+  }
+
+  // 일반 WBS 목록 — 미리보기
+  const previewBtn = event.target.closest("[data-custom-wbs-preview]");
+  if (previewBtn && !previewBtn.disabled) {
+    openProjectWbsPreview(previewBtn.dataset.customWbsPreview);
+    return;
+  }
+
+  // 일반 WBS 목록 — Excel 업로드 탭 이동
+  const uploadBtn = event.target.closest("[data-custom-wbs-upload]");
+  if (uploadBtn && !uploadBtn.disabled) {
+    openCustomWbsUploadTab(uploadBtn.dataset.customWbsUpload);
+    return;
+  }
+
+  // Excel 업로드 탭 — WBS 유형 토글
+  const typeBtn = event.target.closest("[data-import-type]");
+  if (typeBtn) {
+    setImportType(typeBtn.dataset.importType);
+    return;
+  }
+});
+
+/* 일반 WBS 탭 — 프로젝트 셀렉트 변경 시 반영 버튼 갱신 */
+document.querySelector("#importProjectSelect").addEventListener("change", () => {
+  renderApplyButton();
+});
+
+/* 반영 버튼 — 유형에 따라 분기 */
+document.querySelector("#applyImportButton").addEventListener("click", applyImportPreview);
+
 restoreSession();

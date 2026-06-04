@@ -36,17 +36,12 @@ OPENPROJECT_SYNC_PARENT_LINKS = os.getenv("OPENPROJECT_SYNC_PARENT_LINKS", "true
 PM_ENGINE_ADAPTER = os.getenv("PM_ENGINE_ADAPTER", "openproject").strip().lower()
 PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
 ALLOW_FILE_ORIGIN = os.getenv("WBS_ALLOW_FILE_ORIGIN", "true").lower() in {"1", "true", "yes", "on"}
-STRICT_WEIGHT_VALIDATION = os.getenv("WBS_STRICT_WEIGHT_VALIDATION", "true").lower() in {"1", "true", "yes", "on"}
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/app/backups/postgres"))
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
 RUN_MIGRATIONS_ON_STARTUP = os.getenv("WBS_RUN_MIGRATIONS_ON_STARTUP", "true").lower() in {"1", "true", "yes", "on"}
 SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
 LOGIN_FAILURE_LIMIT = int(os.getenv("WBS_LOGIN_FAILURE_LIMIT", "5"))
 LOGIN_LOCK_MINUTES = int(os.getenv("WBS_LOGIN_LOCK_MINUTES", "15"))
-PASSWORD_MIN_LENGTH = int(os.getenv("WBS_PASSWORD_MIN_LENGTH", "8"))
-PASSWORD_REQUIRE_NUMBER = os.getenv("WBS_PASSWORD_REQUIRE_NUMBER", "true").lower() in {"1", "true", "yes", "on"}
-PASSWORD_REQUIRE_SPECIAL = os.getenv("WBS_PASSWORD_REQUIRE_SPECIAL", "false").lower() in {"1", "true", "yes", "on"}
-PASSWORD_REQUIRE_UPPER = os.getenv("WBS_PASSWORD_REQUIRE_UPPER", "false").lower() in {"1", "true", "yes", "on"}
 ENABLE_LOGIN_ALIASES = os.getenv("WBS_ENABLE_LOGIN_ALIASES", "false").lower() in {"1", "true", "yes", "on"}
 AUDIT_RETENTION_DAYS = int(os.getenv("WBS_AUDIT_RETENTION_DAYS", "365"))
 MAX_EXCEL_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -222,6 +217,12 @@ class ProjectCreate(BaseModel):
     template_key: str = Field(..., min_length=2, max_length=80)
     owner: str = Field("PMO", min_length=2, max_length=80)
     start_date: date | None = None
+    # 선택 상세 필드 (metadata에 저장)
+    end_date: date | None = None
+    description: str | None = Field(None, max_length=500)
+    client_name: str | None = Field(None, max_length=120)
+    budget: str | None = Field(None, max_length=80)
+    project_manager: str | None = Field(None, max_length=80)
 
 
 class WbsImportRow(BaseModel):
@@ -274,6 +275,11 @@ class ProjectStatusUpdate(BaseModel):
     comment: str | None = Field(None, max_length=500)
 
 
+class WbsItemsBatch(BaseModel):
+    rows: list[WbsImportRow]
+    source: str = Field("portal-editor", max_length=80)
+
+
 class LoginRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=160)
     password: str = Field(..., min_length=1, max_length=200)
@@ -281,14 +287,14 @@ class LoginRequest(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=200)
-    new_password: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
 
 
 class UserCreate(BaseModel):
     email: str = Field(..., min_length=3, max_length=160)
     display_name: str = Field(..., min_length=2, max_length=120)
     role: str = Field("viewer", min_length=3, max_length=20)
-    password: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
     status: str = Field("Active", min_length=5, max_length=20)
     must_change_password: bool = True
 
@@ -296,7 +302,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     display_name: str | None = Field(None, min_length=2, max_length=120)
     role: str | None = Field(None, min_length=3, max_length=20)
-    password: str | None = Field(None, min_length=1, max_length=200)
+    password: str | None = Field(None, min_length=8, max_length=200)
     status: str | None = Field(None, min_length=5, max_length=20)
     must_change_password: bool | None = None
 
@@ -494,20 +500,6 @@ def validate_user_status(status: str) -> str:
     if normalized_status not in ALLOWED_USER_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid user status")
     return normalized_status
-
-
-def validate_password_policy(password: str) -> None:
-    violations: list[str] = []
-    if len(password) < PASSWORD_MIN_LENGTH:
-        violations.append(f"{PASSWORD_MIN_LENGTH}자 이상")
-    if PASSWORD_REQUIRE_NUMBER and not re.search(r"\d", password):
-        violations.append("숫자 1개 이상")
-    if PASSWORD_REQUIRE_SPECIAL and not re.search(r"[^A-Za-z0-9]", password):
-        violations.append("특수문자 1개 이상")
-    if PASSWORD_REQUIRE_UPPER and not re.search(r"[A-Z]", password):
-        violations.append("대문자 1개 이상")
-    if violations:
-        raise HTTPException(status_code=400, detail=f"비밀번호는 {', '.join(violations)}을 포함해야 합니다")
 
 
 def setting_response(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
@@ -995,16 +987,12 @@ def validate_wbs_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
             continue
         expected = 100 if parent_code == "__root__" else weight_map.get(parent_code)
         if expected is not None and abs(total_weight - float(expected)) > 0.01:
-            issue = {
-                "row": codes.get(parent_code),
-                "field": "weight",
-                "parent_code": None if parent_code == "__root__" else parent_code,
-                "message": f"Sibling weights add up to {total_weight:.2f}, expected {float(expected):.2f}",
-            }
-            if STRICT_WEIGHT_VALIDATION:
-                errors.append(issue)
-            else:
-                warnings.append(issue)
+            warnings.append(
+                {
+                    "parent_code": None if parent_code == "__root__" else parent_code,
+                    "message": f"Sibling weights add up to {total_weight:.2f}, expected {float(expected):.2f}",
+                }
+            )
 
     return errors, warnings
 
@@ -1424,28 +1412,6 @@ async def prepare_template_import(
     return rows, errors, warnings, serialized_rows, diff_rows
 
 
-async def prepare_project_import(
-    connection: asyncpg.Connection,
-    *,
-    project: dict[str, Any] | asyncpg.Record,
-    template: dict[str, Any],
-    parsed_rows: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    project_id = safe_uuid(project["id"])
-    if not project_id:
-        raise HTTPException(status_code=400, detail="Invalid project id")
-    project_rows = await fetch_project_wbs_items(connection, project_id)
-    template_rows = await fetch_template_items(connection, project["template_key"])
-    existing_rows = template_rows_or_phases(template, project_rows or template_rows)
-    root_code = root_code_from_rows(existing_rows) or template_code_prefix(project["template_key"])
-    rows = assign_missing_wbs_codes(parsed_rows, root_code)
-    errors, warnings = validate_wbs_rows(rows)
-    warnings = [*warnings, *auto_code_warnings(rows)]
-    serialized_rows = [serialize_wbs_row(row) for row in rows]
-    diff_rows = build_wbs_diff_rows(existing_rows, rows)
-    return rows, errors, warnings, serialized_rows, diff_rows
-
-
 async def insert_import_job(
     connection: asyncpg.Connection,
     *,
@@ -1505,41 +1471,6 @@ def sync_error_payload(error: Exception | HTTPException | str) -> dict[str, Any]
     return {
         "type": error.__class__.__name__,
         "message": str(error),
-    }
-
-
-def parse_openproject_date(value: Any) -> date | None:
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(str(value))
-    except ValueError:
-        return None
-
-
-def openproject_link_title(payload: dict[str, Any], key: str) -> str | None:
-    link = normalize_metadata(payload.get("_links")).get(key)
-    if isinstance(link, dict):
-        return link.get("title") or link.get("href")
-    return None
-
-
-def openproject_work_package_pull_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
-    percent_complete = (
-        payload.get("percentageDone")
-        if payload.get("percentageDone") is not None
-        else payload.get("doneRatio")
-    )
-    return {
-        "id": payload.get("id"),
-        "subject": payload.get("subject"),
-        "status": openproject_link_title(payload, "status"),
-        "assignee": openproject_link_title(payload, "assignee"),
-        "start_date": payload.get("startDate"),
-        "finish_date": payload.get("dueDate"),
-        "percent_complete": percent_complete,
-        "updated_at": payload.get("updatedAt"),
-        "pulled_at": utc_now_iso(),
     }
 
 
@@ -1869,8 +1800,6 @@ class OpenProjectClient:
         return options
 
     async def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        if path.startswith(self.base_url):
-            path = path[len(self.base_url):] or "/"
         try:
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
                 response = await client.request(
@@ -1904,18 +1833,6 @@ class OpenProjectClient:
             return response.json()
         except ValueError as exc:
             raise HTTPException(status_code=502, detail="OpenProject API returned invalid JSON") from exc
-
-    async def get_work_package(self, href_or_id: str) -> dict[str, Any]:
-        value = str(href_or_id or "").strip()
-        if not value:
-            raise HTTPException(status_code=400, detail="OpenProject work package reference is missing")
-        if value.startswith("/"):
-            path = value
-        elif value.startswith(self.base_url):
-            path = value[len(self.base_url):] or "/"
-        else:
-            path = f"/api/v3/work_packages/{value}"
-        return await self.request("GET", path)
 
     @staticmethod
     def response_detail(response: httpx.Response) -> Any:
@@ -2087,19 +2004,14 @@ def openproject_engine_status() -> dict[str, Any]:
 def pm_engine_status(setting_value: dict[str, Any] | None = None) -> dict[str, Any]:
     setting_value = setting_value or {}
     runtime = openproject_engine_status()
-    adapter = setting_value.get("adapter") or PM_ENGINE_ADAPTER or runtime["adapter"]
+    adapter = PM_ENGINE_ADAPTER or setting_value.get("adapter") or runtime["adapter"]
     display_name = "Mock PM Engine" if adapter == "mock" else setting_value.get("display_name") or "OpenProject"
-    configured_enabled = bool(setting_value.get("enabled", True))
-    effective_enabled = runtime["enabled"] and configured_enabled
-    actual_sync_ready = adapter == "mock" or (effective_enabled and bool(OPENPROJECT_API_TOKEN))
+    actual_sync_ready = adapter == "mock" or (runtime["enabled"] and bool(OPENPROJECT_API_TOKEN))
     return {
         **runtime,
         "adapter": adapter,
         "display_name": display_name,
         "provider": runtime["adapter"],
-        "enabled": effective_enabled,
-        "runtime_enabled": runtime["enabled"],
-        "configured_enabled": configured_enabled,
         "mode": setting_value.get("mode") or "ce-api-adapter",
         "dependency_boundary": setting_value.get("dependency_boundary") or "pm-engine-api",
         "actual_sync_control": setting_value.get("actual_sync_control") or "OPENPROJECT_SYNC_ENABLED",
@@ -2401,6 +2313,8 @@ async def health(request: Request) -> dict[str, str]:
         await connection.fetchval("SELECT 1")
     return {
         "status": "ok",
+        "database": "postgresql",
+        "openproject_base_url": OPENPROJECT_BASE_URL,
     }
 
 
@@ -2565,7 +2479,6 @@ async def logout(request: Request) -> dict[str, str]:
 async def change_password(payload: PasswordChangeRequest, request: Request) -> dict[str, Any]:
     token = auth_token_from_request(request)
     current = request.state.user
-    validate_password_policy(payload.new_password)
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
@@ -2651,7 +2564,6 @@ async def create_user(payload: UserCreate, request: Request) -> dict[str, Any]:
     normalized_email = payload.email.strip().lower()
     role = validate_user_role(payload.role)
     status = validate_user_status(payload.status)
-    validate_password_policy(payload.password)
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
@@ -2706,8 +2618,6 @@ async def update_user(user_id: str, payload: UserUpdate, request: Request) -> di
     role = validate_user_role(payload.role) if payload.role is not None else None
     status = validate_user_status(payload.status) if payload.status is not None else None
     display_name = payload.display_name.strip() if payload.display_name is not None else None
-    if payload.password is not None:
-        validate_password_policy(payload.password)
 
     if parsed_id == safe_uuid(current["id"]):
         if role and role != "admin":
@@ -3080,11 +2990,21 @@ async def list_projects(request: Request) -> list[dict[str, Any]]:
 async def create_project(payload: ProjectCreate, request: Request) -> dict[str, Any]:
     require_mutating_role(request)
     start_date = payload.start_date or date.today()
-    metadata = {
+    metadata: dict[str, Any] = {
         "created_by": "wbs-portal",
         "sync_target": "openproject",
         "strategy": "community-edition-extension-layer",
     }
+    if payload.end_date:
+        metadata["end_date"] = payload.end_date.isoformat()
+    if payload.description:
+        metadata["description"] = payload.description
+    if payload.client_name:
+        metadata["client_name"] = payload.client_name
+    if payload.budget:
+        metadata["budget"] = payload.budget
+    if payload.project_manager:
+        metadata["project_manager"] = payload.project_manager
 
     async with get_pool(request).acquire() as connection:
         template_exists = await connection.fetchval(
@@ -3192,98 +3112,6 @@ async def project_sync_plan(project_id: str, request: Request) -> dict[str, Any]
         baseline = await fetch_latest_project_baseline(connection, parsed_id)
 
     return build_openproject_sync_plan(project, template, rows, baseline)
-
-
-@app.get("/api/projects/{project_id}/excel")
-async def export_project_excel(project_id: str, request: Request) -> StreamingResponse:
-    parsed_id = safe_uuid(project_id)
-    if not parsed_id:
-        raise HTTPException(status_code=400, detail="Invalid project id")
-
-    project, template, rows = await fetch_project_sync_context(request, parsed_id)
-    workbook_template = {
-        **template,
-        "name": f"{project['name']} WBS",
-        "key": project["template_key"],
-    }
-    output = build_template_workbook(workbook_template, rows)
-    filename_slug = normalize_openproject_identifier(project["name"], f"project-{str(parsed_id)[:8]}")
-    return StreamingResponse(
-        output,
-        media_type=EXCEL_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{filename_slug}-project-wbs.xlsx"'},
-    )
-
-
-@app.post("/api/projects/{project_id}/imports/preview", status_code=201)
-async def preview_project_excel(
-    project_id: str,
-    request: Request,
-    file: UploadFile = File(...),
-) -> dict[str, Any]:
-    require_mutating_role(request)
-    parsed_id = safe_uuid(project_id)
-    if not parsed_id:
-        raise HTTPException(status_code=400, detail="Invalid project id")
-    contents = await file.read()
-    parsed_rows = parse_wbs_workbook(contents)
-
-    async with get_pool(request).acquire() as connection:
-        async with connection.transaction():
-            project = await fetch_project(connection, parsed_id)
-            if not project:
-                raise HTTPException(status_code=404, detail="Project not found")
-            ensure_project_status_allowed(project, PROJECT_WBS_IMPORT_ALLOWED_STATUSES, "Project WBS import")
-            template = await fetch_template(connection, project["template_key"])
-            if not template:
-                raise HTTPException(status_code=404, detail="Template not found")
-            rows, errors, warnings, serialized_rows, diff_rows = await prepare_project_import(
-                connection,
-                project=project,
-                template=template,
-                parsed_rows=parsed_rows,
-            )
-            status = "Rejected" if errors else "Preview"
-            record = await insert_import_job(
-                connection,
-                source_file=file.filename or "project-wbs-upload.xlsx",
-                template_key=project["template_key"],
-                template_name=template["name"],
-                project_type=template.get("project_type"),
-                description=f"프로젝트 WBS 업로드 미리보기: {project['name']}",
-                status=status,
-                total_rows=len(rows),
-                accepted_rows=0 if errors else len(rows),
-                rejected_rows=len(errors),
-                errors=errors,
-                warnings=warnings,
-                preview_rows=serialized_rows,
-                diff_rows=diff_rows,
-            )
-            await insert_audit_event(
-                connection,
-                request=request,
-                event_type="project_wbs.import_previewed",
-                entity_type="project",
-                entity_id=parsed_id,
-                summary=f"Project WBS import preview: {project['name']}",
-                metadata={
-                    "import_job_id": str(record["id"]),
-                    "source_file": file.filename or "project-wbs-upload.xlsx",
-                    "status": status,
-                    "accepted_rows": 0 if errors else len(rows),
-                    "rejected_rows": len(errors),
-                    "diff_count": len(diff_rows),
-                },
-            )
-
-    response = normalize_record(record)
-    response["project"] = project
-    response["template"] = template
-    response["warnings"] = warnings
-    response["rows"] = serialized_rows[:50]
-    response["diff_rows"] = diff_rows[:50]
-    return response
 
 
 @app.get("/api/projects/{project_id}/baseline")
@@ -3623,149 +3451,8 @@ async def sync_project_to_engine(
     }
 
 
-@app.post("/api/projects/{project_id}/sync-pull")
-async def pull_project_from_engine(
-    project_id: str,
-    request: Request,
-    payload: ProjectSyncRequest = ProjectSyncRequest(dry_run=False, create_work_packages=False),
-) -> dict[str, Any]:
-    require_mutating_role(request)
-    parsed_id = safe_uuid(project_id)
-    if not parsed_id:
-        raise HTTPException(status_code=400, detail="Invalid project id")
-
-    project, template, rows = await fetch_project_sync_context(request, parsed_id)
-    metadata = normalize_metadata(project.get("metadata"))
-    engine_metadata = normalize_metadata(metadata.get("pm_engine"))
-    work_packages = normalize_metadata(engine_metadata.get("work_packages"))
-    if not work_packages:
-        raise HTTPException(status_code=409, detail="Project has no known OpenProject work packages to pull")
-
-    pulled_rows: list[dict[str, Any]] = []
-    if PM_ENGINE_ADAPTER == "mock":
-        for row in rows:
-            known = normalize_metadata(work_packages.get(row["code"]))
-            if not known:
-                continue
-            pulled_rows.append(
-                {
-                    "code": row["code"],
-                    "subject": known.get("subject") or row.get("name"),
-                    "status": "mock",
-                    "percent_complete": 0,
-                    "pulled_at": utc_now_iso(),
-                }
-            )
-    else:
-        if not OPENPROJECT_API_TOKEN:
-            raise HTTPException(status_code=400, detail="OPENPROJECT_API_TOKEN is required for OpenProject pull sync.")
-        client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
-        for row in rows:
-            known = normalize_metadata(work_packages.get(row["code"]))
-            reference = known.get("href") or known.get("id")
-            if not reference:
-                continue
-            pulled = openproject_work_package_pull_snapshot(await client.get_work_package(str(reference)))
-            pulled_rows.append({"code": row["code"], **pulled})
-
-    pulled_by_code = {row["code"]: row for row in pulled_rows}
-    if not pulled_by_code:
-        raise HTTPException(status_code=409, detail="No known OpenProject work packages could be pulled")
-
-    async with get_pool(request).acquire() as connection:
-        async with connection.transaction():
-            existing_project_rows = await fetch_project_wbs_items(connection, parsed_id)
-            if not existing_project_rows:
-                await replace_project_wbs_items(connection, project_id=parsed_id, rows=rows)
-                existing_project_rows = await fetch_project_wbs_items(connection, parsed_id)
-
-            updated_count = 0
-            for row in existing_project_rows:
-                pulled = pulled_by_code.get(row["code"])
-                if not pulled:
-                    continue
-                row_metadata = normalize_metadata(row.get("metadata"))
-                row_metadata["openproject_pull"] = pulled
-                start_date = parse_openproject_date(pulled.get("start_date")) or row.get("start_date")
-                finish_date = parse_openproject_date(pulled.get("finish_date")) or row.get("finish_date")
-                await connection.execute(
-                    """
-                    UPDATE wbs_project_wbs_items
-                    SET start_date = $3,
-                        finish_date = $4,
-                        metadata = $5::jsonb,
-                        updated_at = now()
-                    WHERE project_id = $1 AND code = $2
-                    """,
-                    parsed_id,
-                    row["code"],
-                    start_date,
-                    finish_date,
-                    row_metadata,
-                )
-                updated_count += 1
-
-            engine_metadata["last_pull_at"] = utc_now_iso()
-            metadata["pm_engine"] = engine_metadata
-            record = await connection.fetchrow(
-                """
-                UPDATE wbs_projects
-                SET metadata = $2::jsonb,
-                    updated_at = now()
-                WHERE id = $1
-                RETURNING id, name, template_key, owner, status, start_date,
-                          openproject_project_id, metadata, created_at, updated_at
-                """,
-                parsed_id,
-                metadata,
-            )
-            audit_run = await insert_sync_run(
-                connection,
-                project_id=parsed_id,
-                mode="pull",
-                status="Pulled",
-                actor=payload.actor,
-                dry_run=False,
-                create_work_packages=False,
-                validate_payloads=False,
-                total_rows=len(rows),
-                pending_work_packages=max(len(rows) - updated_count, 0),
-                synced_work_packages=updated_count,
-                openproject_project_id=project.get("openproject_project_id") or engine_metadata.get("project_id"),
-                metadata={
-                    "source": "api",
-                    "known_work_packages": len(work_packages),
-                    "pulled_rows": len(pulled_rows),
-                },
-            )
-            await insert_audit_event(
-                connection,
-                request=request,
-                event_type="pm_engine.pull_recorded",
-                entity_type="project",
-                entity_id=parsed_id,
-                summary=f"PM engine pull Pulled",
-                metadata={"sync_run_id": str(audit_run.get("id")), "updated_rows": updated_count},
-            )
-
-    return {
-        "status": "Pulled",
-        "project": normalize_record(record),
-        "summary": {
-            "total_rows": len(rows),
-            "pulled_rows": len(pulled_rows),
-            "updated_rows": updated_count,
-            "pending_work_packages": max(len(rows) - updated_count, 0),
-        },
-        "rows": pulled_rows[:50],
-        "audit": audit_run,
-    }
-
-
 @app.get("/api/approvals")
-async def list_approvals(request: Request, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-    bounded_limit = max(1, min(limit, 100))
-    bounded_offset = max(0, offset)
+async def list_approvals(request: Request) -> list[dict[str, Any]]:
     async with get_pool(request).acquire() as connection:
         records = await connection.fetch(
             f"""
@@ -3780,10 +3467,8 @@ async def list_approvals(request: Request, limit: int = 50, offset: int = 0) -> 
                 ELSE 3
               END,
               a.created_at DESC
-            LIMIT $1 OFFSET $2
-            """,
-            bounded_limit,
-            bounded_offset,
+            LIMIT 50
+            """
         )
     return [normalize_record(record) for record in records]
 
@@ -4736,20 +4421,6 @@ async def apply_import_to_project(project_id: str, job_id: str, request: Request
                 rows=rows,
                 source_import_job_id=import_job_id,
             )
-            job = await connection.fetchrow(
-                f"""
-                UPDATE wbs_import_jobs
-                SET status = 'Applied',
-                    accepted_rows = total_rows,
-                    rejected_rows = 0,
-                    diff_rows = $2::jsonb,
-                    applied_at = now()
-                WHERE id = $1
-                RETURNING {IMPORT_JOB_RETURNING}
-                """,
-                import_job_id,
-                diff_rows,
-            )
             record = await connection.fetchrow(
                 """
                 UPDATE wbs_projects
@@ -4781,7 +4452,6 @@ async def apply_import_to_project(project_id: str, job_id: str, request: Request
         "project": normalize_record(record),
         "rows": [serialize_wbs_row(row) for row in rows[:50]],
         "diff_rows": diff_rows[:50],
-        "import_job": normalize_record(job),
         "summary": {"rows": len(rows), "diff_count": len(diff_rows)},
     }
 
@@ -4839,3 +4509,88 @@ async def openproject_connection() -> dict[str, str]:
         "integration": "pm-engine-adapter",
         "adapter": "openproject",
     }
+
+
+@app.post("/api/projects/{project_id}/wbs-items")
+async def save_project_wbs_items(
+    project_id: str,
+    payload: WbsItemsBatch,
+    request: Request,
+) -> dict[str, Any]:
+    """WBS 항목 직접 저장 (포털 편집기용). 기존 항목 전체를 payload.rows로 교체."""
+    require_mutating_role(request)
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+
+    raw_rows = [row.model_dump() for row in payload.rows]
+    for i, row in enumerate(raw_rows, start=1):
+        row.setdefault("row_number", i)
+
+    root_code = root_code_from_rows(raw_rows) or "WBS"
+    rows = assign_missing_wbs_codes(raw_rows, root_code)
+    errors, warnings = validate_wbs_rows(rows)
+    if errors:
+        raise HTTPException(status_code=422, detail={"message": "WBS 검증 실패", "errors": errors})
+
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            project = await connection.fetchrow(
+                """
+                SELECT id, name, template_key, status, openproject_project_id,
+                       metadata, created_at, updated_at
+                FROM wbs_projects WHERE id = $1 FOR UPDATE
+                """,
+                parsed_id,
+            )
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            ensure_project_status_allowed(
+                project, PROJECT_WBS_IMPORT_ALLOWED_STATUSES, "WBS 직접 편집"
+            )
+            existing_rows = await fetch_project_wbs_items(connection, parsed_id)
+            diff_rows = build_wbs_diff_rows(existing_rows, rows)
+            await replace_project_wbs_items(
+                connection, project_id=parsed_id, rows=rows, source_import_job_id=None
+            )
+            await insert_audit_event(
+                connection,
+                request=request,
+                event_type="project_wbs.import_applied",
+                entity_type="project",
+                entity_id=parsed_id,
+                summary=f"Project WBS import applied: {project['name']}",
+                metadata={
+                    "source": payload.source,
+                    "rows": len(rows),
+                    "diff_count": len(diff_rows),
+                },
+            )
+
+    return {
+        "status": "Applied",
+        "rows": [serialize_wbs_row(r) for r in rows],
+        "diff_rows": diff_rows[:100],
+        "summary": {
+            "rows": len(rows),
+            "diff_count": len(diff_rows),
+            "warnings": len(warnings),
+        },
+        "warnings": warnings[:20],
+    }
+
+
+@app.get("/api/projects/{project_id}/wbs-items")
+async def list_project_wbs_items(project_id: str, request: Request) -> list[dict[str, Any]]:
+    """프로젝트 WBS 항목 전체 조회."""
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    async with get_pool(request).acquire() as connection:
+        project_exists = await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM wbs_projects WHERE id = $1)", parsed_id
+        )
+        if not project_exists:
+            raise HTTPException(status_code=404, detail="Project not found")
+        rows = await fetch_project_wbs_items(connection, parsed_id)
+    return [serialize_wbs_row(r) for r in rows]
