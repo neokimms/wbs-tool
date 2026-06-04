@@ -689,9 +689,20 @@ function renderTemplates() {
     .map(
       (template) => `
         <article class="template-item">
-          <strong>${template.name}</strong>
-          <span>${projectTypeLabel(template.project_type)}${template.item_count ? ` · ${template.item_count}개 항목` : ""}</span>
-          <p>${template.description}</p>
+          <div class="template-item-header">
+            <div>
+              <strong>${escapeHtml(template.name)}</strong>
+              <span>${escapeHtml(projectTypeLabel(template.project_type))}${template.item_count ? ` · ${escapeHtml(template.item_count)}개 항목` : ""}</span>
+            </div>
+            <button
+              class="secondary-button template-download-button"
+              type="button"
+              data-template-download="${escapeHtml(template.key)}"
+            >
+              Excel
+            </button>
+          </div>
+          <p>${escapeHtml(template.description)}</p>
         </article>
       `,
     )
@@ -947,11 +958,17 @@ function renderProjects() {
   const approvalButton = document.querySelector("#projectApprovalButton");
   approvalButton.dataset.projectId = selectedProject?.id || "";
   approvalButton.disabled = !canRequestApproval;
-  approvalButton.textContent = selectedProject?.status === "Approved"
-    ? "승인 완료"
+  approvalButton.title = selectedProject?.status === "Approved"
+    ? "프로젝트 승인 완료"
     : canRequestApproval
-      ? "자동 승인"
-      : "승인 대기";
+      ? "프로젝트 자동 승인"
+      : "승인 요청 대기";
+  approvalButton.setAttribute("aria-label", approvalButton.title);
+  approvalButton.textContent = selectedProject?.status === "Approved"
+    ? "완료"
+    : canRequestApproval
+      ? "승인"
+      : "대기";
 }
 
 function renderProjectPlan() {
@@ -1902,8 +1919,12 @@ function renderImportResult(result, options = {}) {
 
 async function downloadTemplateExcel() {
   const template = selectedTemplate();
+  await downloadTemplateExcelByKey(template.key, `${template.key}-wbs-template.xlsx`);
+}
+
+async function downloadTemplateExcelByKey(templateKey, fallbackFilename) {
   try {
-    await downloadFile(`/api/templates/${encodeURIComponent(template.key)}/excel`, `${template.key}-wbs-template.xlsx`);
+    await downloadFile(`/api/templates/${encodeURIComponent(templateKey)}/excel`, fallbackFilename || `${templateKey}-wbs-template.xlsx`);
   } catch (error) {
     document.querySelector("#importStatus").textContent = "다운로드 실패";
     document.querySelector("#importIssues").innerHTML = `<li>${escapeHtml(error.message)}</li>`;
@@ -2462,6 +2483,12 @@ document.querySelector("#projectForm").addEventListener("submit", createProject)
 document.querySelector("#userCreateForm").addEventListener("submit", createPortalUser);
 document.querySelector("#downloadTemplateButton").addEventListener("click", downloadTemplateExcel);
 document.querySelector("#templateDownloadButton").addEventListener("click", downloadTemplateExcel);
+document.querySelector("#templateList").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-template-download]");
+  if (!button || button.disabled) return;
+  const templateKey = button.dataset.templateDownload;
+  downloadTemplateExcelByKey(templateKey, `${templateKey}-wbs-template.xlsx`);
+});
 document.querySelector("#projectWbsDownloadButton").addEventListener("click", downloadProjectWbsExcel);
 document.querySelector("#importErrorWorkbookButton").addEventListener("click", downloadImportErrorsExcel);
 document.querySelector("#renumberButton").addEventListener("click", renumberTemplateCodes);

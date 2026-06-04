@@ -128,17 +128,17 @@
                   <span>프로젝트 선택</span>
                   <select id="projectSelectInput"></select>
                 </label>
-                <div class="project-picker-summary" id="projectSelectSummary">
+                <div class="project-picker-summary" id="projectSelectSummary" aria-hidden="true">
                   <span id="projectSelectOwner">담당 -</span>
                   <span id="projectSelectRows">작업 -</span>
                   <span class="status-pill attention" id="projectSelectStatus">선택</span>
                 </div>
-                <button class="secondary-button" id="projectApprovalButton" type="button" disabled>자동 승인</button>
-              </div>
-              <div class="project-import-actions">
-                <label class="secondary-button file-button" for="projectWbsFileInput">프로젝트 WBS 업로드</label>
-                <button class="primary-button" id="applyProjectImportButton" type="button" disabled>프로젝트 WBS 반영</button>
-                <input id="projectWbsFileInput" type="file" accept=".xlsx" />
+                <div class="project-import-actions">
+                  <button class="secondary-button" id="projectApprovalButton" type="button" title="프로젝트 자동 승인" aria-label="프로젝트 자동 승인" disabled>승인</button>
+                  <label class="secondary-button file-button" for="projectWbsFileInput" title="프로젝트 WBS 업로드" aria-label="프로젝트 WBS 업로드">업로드</label>
+                  <button class="primary-button" id="applyProjectImportButton" type="button" title="프로젝트 WBS 반영" aria-label="프로젝트 WBS 반영" disabled>반영</button>
+                  <input id="projectWbsFileInput" type="file" accept=".xlsx" />
+                </div>
               </div>
               <p class="form-status" id="projectImportStatus"></p>
               <div class="wbs-list-header">
@@ -214,7 +214,7 @@
                 <p class="eyebrow">템플릿</p>
                 <h2>표준 WBS</h2>
               </div>
-              <button class="icon-button" id="templateDownloadButton" type="button" aria-label="템플릿 다운로드" title="다운로드">↓</button>
+              <button class="secondary-button compact-template-download" id="templateDownloadButton" type="button">선택 Excel</button>
             </div>
             <div class="template-list" id="templateList"></div>
           </article>

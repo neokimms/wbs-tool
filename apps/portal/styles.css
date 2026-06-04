@@ -847,7 +847,15 @@ tr:last-child td {
   background: var(--surface);
 }
 
+.template-item-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
 .template-item strong {
+  display: block;
   font-size: 14px;
 }
 
@@ -857,6 +865,13 @@ tr:last-child td {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.template-download-button,
+.compact-template-download {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .approval-list {
@@ -1226,16 +1241,16 @@ button.import-job:hover,
 
 .project-detail {
   display: grid;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .project-picker {
   display: grid;
-  grid-template-columns: minmax(260px, 1.15fr) minmax(260px, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: minmax(210px, 1fr) auto;
+  gap: 8px;
   align-items: end;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-muted);
@@ -1243,7 +1258,7 @@ button.import-job:hover,
 
 .project-picker label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -1256,8 +1271,8 @@ button.import-job:hover,
 #projectSelectInput {
   width: 100%;
   min-width: 0;
-  height: 40px;
-  padding: 0 12px;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1270,17 +1285,17 @@ button.import-job:hover,
 }
 
 .project-picker-summary {
-  display: flex;
+  display: none;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  min-height: 40px;
+  min-height: 34px;
   flex-wrap: wrap;
 }
 
 .project-picker-summary > span:not(.status-pill) {
-  min-height: 28px;
-  padding: 6px 8px;
+  min-height: 24px;
+  padding: 4px 7px;
   border: 1px solid rgba(216, 220, 226, 0.7);
   border-radius: 8px;
   background: var(--surface);
@@ -1290,18 +1305,18 @@ button.import-job:hover,
 }
 
 .project-picker .secondary-button {
-  min-width: 116px;
-  height: 40px;
+  min-width: 0;
+  height: 32px;
 }
 
 .wbs-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 42px;
-  margin-top: 4px;
-  padding-top: 12px;
+  gap: 10px;
+  min-height: 38px;
+  margin-top: 2px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
 }
 
@@ -1354,14 +1369,14 @@ button.import-job:hover,
 .detail-controls {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(140px, 0.45fr) minmax(120px, 0.35fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .detail-controls input,
 .detail-controls select {
   min-width: 0;
-  height: 38px;
-  padding: 0 12px;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1375,15 +1390,29 @@ button.import-job:hover,
 }
 
 .project-import-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(150px, 1fr));
-  gap: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .project-import-actions button,
 .project-import-actions label {
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  height: 32px;
+  min-height: 32px;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.project-import-actions .primary-button,
+.project-import-actions .secondary-button,
+.project-import-actions .file-button {
+  display: inline-flex;
+  min-width: 54px;
 }
 
 #projectWbsFileInput {
@@ -1394,8 +1423,12 @@ button.import-job:hover,
   clip: rect(0 0 0 0);
 }
 
+#projectImportStatus:empty {
+  display: none;
+}
+
 .detail-table {
-  max-height: min(68vh, 720px);
+  max-height: min(76vh, 860px);
 }
 
 .detail-table table {
@@ -2017,6 +2050,11 @@ button.setting-card:hover,
   .project-import-actions,
   .sync-controls {
     grid-template-columns: 1fr;
+  }
+
+  .project-import-actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
   }
 
   .project-picker .secondary-button {

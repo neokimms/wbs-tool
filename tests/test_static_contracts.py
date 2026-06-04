@@ -60,6 +60,9 @@ class WbsPlatformContracts(unittest.TestCase):
             'id="approvalLoadMoreButton"',
             'id="pmEngineForm"',
             'id="syncPullButton"',
+            'data-template-download',
+            "downloadTemplateExcelByKey",
+            "template-download-button",
             "canMutateWork",
             "downloadImportErrorsExcel",
         ):
