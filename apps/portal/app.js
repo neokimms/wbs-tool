@@ -217,6 +217,40 @@ async function request(path, options = {}) {
   return contentType.includes("application/json") ? response.json() : response;
 }
 
+function filenameFromDisposition(value, fallback) {
+  const match = String(value || "").match(/filename="?([^";]+)"?/i);
+  return match ? decodeURIComponent(match[1]) : fallback;
+}
+
+async function downloadFile(path, fallbackFilename) {
+  const headers = {};
+  if (state.authToken) {
+    headers.Authorization = `Bearer ${state.authToken}`;
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, { headers });
+  if (!response.ok) {
+    let detail = `다운로드 실패: ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      detail = typeof errorBody.detail === "string" ? errorBody.detail : detail;
+    } catch (error) {
+      detail = response.statusText || detail;
+    }
+    throw new Error(detail);
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromDisposition(response.headers.get("content-disposition"), fallbackFilename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -1866,20 +1900,40 @@ function renderImportResult(result, options = {}) {
   renderImportHistory();
 }
 
-function downloadTemplateExcel() {
+async function downloadTemplateExcel() {
   const template = selectedTemplate();
-  window.location.href = `${API_BASE}/api/templates/${encodeURIComponent(template.key)}/excel`;
+  try {
+    await downloadFile(`/api/templates/${encodeURIComponent(template.key)}/excel`, `${template.key}-wbs-template.xlsx`);
+  } catch (error) {
+    document.querySelector("#importStatus").textContent = "다운로드 실패";
+    document.querySelector("#importIssues").innerHTML = `<li>${escapeHtml(error.message)}</li>`;
+  }
 }
 
-function downloadProjectWbsExcel() {
+async function downloadProjectWbsExcel() {
   if (!state.selectedProjectId) return;
-  window.location.href = `${API_BASE}/api/projects/${encodeURIComponent(state.selectedProjectId)}/excel`;
+  const button = document.querySelector("#projectWbsDownloadButton");
+  button.disabled = true;
+  state.projectImportStatus = "Excel 다운로드 준비 중";
+  renderProjectImportControls();
+  try {
+    await downloadFile(`/api/projects/${encodeURIComponent(state.selectedProjectId)}/excel`, "project-wbs.xlsx");
+    state.projectImportStatus = "Excel 다운로드를 시작했습니다.";
+  } catch (error) {
+    state.projectImportStatus = error.message;
+  } finally {
+    renderProjectImportControls();
+  }
 }
 
-function downloadImportErrorsExcel() {
+async function downloadImportErrorsExcel() {
   const jobId = document.querySelector("#importErrorWorkbookButton").dataset.importJobId;
   if (!jobId) return;
-  window.location.href = `${API_BASE}/api/imports/${encodeURIComponent(jobId)}/errors.xlsx`;
+  try {
+    await downloadFile(`/api/imports/${encodeURIComponent(jobId)}/errors.xlsx`, "wbs-import-errors.xlsx");
+  } catch (error) {
+    document.querySelector("#importIssues").innerHTML = `<li>${escapeHtml(error.message)}</li>`;
+  }
 }
 
 async function renumberTemplateCodes() {

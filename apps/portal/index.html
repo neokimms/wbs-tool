@@ -136,7 +136,6 @@
                 <button class="secondary-button" id="projectApprovalButton" type="button" disabled>자동 승인</button>
               </div>
               <div class="project-import-actions">
-                <button class="secondary-button" id="projectWbsDownloadButton" type="button">프로젝트 WBS 다운로드</button>
                 <label class="secondary-button file-button" for="projectWbsFileInput">프로젝트 WBS 업로드</label>
                 <button class="primary-button" id="applyProjectImportButton" type="button" disabled>프로젝트 WBS 반영</button>
                 <input id="projectWbsFileInput" type="file" accept=".xlsx" />
@@ -147,7 +146,10 @@
                   <p class="eyebrow">WBS 작업 리스트</p>
                   <h2 id="projectDetailTitle">프로젝트 계획</h2>
                 </div>
-                <span class="status-pill attention" id="projectDetailStatus">선택</span>
+                <div class="wbs-list-actions">
+                  <span class="status-pill attention" id="projectDetailStatus">선택</span>
+                  <button class="secondary-button" id="projectWbsDownloadButton" type="button">Excel 다운로드</button>
+                </div>
               </div>
               <div class="detail-controls" aria-label="WBS 필터">
                 <input id="projectWbsSearchInput" type="search" placeholder="WBS 검색" aria-label="WBS 검색" />

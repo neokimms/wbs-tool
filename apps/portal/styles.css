@@ -1316,6 +1316,19 @@ button.import-job:hover,
   flex: 0 0 auto;
 }
 
+.wbs-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.wbs-list-actions .secondary-button {
+  min-height: 34px;
+}
+
 .detail-definitions {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1363,7 +1376,7 @@ button.import-job:hover,
 
 .project-import-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
   gap: 8px;
 }
 
