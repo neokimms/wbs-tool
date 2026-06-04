@@ -185,6 +185,10 @@ const state = {
   projectWbsSearch: "",
   projectPhaseFilter: "",
   projectTypeFilter: "",
+  projectQuickFilter: "",
+  projectPlanView: "list",
+  selectedWbsCode: null,
+  collapsedPhaseCodes: new Set(),
   portfolioView: "pmo",
   approvalLimit: 5,
   approvalsHasMore: false,
@@ -815,7 +819,39 @@ function matchesPortfolioView(row) {
   return true;
 }
 
-function filteredProjectPlanRows() {
+function isDeliverableType(value) {
+  return ["산출물", "Deliverable", "Artifact"].includes(value);
+}
+
+function rowHasOwner(row) {
+  return Boolean(String(row.owner || "").trim());
+}
+
+function rowChildren(rows) {
+  const children = new Map();
+  rows.forEach((row) => {
+    if (!row.parent_code) return;
+    children.set(row.parent_code, [...(children.get(row.parent_code) || []), row]);
+  });
+  return children;
+}
+
+function quickFilterMatches(row, rows, filterKey) {
+  if (!filterKey) return true;
+  const children = rowChildren(rows);
+  if (filterKey === "unsynced") return !row.already_synced;
+  if (filterKey === "ownerless") return !rowHasOwner(row);
+  if (filterKey === "risk") return isRiskType(row.item_type);
+  if (filterKey === "deliverable") return isDeliverableType(row.item_type);
+  if (filterKey === "leaf") return !(children.get(row.code) || []).length;
+  return true;
+}
+
+function matchesQuickFilter(row, rows) {
+  return quickFilterMatches(row, rows, state.projectQuickFilter);
+}
+
+function baseFilteredProjectPlanRows() {
   const rows = projectPlanRows();
   const rowByCode = projectRowMap(rows);
   const rootCode = projectRootCode(rows);
@@ -832,10 +868,24 @@ function filteredProjectPlanRows() {
   });
 }
 
+function filteredProjectPlanRows() {
+  const rows = projectPlanRows();
+  return baseFilteredProjectPlanRows().filter((row) => matchesQuickFilter(row, rows));
+}
+
+function displayProjectPlanRows(rows, allRows = projectPlanRows()) {
+  const rootCode = projectRootCode(allRows);
+  const displayRows = rows.filter((row) => row.code !== rootCode);
+  return displayRows.length || rows.length !== 1 ? displayRows : rows;
+}
+
 function resetProjectPlanFilters() {
   state.projectWbsSearch = "";
   state.projectPhaseFilter = "";
   state.projectTypeFilter = "";
+  state.projectQuickFilter = "";
+  state.selectedWbsCode = null;
+  state.collapsedPhaseCodes = new Set();
 }
 
 function renderPortfolioTabs() {
@@ -910,6 +960,254 @@ function renderProjectPlanFilters() {
   ].join("");
   typeFilter.value = state.projectTypeFilter;
   typeFilter.disabled = !rows.length;
+}
+
+function rowTitle(row) {
+  return row.name || row.subject || "작업명 없음";
+}
+
+function rowSyncState(row) {
+  const pulled = row.metadata?.openproject_pull || {};
+  const percentValue = pulled.percent_complete !== null && pulled.percent_complete !== undefined
+    ? Number(pulled.percent_complete)
+    : row.already_synced
+      ? 100
+      : 0;
+  const percent = Number.isFinite(percentValue) ? Math.max(0, Math.min(100, percentValue)) : 0;
+  const label = pulled.status
+    ? `${pulled.status}${pulled.percent_complete !== null && pulled.percent_complete !== undefined ? ` ${percent}%` : ""}`
+    : row.already_synced
+      ? "동기화 완료"
+      : "동기화 대기";
+  return {
+    label,
+    percent,
+    className: statusClass(pulled.status || (row.already_synced ? "synced" : "pending")),
+  };
+}
+
+function rowParentText(row, rowByCode) {
+  if (!row.parent_code) return "최상위";
+  const parent = rowByCode.get(row.parent_code);
+  return parent ? `${parent.code} ${rowTitle(parent)}` : row.parent_code;
+}
+
+function rowPhaseText(row, rowByCode, rootCode) {
+  const phaseCode = phaseCodeForRow(row, rowByCode, rootCode);
+  const phase = rowByCode.get(phaseCode);
+  if (phase) return rowTitle(phase);
+  if (row.parent_code === rootCode) return rowTitle(row);
+  return "공통";
+}
+
+function boardColumnForRow(row) {
+  if (isRiskType(row.item_type)) return "risk";
+  if (!rowHasOwner(row)) return "ownerless";
+  if (row.already_synced) return "synced";
+  return "ready";
+}
+
+function boardColumns() {
+  return [
+    { key: "ready", label: "수행 대기" },
+    { key: "synced", label: "동기화 완료" },
+    { key: "risk", label: "리스크/이슈" },
+    { key: "ownerless", label: "담당 미지정" },
+  ];
+}
+
+function renderWbsViewSwitch() {
+  document.querySelectorAll("[data-wbs-view]").forEach((button) => {
+    const selected = button.dataset.wbsView === state.projectPlanView;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+}
+
+function quickFilterDefinitions(baseRows, allRows) {
+  const count = (key) => baseRows.filter((row) => quickFilterMatches(row, allRows, key)).length;
+  return [
+    { key: "", label: "전체", count: baseRows.length },
+    { key: "unsynced", label: "미동기화", count: count("unsynced") },
+    { key: "ownerless", label: "담당자 없음", count: count("ownerless") },
+    { key: "risk", label: "리스크", count: count("risk") },
+    { key: "deliverable", label: "산출물", count: count("deliverable") },
+    { key: "leaf", label: "실행 작업", count: count("leaf") },
+  ];
+}
+
+function renderWbsQuickFilters(baseRows, allRows) {
+  const filters = quickFilterDefinitions(baseRows, allRows);
+  const activeFilterExists = filters.some((filter) => filter.key === state.projectQuickFilter);
+  if (!activeFilterExists) state.projectQuickFilter = "";
+  document.querySelector("#wbsQuickFilters").innerHTML = filters
+    .map((filter) => {
+      const selected = filter.key === state.projectQuickFilter;
+      return `
+        <button
+          class="wbs-filter-chip ${selected ? "selected" : ""}"
+          type="button"
+          data-wbs-filter="${escapeHtml(filter.key)}"
+          aria-pressed="${selected ? "true" : "false"}"
+        >
+          ${escapeHtml(filter.label)} <span>${escapeHtml(filter.count)}</span>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function renderWbsWorkCard(row, rowByCode, options = {}) {
+  const depth = Math.max(0, rowDepth(row, rowByCode) - 1);
+  const sync = rowSyncState(row);
+  const selected = row.code === state.selectedWbsCode;
+  const riskClass = isRiskType(row.item_type) ? " risk-item" : "";
+  const compactClass = options.compact ? " compact" : "";
+  return `
+    <button
+      class="wbs-work-card${selected ? " selected" : ""}${riskClass}${compactClass}"
+      type="button"
+      data-wbs-code="${escapeHtml(row.code)}"
+      style="--depth: ${depth}; --progress: ${sync.percent}%"
+    >
+      <span class="wbs-work-card-main">
+        <span class="wbs-code-badge">${escapeHtml(row.code)}</span>
+        <span class="wbs-work-title">${escapeHtml(rowTitle(row))}</span>
+      </span>
+      <span class="wbs-work-meta">
+        <span class="status-pill ${statusClass(row.item_type)}">${escapeHtml(itemTypeLabel(row.item_type))}</span>
+        <span>${escapeHtml(row.owner || "담당자 없음")}</span>
+        <span>가중치 ${escapeHtml(row.weight ?? "-")}</span>
+        <span>${escapeHtml(rowParentText(row, rowByCode))}</span>
+      </span>
+      <span class="wbs-work-progress" aria-hidden="true"><span></span></span>
+      <span class="wbs-work-footer">
+        <span><span class="sync-dot ${sync.className}"></span>${escapeHtml(sync.label)}</span>
+        <span>${escapeHtml(sync.percent)}%</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderWbsEmptyState(emptyText) {
+  return `
+    <article class="wbs-empty-state">
+      <strong>${escapeHtml(emptyText)}</strong>
+      <span>검색어, 단계, 유형, 빠른 필터를 조정해 보세요.</span>
+    </article>
+  `;
+}
+
+function phaseGroupsForRows(rows, allRows, rowByCode, rootCode) {
+  const phases = allRows.filter((row) => row.parent_code === rootCode);
+  const groups = phases.map((phase) => ({
+    key: phase.code,
+    phase,
+    rows: [],
+  }));
+  const groupByKey = new Map(groups.map((group) => [group.key, group]));
+  const misc = { key: "__misc", phase: null, rows: [] };
+
+  rows.forEach((row) => {
+    const phaseCode = row.parent_code === rootCode ? row.code : phaseCodeForRow(row, rowByCode, rootCode);
+    const group = groupByKey.get(phaseCode) || misc;
+    group.rows.push(row);
+  });
+
+  return [...groups, misc].filter((group) => group.rows.length);
+}
+
+function renderProjectPlanList(rows, rowByCode, emptyText) {
+  return rows.length
+    ? rows.map((row) => renderWbsWorkCard(row, rowByCode)).join("")
+    : renderWbsEmptyState(emptyText);
+}
+
+function renderProjectPlanGroups(rows, allRows, rowByCode, rootCode, emptyText) {
+  if (!rows.length) return renderWbsEmptyState(emptyText);
+  return phaseGroupsForRows(rows, allRows, rowByCode, rootCode)
+    .map((group) => {
+      const collapsed = state.collapsedPhaseCodes.has(group.key);
+      const phaseRows = group.phase && group.rows.length > 1
+        ? group.rows.filter((row) => row.code !== group.phase.code)
+        : group.rows;
+      const cardRows = phaseRows.length ? phaseRows : group.rows;
+      const weight = cardRows.reduce((sum, row) => sum + (Number(row.weight) || 0), 0);
+      return `
+        <article class="wbs-phase-group ${collapsed ? "collapsed" : ""}">
+          <button class="wbs-phase-header" type="button" data-group-toggle="${escapeHtml(group.key)}">
+            <span>${collapsed ? "▸" : "▾"}</span>
+            <strong>${escapeHtml(group.phase ? rowTitle(group.phase) : "기타 작업")}</strong>
+            <small>${escapeHtml(cardRows.length)}개 작업 · 가중치 ${escapeHtml(weight)}</small>
+          </button>
+          <div class="wbs-phase-body">
+            ${collapsed ? "" : cardRows.map((row) => renderWbsWorkCard(row, rowByCode)).join("")}
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderProjectPlanBoard(rows, rowByCode, emptyText) {
+  if (!rows.length) return renderWbsEmptyState(emptyText);
+  return `
+    <div class="wbs-board">
+      ${boardColumns()
+        .map((column) => {
+          const columnRows = rows.filter((row) => boardColumnForRow(row) === column.key);
+          return `
+            <section class="wbs-board-column">
+              <div class="wbs-board-header">
+                <strong>${escapeHtml(column.label)}</strong>
+                <span>${escapeHtml(columnRows.length)}</span>
+              </div>
+              <div class="wbs-board-items">
+                ${columnRows.length
+                  ? columnRows.map((row) => renderWbsWorkCard(row, rowByCode, { compact: true })).join("")
+                  : '<p class="wbs-board-empty">항목 없음</p>'}
+              </div>
+            </section>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderWbsDetailDrawer(rows, rowByCode, rootCode) {
+  const title = document.querySelector("#wbsDetailTitle");
+  const content = document.querySelector("#wbsDetailContent");
+  const row = rows.find((item) => item.code === state.selectedWbsCode);
+
+  if (!row) {
+    title.textContent = "WBS 항목을 선택하세요";
+    content.innerHTML = '<p class="empty-detail">왼쪽 작업을 선택하면 상세 정보가 표시됩니다.</p>';
+    return;
+  }
+
+  const sync = rowSyncState(row);
+  const phaseText = rowPhaseText(row, rowByCode, rootCode);
+  title.textContent = rowTitle(row);
+  content.innerHTML = `
+    <div class="wbs-detail-summary">
+      <span class="wbs-code-badge">${escapeHtml(row.code)}</span>
+      <span class="status-pill ${statusClass(row.item_type)}">${escapeHtml(itemTypeLabel(row.item_type))}</span>
+      <span class="status-pill ${sync.className}">${escapeHtml(sync.label)}</span>
+    </div>
+    <div class="wbs-detail-progress" style="--progress: ${sync.percent}%">
+      <span><strong>${escapeHtml(sync.percent)}%</strong> 진행률</span>
+      <i aria-hidden="true"><b></b></i>
+    </div>
+    <dl class="wbs-detail-list">
+      <div><dt>단계</dt><dd>${escapeHtml(phaseText)}</dd></div>
+      <div><dt>상위 WBS</dt><dd>${escapeHtml(rowParentText(row, rowByCode))}</dd></div>
+      <div><dt>담당자</dt><dd>${escapeHtml(row.owner || "담당자 없음")}</dd></div>
+      <div><dt>가중치</dt><dd>${escapeHtml(row.weight ?? "-")}</dd></div>
+      <div><dt>동기화</dt><dd>${escapeHtml(row.already_synced ? "OpenProject 반영 완료" : "동기화 대기")}</dd></div>
+      <div><dt>작업 유형</dt><dd>${escapeHtml(itemTypeLabel(row.item_type))}</dd></div>
+    </dl>
+  `;
 }
 
 function renderProjectImportControls() {
@@ -991,11 +1289,23 @@ function renderProjectPlan() {
   document.querySelector("#projectDetailBaseline").textContent = plan ? baselineText(plan.baseline) : "-";
 
   renderProjectPlanFilters();
+  renderWbsViewSwitch();
 
   const allRows = projectPlanRows();
+  const baseRows = displayProjectPlanRows(baseFilteredProjectPlanRows(), allRows);
+  renderWbsQuickFilters(baseRows, allRows);
+
   const rows = filteredProjectPlanRows();
+  const displayRows = displayProjectPlanRows(rows, allRows);
   const rowByCode = projectRowMap(allRows);
-  const isFiltered = Boolean(state.projectWbsSearch || state.projectPhaseFilter || state.projectTypeFilter || state.portfolioView !== "pmo");
+  const rootCode = projectRootCode(allRows);
+  const isFiltered = Boolean(
+    state.projectWbsSearch
+    || state.projectPhaseFilter
+    || state.projectTypeFilter
+    || state.projectQuickFilter
+    || state.portfolioView !== "pmo",
+  );
   const emptyText = state.portfolioView === "risk" && allRows.length
     ? "리스크/이슈 WBS 항목 없음"
     : state.portfolioView === "delivery" && allRows.length
@@ -1003,35 +1313,20 @@ function renderProjectPlan() {
       : isFiltered
         ? "조건에 맞는 WBS 항목 없음"
         : "상단에서 프로젝트를 선택하면 WBS 작업 리스트가 표시됩니다";
-  document.querySelector("#projectPlanRows").innerHTML = rows.length
-    ? rows
-        .map(
-          (row) => {
-            const depth = Math.max(0, rowDepth(row, rowByCode) - 1);
-            const pulled = row.metadata?.openproject_pull || {};
-            const pulledText = pulled.status
-              ? ` · ${escapeHtml(pulled.status)}${pulled.percent_complete !== null && pulled.percent_complete !== undefined ? ` ${escapeHtml(pulled.percent_complete)}%` : ""}`
-              : "";
-            return `
-            <tr>
-              <td>${escapeHtml(row.code)}</td>
-              <td>
-                <span class="wbs-subject" style="--depth: ${depth}">${escapeHtml(row.name || row.subject)}</span>
-              </td>
-              <td>${escapeHtml(itemTypeLabel(row.item_type))}</td>
-              <td>${escapeHtml(row.owner || "-")}</td>
-              <td>${row.weight ?? "-"}</td>
-              <td><span class="sync-dot ${row.already_synced ? "stable" : "attention"}"></span>${row.already_synced ? "완료" : "대기"}${pulledText}</td>
-            </tr>
-          `;
-          },
-        )
-        .join("")
-    : `
-      <tr class="empty-row">
-        <td colspan="6">${emptyText}</td>
-      </tr>
-    `;
+
+  if (!displayRows.some((row) => row.code === state.selectedWbsCode)) {
+    state.selectedWbsCode = displayRows[0]?.code || null;
+  }
+
+  const list = document.querySelector("#projectPlanRows");
+  if (state.projectPlanView === "group") {
+    list.innerHTML = renderProjectPlanGroups(displayRows, allRows, rowByCode, rootCode, emptyText);
+  } else if (state.projectPlanView === "board") {
+    list.innerHTML = renderProjectPlanBoard(displayRows, rowByCode, emptyText);
+  } else {
+    list.innerHTML = renderProjectPlanList(displayRows, rowByCode, emptyText);
+  }
+  renderWbsDetailDrawer(displayRows, rowByCode, rootCode);
 }
 
 function renderApprovals() {
@@ -2517,12 +2812,48 @@ document.querySelector("#approvalLoadMoreButton").addEventListener("click", () =
   state.approvalLimit += 5;
   loadData();
 });
-document.querySelector(".segmented").addEventListener("click", (event) => {
+document.querySelector(".portfolio-tabs").addEventListener("click", (event) => {
   const button = event.target.closest("[data-portfolio-tab]");
   if (!button) return;
   state.portfolioView = button.dataset.portfolioTab;
   renderPortfolioTabs();
   renderProjectPlan();
+});
+document.querySelector("#wbsViewSwitch").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-wbs-view]");
+  if (!button) return;
+  state.projectPlanView = button.dataset.wbsView;
+  renderProjectPlan();
+});
+document.querySelector("#wbsQuickFilters").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-wbs-filter]");
+  if (!button) return;
+  state.projectQuickFilter = button.dataset.wbsFilter;
+  renderProjectPlan();
+});
+document.querySelector("#projectPlanRows").addEventListener("click", (event) => {
+  const groupButton = event.target.closest("[data-group-toggle]");
+  if (groupButton) {
+    const groupKey = groupButton.dataset.groupToggle;
+    if (state.collapsedPhaseCodes.has(groupKey)) {
+      state.collapsedPhaseCodes.delete(groupKey);
+    } else {
+      state.collapsedPhaseCodes.add(groupKey);
+    }
+    renderProjectPlan();
+    return;
+  }
+
+  const card = event.target.closest("[data-wbs-code]");
+  if (!card) return;
+  state.selectedWbsCode = card.dataset.wbsCode;
+  renderProjectPlan();
+});
+document.querySelector("#wbsDetailCloseButton").addEventListener("click", () => {
+  state.selectedWbsCode = null;
+  const rowByCode = projectRowMap(projectPlanRows());
+  renderWbsDetailDrawer([], rowByCode, projectRootCode(projectPlanRows()));
+  document.querySelectorAll(".wbs-work-card.selected").forEach((card) => card.classList.remove("selected"));
 });
 document.querySelector("#userRows").addEventListener("click", (event) => {
   const button = event.target.closest("[data-user-action]");
