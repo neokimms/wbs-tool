@@ -37,6 +37,9 @@ param databaseNames array = [
 @description('Azure 서비스(AKS 등)의 접근을 허용할지 여부 - VNet 통합을 사용하지 않는 경우 true')
 param allowAzureServices bool = true
 
+@description('CREATE EXTENSION 허용 목록 (Azure Database for PostgreSQL은 azure.extensions 서버 파라미터에 등록된 확장만 설치 가능). wbs-api 마이그레이션(001_init.sql)이 pgcrypto, citext를 사용')
+param allowedExtensions string = 'pgcrypto,citext'
+
 @description('고가용성(Zone Redundant) 활성화 여부 - 운영 환경 권장')
 param highAvailabilityEnabled bool = false
 
@@ -82,6 +85,15 @@ resource allowAzureServicesRule 'Microsoft.DBforPostgreSQL/flexibleServers/firew
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '0.0.0.0'
+  }
+}
+
+resource extensionsConfig 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-03-01-preview' = {
+  parent: postgres
+  name: 'azure.extensions'
+  properties: {
+    value: allowedExtensions
+    source: 'user-override'
   }
 }
 
