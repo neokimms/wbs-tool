@@ -12,6 +12,9 @@ param location string
 @description('ACR SKU')
 param sku string = 'Standard'
 
+@description('Admin 사용자 활성화 여부 - AKS는 managed identity(AcrPull)를 쓰므로 기본 false. Container Apps에서 레지스트리 시크릿으로 간단히 인증할 때만 true로 설정')
+param adminUserEnabled bool = false
+
 param tags object = {}
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
@@ -22,7 +25,7 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
     name: sku
   }
   properties: {
-    adminUserEnabled: false
+    adminUserEnabled: adminUserEnabled
   }
 }
 
