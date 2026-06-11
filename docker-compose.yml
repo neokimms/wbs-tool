@@ -72,9 +72,22 @@ services:
       WBS_LOGIN_ALIASES_JSON: ${WBS_LOGIN_ALIASES_JSON:-}
       WBS_AUDIT_RETENTION_DAYS: ${WBS_AUDIT_RETENTION_DAYS:-365}
       WBS_RUN_MIGRATIONS_ON_STARTUP: ${WBS_RUN_MIGRATIONS_ON_STARTUP:-true}
+      MULTITENANCY_ENABLED: ${MULTITENANCY_ENABLED:-true}
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-default}
+      WBS_REPORT_SCHEDULER_ENABLED: ${WBS_REPORT_SCHEDULER_ENABLED:-true}
+      WBS_REPORT_TIMEZONE: ${WBS_REPORT_TIMEZONE:-Asia/Seoul}
+      WBS_REPORT_OUTPUT_DIR: /app/outputs/reports
+      WBS_SMTP_HOST: ${WBS_SMTP_HOST:-}
+      WBS_SMTP_PORT: ${WBS_SMTP_PORT:-587}
+      WBS_SMTP_USERNAME: ${WBS_SMTP_USERNAME:-}
+      WBS_SMTP_PASSWORD: ${WBS_SMTP_PASSWORD:-}
+      WBS_SMTP_FROM: ${WBS_SMTP_FROM:-}
+      WBS_SMTP_USE_TLS: ${WBS_SMTP_USE_TLS:-true}
+      WBS_SMTP_USE_SSL: ${WBS_SMTP_USE_SSL:-false}
       BACKUP_DIR: /app/backups/postgres
     volumes:
-      - ./backups/postgres:/app/backups/postgres:ro
+      - wbs_backups:/app/backups/postgres
+      - report_outputs:/app/outputs/reports
     ports:
       - "${WBS_API_PORT:-8000}:8000"
 
@@ -113,7 +126,29 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
 
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: ["monitoring"]
+    depends_on:
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+
 volumes:
   postgres17_data:
   openproject_assets:
   prometheus_data:
+  grafana_data:
+  wbs_backups:
+  report_outputs:

@@ -2,5 +2,13 @@ apiVersion: v2
 name: wbs-platform
 description: On-premises WBS platform extension layer for OpenProject CE
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - wbs
+  - openproject
+  - pmo
+  - enterprise
+home: https://github.com/neokimms/wbs-platform
+maintainers:
+  - name: neokimms

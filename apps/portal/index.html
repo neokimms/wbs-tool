@@ -3,29 +3,50 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>WBS 운영 포털</title>
-    <link rel="stylesheet" href="./styles.css?v=20260604-v2" />
+    <title>AX WBS</title>
+    <link rel="stylesheet" href="./styles.css?v=20260610-login-copy-01" />
   </head>
   <body data-auth="pending">
 
     <!-- ── 로그인 화면 ──────────────────────────────────── -->
     <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
-      <form class="login-panel" id="loginForm">
-        <div>
-          <p class="eyebrow">보안 접속</p>
-          <h1 id="loginTitle">WBS Control 로그인</h1>
+      <div class="login-layout">
+        <div class="login-brand-card" aria-hidden="true">
+          <div class="brand-mark large">W</div>
+          <p class="eyebrow">AX WBS PLATFORM</p>
+          <h2>조직의 모든 프로젝트를 하나의 흐름으로 연결합니다.</h2>
+          <ul class="login-feature-list" aria-label="핵심 운영 영역">
+            <li>
+              <strong>권한</strong>
+              <span>역할 기반 접근 제어</span>
+            </li>
+            <li>
+              <strong>실행</strong>
+              <span>내부 WBS 기준선과 작업 현황</span>
+            </li>
+            <li>
+              <strong>감사</strong>
+              <span>접속 및 변경 이력 추적</span>
+            </li>
+          </ul>
         </div>
-        <label>
-          <span>계정</span>
-          <input id="loginEmailInput" name="email" type="text" autocomplete="username" required />
-        </label>
-        <label>
-          <span>비밀번호</span>
-          <input id="loginPasswordInput" name="password" type="password" autocomplete="current-password" required />
-        </label>
-        <p class="form-status" id="loginStatus"></p>
-        <button class="primary-button" id="loginSubmitButton" type="submit">로그인</button>
-      </form>
+        <form class="login-panel" id="loginForm">
+          <div>
+            <p class="eyebrow">보안 접속</p>
+            <h1 id="loginTitle">AX WBS 로그인</h1>
+          </div>
+          <label>
+            <span>계정</span>
+            <input id="loginEmailInput" name="email" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            <span>비밀번호</span>
+            <input id="loginPasswordInput" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <p class="form-status" id="loginStatus"></p>
+          <button class="primary-button" id="loginSubmitButton" type="submit">로그인</button>
+        </form>
+      </div>
     </section>
 
     <div class="app-shell">
@@ -34,38 +55,79 @@
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">W</div>
           <div>
-            <strong>WBS Control</strong>
-            <span>PMO 포털</span>
+            <strong>AX WBS</strong>
           </div>
         </div>
         <nav class="nav-list">
-          <a class="active" href="#dashboard"  data-min-role="viewer">대시보드</a>
-          <a href="#portfolio"                 data-min-role="viewer">프로젝트 현황</a>
-          <a href="#wbs-plan"                  data-min-role="viewer">WBS 관리</a>
-          <a href="#templates"                 data-min-role="viewer">표준/일반 WBS 관리</a>
-          <a href="#approvals"                 data-min-role="viewer">승인 이력</a>
-          <a href="#sync"                      data-min-role="pmo">OpenProject</a>
-          <a href="#operations"                data-min-role="admin">운영 점검</a>
-          <a href="#users"                     data-min-role="admin">사용자</a>
-          <a href="#audit"                     data-min-role="pmo">감사 로그</a>
-          <a href="#settings"                  data-min-role="admin">설정</a>
-          <a href="#guide" class="nav-guide-link" data-min-role="viewer">사용자 가이드</a>
+          <a class="active" href="#dashboard"  data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/></svg></span><span class="nav-label">대시보드</span></a>
+          <a href="#announcements"             data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4V4Zm12 1.5V8h2.5L16 5.5ZM6 11h8v2H6v-2Zm0 4h8v2H6v-2Zm0-8h6v2H6V7Z"/></svg></span><span class="nav-label">공지사항</span></a>
+          <a href="#portfolio"                 data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4V7Zm2 2v8h12V9H6Zm2-4h8v2H8V5Z"/></svg></span><span class="nav-label">프로젝트 현황</span></a>
+          <a href="#op-view"                   data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4V5Zm0 6h10v4H4v-4Zm12 0h4v10h-4V11ZM4 17h10v4H4v-4Z"/></svg></span><span class="nav-label">WBS 현황</span></a>
+          <a href="#wbs-plan"                  data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h5v5H5V4Zm0 11h5v5H5v-5Zm9-6h5v5h-5V9Zm-4-2h2v2h-2V7Zm2 5h2v2h-2v-2Zm-2 5h4v2h-4v-2Z"/></svg></span><span class="nav-label">WBS 관리</span></a>
+          <a href="#workboard"                 data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h5v14H4V5Zm7 0h4v14h-4V5Zm6 0h3v14h-3V5Z"/></svg></span><span class="nav-label">작업 현황</span></a>
+          <a href="#templates"                 data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z"/></svg></span><span class="nav-label">표준/일반 WBS 관리</span></a>
+          <a href="#risks"                     data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm1 13h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg></span><span class="nav-label">리스크·이슈</span></a>
+          <a href="#resource"                  data-min-role="pmo"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c0-4 3-7 6-7s6 3 6 7H2Zm12.5 0c-.2-2.2-1-4-2.3-5.4 1-.6 2.2-.9 3.8-.9 3 0 5 2.5 5 6.3h-6.5Z"/></svg></span><span class="nav-label">자원 배분</span></a>
+          <a href="#settings"                  data-min-role="pmo"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 3h-3l-.4 2.2c-.6.2-1.1.4-1.6.7L6.6 4.7 4.5 6.8l1.2 1.9c-.3.5-.5 1-.7 1.6L3 10.7v3l2 .4c.2.6.4 1.1.7 1.6l-1.2 1.9 2.1 2.1 1.9-1.2c.5.3 1 .5 1.6.7l.4 2.2h3l.4-2.2c.6-.2 1.1-.4 1.6-.7l1.9 1.2 2.1-2.1-1.2-1.9c.3-.5.5-1 .7-1.6l2-.4v-3l-2-.4c-.2-.6-.4-1.1-.7-1.6l1.2-1.9-2.1-2.1-1.9 1.2c-.5-.3-1-.5-1.6-.7L13.5 3ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg></span><span class="nav-label">설정</span></a>
+          <a href="#guide" class="nav-guide-link" data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm3 2v11a1 1 0 0 0 1 1h8V7a1 1 0 0 0-1-1H8Zm2 3h5v2h-5V9Zm0 4h5v2h-5v-2Z"/></svg></span><span class="nav-label">사용자 가이드</span></a>
         </nav>
       </aside>
+
+      <!-- ── 사이드바 백드롭 (모바일) ──────────────────── -->
+      <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
 
       <!-- ── 본문 ─────────────────────────────────────── -->
       <main class="workspace">
         <header class="topbar">
-          <div>
-            <p class="eyebrow">기업 WBS 플랫폼</p>
-            <h1>PMO 운영 콘솔</h1>
+          <div style="display:flex;align-items:center;gap:10px">
+            <!-- 햄버거 메뉴 (모바일) -->
+            <button class="mob-menu-btn" id="mobMenuBtn" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+            <div>
+              <p class="eyebrow" id="topbarEyebrow">기업 WBS 플랫폼</p>
+              <h1 id="topbarTitle">대시보드</h1>
+            </div>
           </div>
           <div class="toolbar" aria-label="화면 작업">
-            <span class="user-pill" id="userBadge">-</span>
-            <button class="icon-button" id="refreshButton" type="button" aria-label="새로고침" title="새로고침">↻</button>
-            <button class="primary-button" id="createProjectButton" type="button">프로젝트 생성</button>
-            <button class="secondary-button" id="passwordButton" type="button">비밀번호</button>
-            <button class="secondary-button" id="logoutButton" type="button">로그아웃</button>
+            <div class="tenant-switcher" id="tenantSwitcher" hidden>
+              <label for="tenantSelect">테넌트</label>
+              <select id="tenantSelect" aria-label="현재 테넌트" onchange="window.switchTenant?.(this.value)"></select>
+              <span class="tenant-status-badge" id="tenantStatusBadge">default</span>
+            </div>
+            <!-- 다크모드 토글 -->
+            <button class="theme-toggle-btn" id="themeToggleBtn" type="button" aria-label="다크/라이트 모드 전환" title="다크/라이트 모드 전환">🌙</button>
+            <!-- P2-04: 알림 벨 -->
+            <div class="notif-wrap" id="notifWrap" hidden>
+              <button class="notif-bell-btn" id="notifBellBtn" type="button" aria-label="알림" aria-haspopup="true" aria-expanded="false">
+                <span class="notif-bell-icon">🔔</span>
+                <span class="notif-badge" id="notifBadge" hidden>0</span>
+              </button>
+              <div class="notif-dropdown" id="notifDropdown" hidden role="menu">
+                <div class="notif-dropdown-header">
+                  <strong>알림</strong>
+                  <button class="notif-read-all" id="notifReadAll" type="button">모두 읽음</button>
+                </div>
+                <div class="notif-list" id="notifList"></div>
+              </div>
+            </div>
+            <div class="user-menu-wrap" id="userMenuWrap">
+              <button class="user-avatar-btn" id="userAvatarBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="사용자 메뉴">
+                <span class="user-avatar-icon" id="userAvatarIcon" aria-hidden="true">?</span>
+                <span class="user-avatar-name" id="userAvatarName">-</span>
+                <span class="user-avatar-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="user-dropdown" id="userDropdown" role="menu" hidden>
+                <button class="user-dropdown-item" id="refreshButton" type="button" role="menuitem">
+                  <span>↻</span> 새로고침
+                </button>
+                <button class="user-dropdown-item" id="passwordButton" type="button" role="menuitem">
+                  <span>🔒</span> 비밀번호 변경
+                </button>
+                <div class="user-dropdown-divider"></div>
+                <button class="user-dropdown-item user-dropdown-logout" id="logoutButton" type="button" role="menuitem">
+                  <span>→</span> 로그아웃
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -78,28 +140,71 @@
                 <p class="eyebrow">프로젝트</p>
                 <h2>프로젝트 현황</h2>
               </div>
-              <div class="portfolio-filter" id="portfolioFilter" role="group" aria-label="프로젝트 필터">
-                <button class="filter-btn active" type="button" data-filter="all">전체</button>
-                <button class="filter-btn" type="button" data-filter="active">진행</button>
-                <button class="filter-btn" type="button" data-filter="closed">완료</button>
-                <button class="filter-btn" type="button" data-filter="rejected">반려</button>
+              <div class="portfolio-header-right" id="portfolioHeaderRight">
+                <div class="portfolio-filter" id="portfolioFilter" role="group" aria-label="프로젝트 필터">
+                  <button class="filter-btn active" type="button" data-filter="all">전체</button>
+                  <button class="filter-btn" type="button" data-filter="active">진행</button>
+                  <button class="filter-btn" type="button" data-filter="closed">완료</button>
+                  <button class="filter-btn" type="button" data-filter="rejected">반려</button>
+                </div>
+                <select class="table-filter-select" id="portfolioOwnerFilter" aria-label="담당자 필터">
+                  <option value="">담당자 전체</option>
+                </select>
+                <button class="primary-button" id="createProjectButton" type="button" style="min-height:30px;font-size:0.82rem;padding:0 14px">＋ 프로젝트 생성</button>
               </div>
             </div>
-            <div class="portfolio-meta" id="portfolioMeta"></div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>프로젝트</th>
-                    <th>담당</th>
-                    <th>상태</th>
-                    <th>유형</th>
-                    <th>시작일</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody id="projectRows"></tbody>
-              </table>
+            <nav class="portfolio-tab-bar" id="portfolioTabBar" role="tablist">
+              <button class="portfolio-tab active" type="button" data-portfolio-tab="list" role="tab">프로젝트 목록</button>
+              <button class="portfolio-tab" type="button" data-portfolio-tab="cr" role="tab">변경요청</button>
+            </nav>
+            <div id="portfolioListView">
+              <div class="portfolio-meta" id="portfolioMeta"></div>
+              <div class="dashboard-kpi-banner" id="dashboardKpiBanner" hidden></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><button class="sortable-th active" type="button" data-project-sort="name">프로젝트 <span aria-hidden="true">↑</span></button></th>
+                      <th><button class="sortable-th" type="button" data-project-sort="owner">담당 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-project-sort="status">상태 <span aria-hidden="true"></span></button></th>
+                      <th>테넌트</th>
+                      <th><button class="sortable-th" type="button" data-project-sort="template_key">유형 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-project-sort="start_date">시작일 <span aria-hidden="true"></span></button></th>
+                      <th>리스크/이슈</th>
+                      <th>작업</th>
+                    </tr>
+                  </thead>
+                  <tbody id="projectRows"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="portfolioCrView" hidden>
+              <div class="portfolio-cr-toolbar">
+                <div class="portfolio-filter" id="portfolioCrFilter" role="group" aria-label="변경요청 상태 필터">
+                  <button class="filter-btn active" type="button" data-cr-filter="all">전체</button>
+                  <button class="filter-btn" type="button" data-cr-filter="open">진행중</button>
+                  <button class="filter-btn" type="button" data-cr-filter="approved">승인</button>
+                  <button class="filter-btn" type="button" data-cr-filter="rejected">반려</button>
+                </div>
+                <span class="wbs-row-count" id="portfolioCrCount"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="ri-table">
+                  <thead>
+                    <tr>
+                      <th>구분</th>
+                      <th>프로젝트</th>
+                      <th>WBS 코드</th>
+                      <th>제목</th>
+                      <th>우선순위/영향도</th>
+                      <th>상태</th>
+                      <th>요청자</th>
+                      <th>등록일</th>
+                    </tr>
+                  </thead>
+                  <tbody id="portfolioCrRows"></tbody>
+                </table>
+              </div>
             </div>
           </article>
 
@@ -115,36 +220,144 @@
             <div class="approval-pipeline-list" id="approvalPipelineList"></div>
           </article>
 
-          <!-- ── WBS 계획 ────────────────────────────────── -->
-          <article class="panel" id="wbs-plan">
-            <div class="wbs-plan-header">
-              <div class="wbs-plan-title">
-                <p class="eyebrow">WBS</p>
-                <h2>WBS 관리</h2>
+          <!-- ── WBS 관리 (Professional Table View) ──────── -->
+          <article class="panel panel-wbs-pro" id="wbs-plan">
+
+            <!-- ── 헤더: 제목 + 프로젝트 선택 + 액션 ── -->
+            <div class="wbs-pro-header">
+              <div class="wbs-pro-title-block">
+                <p class="eyebrow">기준선</p>
+                <h2>WBS 기준선 관리</h2>
               </div>
-              <div class="wbs-plan-toolbar-row">
-                <select id="wbsPlanProjectSelect" class="wbs-project-select" aria-label="프로젝트 선택">
+              <select id="wbsPlanProjectSelect" class="wbs-pro-project-select" aria-label="프로젝트 선택">
+                <option value="">프로젝트 선택…</option>
+              </select>
+              <span class="status-pill stable" id="wbsPlanProjectName" hidden></span>
+              <div class="wbs-pro-actions">
+                <div class="wbs-weight-mini" id="wbsWeightMini"></div>
+                <button class="wbs-pro-btn" id="wbsPlanDownloadButton" type="button" disabled title="WBS 기준선 Excel 양식 다운로드">↓ 양식</button>
+                <label  class="wbs-pro-btn file-button" for="wbsPlanExcelInput" id="wbsPlanUploadLabel" aria-disabled="true">↑ 업로드</label>
+                <input id="wbsPlanExcelInput" type="file" accept=".xlsx" disabled />
+                <button class="wbs-pro-btn" id="wbsOwnerMapButton" type="button" disabled title="담당자 계정 매칭 검증 및 일괄 수정">담당자 검증</button>
+                <button class="wbs-pro-btn" id="wbsAddRowButton" type="button" disabled>＋ 항목</button>
+                <button class="wbs-pro-btn primary" id="wbsSaveButton" type="button" disabled>기준선 저장</button>
+              </div>
+            </div>
+
+            <!-- ── 툴바: 유형 칩 + 검색/필터 ── -->
+            <div class="wbs-pro-toolbar">
+              <div class="wbs-status-chips" id="wbsBaselineChips" role="group" aria-label="WBS 유형 필터">
+                <button class="wbs-chip active" data-wbs-type-chip="">전체</button>
+                <button class="wbs-chip" data-wbs-type-chip="단계">단계</button>
+                <button class="wbs-chip" data-wbs-type-chip="작업">작업</button>
+                <button class="wbs-chip" data-wbs-type-chip="산출물">산출물</button>
+                <button class="wbs-chip" data-wbs-type-chip="마일스톤">마일스톤</button>
+              </div>
+              <div class="wbs-pro-toolbar-right">
+                <select id="wbsPlanPhaseFilter" aria-label="단계 필터"><option value="">전체 단계</option></select>
+                <input  id="wbsPlanSearch" type="search" placeholder="검색…" aria-label="검색" />
+                <span   id="wbsBoardCount" class="wbs-row-count"></span>
+                <button class="wbs-pro-btn-sm" id="wbsCollapseAllBtn" type="button" title="모두 접기">접기</button>
+                <button class="wbs-pro-btn-sm" id="wbsExpandAllBtn"   type="button" title="모두 펼치기">펼치기</button>
+              </div>
+            </div>
+
+            <p class="form-status" id="wbsPlanStatus"></p>
+
+            <!-- ── WBS 테이블 ── -->
+            <div class="wbs-table-wrap" id="wbsTableWrap">
+              <table class="wbs-pro-table" id="wbsProTable">
+                <thead>
+                  <tr>
+                    <th class="th-freeze th-cb">No</th>
+                    <th class="th-freeze th-code">WBS 코드</th>
+                    <th class="th-freeze th-name">작업명</th>
+                    <th class="th-type">유형</th>
+                    <th class="th-tenant">테넌트</th>
+                    <th class="th-owner">담당자</th>
+                    <th class="th-start">시작일</th>
+                    <th class="th-end">종료일</th>
+                    <th class="th-progress">진행률</th>
+                    <th class="th-weight">가중치</th>
+                    <th class="th-actions">변경</th>
+                  </tr>
+                </thead>
+                <tbody id="wbsTableBody"></tbody>
+              </table>
+            </div>
+
+            <!-- ── 우측 상세 패널 ── -->
+            <aside class="wbs-detail-panel" id="wbsDetailPanel" hidden aria-label="작업 상세">
+              <div class="wbs-detail-header">
+                <div>
+                  <p class="eyebrow" id="wbsDetailCode">-</p>
+                  <h3 id="wbsDetailTitle">작업 상세</h3>
+                </div>
+                <button class="icon-button" id="wbsDetailClose" type="button" title="닫기">×</button>
+              </div>
+              <div class="wbs-detail-body" id="wbsDetailBody"></div>
+              <div class="wbs-detail-footer">
+                <button class="secondary-button" id="wbsDetailCancelBtn" type="button">취소</button>
+                <button class="primary-button"   id="wbsDetailSaveBtn"   type="button">저장</button>
+              </div>
+            </aside>
+
+          </article>
+
+          <!-- ── 내부 작업 현황: 내 작업 / PM 보드 / 간트 ─────── -->
+          <article class="panel workboard-panel" id="workboard" data-workboard-view="mine">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">실행 관리</p>
+                <h2>작업 현황</h2>
+                <p class="workboard-lead">프로젝트 WBS 항목을 내부 작업 항목으로 운영합니다.</p>
+              </div>
+              <div class="panel-header-actions workboard-actions">
+                <select id="workboardProjectSelect" class="wbs-project-select" aria-label="작업 현황 프로젝트 선택">
                   <option value="">프로젝트 선택…</option>
                 </select>
-                <div class="wbs-plan-actions">
-                  <span class="status-pill stable" id="wbsPlanProjectName" hidden>선택됨</span>
-                  <button class="secondary-button" id="wbsPlanDownloadButton" type="button" disabled title="선택 프로젝트 템플릿 Excel 다운로드">↓ Excel</button>
-                  <label  class="secondary-button file-button" for="wbsPlanExcelInput" id="wbsPlanUploadLabel" aria-disabled="true" title="Excel 업로드">↑ Excel 업로드</label>
-                  <input id="wbsPlanExcelInput" type="file" accept=".xlsx" disabled />
-                  <button class="secondary-button" id="wbsAddRowButton" type="button" disabled>행 추가</button>
-                  <button class="primary-button"   id="wbsSaveButton"   type="button" disabled>저장</button>
-                </div>
+                <select id="projectDeliveryModeSelect" class="wbs-project-select agile-mode-select" aria-label="프로젝트 수행 방식">
+                  <option value="waterfall">Waterfall</option>
+                  <option value="agile">Agile</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+                <button class="sync-ctrl-btn" id="workboardRefreshBtn" type="button">조회</button>
+                <span class="status-pill" id="workboardStatus">대기</span>
               </div>
             </div>
-            <p class="form-status" id="wbsPlanStatus"></p>
-            <div class="wbs-board-toolbar">
-              <input id="wbsPlanSearch" type="search" placeholder="작업 검색…" aria-label="WBS 검색" />
-              <select id="wbsPlanPhaseFilter" aria-label="단계 필터"><option value="">전체 단계</option></select>
-              <select id="wbsPlanTypeFilter" aria-label="유형 필터"><option value="">전체 유형</option></select>
-              <span id="wbsBoardCount" class="wbs-board-count"></span>
+
+            <nav class="workboard-tab-bar" id="workboardTabBar" role="tablist" aria-label="작업 현황 보기">
+              <button class="workboard-tab active" type="button" role="tab" aria-selected="true" data-workboard-view="mine">내 작업</button>
+              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="board">작업 보드</button>
+              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="gantt">간트</button>
+              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-backlog">백로그</button>
+              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-board">스프린트 보드</button>
+              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-metrics">번다운·Velocity</button>
+            </nav>
+
+            <div class="workboard-alert-row" id="workboardAlertRow" aria-live="polite"></div>
+            <div class="workboard-body" id="workboardBody">
+              <p class="empty-state">프로젝트를 선택하면 내부 WBS 작업 현황이 표시됩니다.</p>
             </div>
-            <div class="wbs-board" id="wbsBoardRows" role="list" aria-label="WBS 작업 목록"></div>
           </article>
+
+          <div class="project-drawer workboard-drawer" id="workboardDrawer" aria-modal="true" role="dialog" aria-labelledby="workTaskTitle" hidden>
+            <div class="drawer-backdrop" id="workboardDrawerBackdrop"></div>
+            <aside class="drawer-panel">
+              <div class="drawer-header">
+                <div>
+                  <p class="eyebrow" id="workTaskCode">작업 항목</p>
+                  <h2 id="workTaskTitle">작업 상세</h2>
+                </div>
+                <button class="icon-button" id="workTaskCloseBtn" type="button" title="닫기" aria-label="닫기">×</button>
+              </div>
+              <div class="drawer-content" id="workboardDrawerBody"></div>
+              <div class="drawer-footer">
+                <button class="secondary-button" id="workTaskCancelBtn" type="button">닫기</button>
+                <button class="primary-button" id="workTaskSaveBtn" type="button">저장</button>
+              </div>
+            </aside>
+          </div>
 
           <!-- ── 표준 WBS ──────────────────────────────── -->
           <!-- ── 표준 WBS (탭: 목록 | Excel 업로드) ─────── -->
@@ -164,18 +377,24 @@
 
             <!-- 탭 1: 표준 / 일반 WBS 목록 -->
             <div id="tplTabList" class="tpl-tab-content" role="tabpanel">
+              <nav class="wbs-list-tab-bar" role="tablist" aria-label="WBS 목록 유형">
+                <button class="wbs-list-tab active" role="tab" aria-selected="true"
+                  data-wbs-list-tab="standard" aria-controls="standardWbsPanel" type="button">표준 WBS</button>
+                <button class="wbs-list-tab" role="tab" aria-selected="false"
+                  data-wbs-list-tab="custom" aria-controls="customWbsPanel" type="button">일반 WBS</button>
+              </nav>
 
               <!-- 표준 WBS 섹션 -->
-              <div class="wbs-section">
+              <div class="wbs-section" id="standardWbsPanel" data-wbs-list-panel="standard" role="tabpanel">
                 <div class="wbs-section-header">
                   <div class="wbs-section-badge standard">표준 WBS</div>
-                  <p class="wbs-section-desc">회사 공식 WBS 양식입니다. 프로젝트 생성 시 기준 템플릿으로 사용됩니다.</p>
+                  <p class="wbs-section-desc">회사 공식 WBS 양식입니다. Waterfall, Agile, Hybrid 프로젝트 생성 시 기준 템플릿으로 사용됩니다.</p>
                 </div>
                 <div class="template-list" id="templateList"></div>
               </div>
 
               <!-- 일반 WBS 섹션 -->
-              <div class="wbs-section">
+              <div class="wbs-section" id="customWbsPanel" data-wbs-list-panel="custom" role="tabpanel" hidden>
                 <div class="wbs-section-header">
                   <div class="wbs-section-badge custom">일반 WBS</div>
                   <p class="wbs-section-desc">프로젝트별 맞춤 WBS입니다. Excel 업로드로 등록하거나 WBS 관리 메뉴에서 직접 편집합니다.</p>
@@ -269,100 +488,815 @@
 
           <!-- ── OpenProject 연계 ───────────────────────── -->
           <article class="panel" id="sync">
-            <div class="panel-header">
-              <div><p class="eyebrow">엔진</p><h2>OpenProject 연계</h2></div>
-              <span class="status-pill attention" id="syncEngineStatus">점검 중</span>
-            </div>
-            <div class="sync-controls">
-              <select id="syncProjectSelect" aria-label="동기화 프로젝트"></select>
-              <button class="icon-button" id="syncRefreshButton" type="button" aria-label="OpenProject 상태 새로고침" title="새로고침">↻</button>
-              <button class="secondary-button" id="syncPreflightButton" type="button">점검</button>
-              <button class="primary-button"   id="syncDryRunButton"    type="button">모의 실행</button>
-              <button class="danger-button"    id="syncRunButton"       type="button" disabled>동기화</button>
-            </div>
-            <dl class="definition-list">
-              <div><dt>모드</dt><dd id="syncMode">Community Edition 엔진</dd></div>
-              <div><dt>상태</dt><dd id="syncState">대기</dd></div>
-              <div><dt>행</dt><dd id="syncPendingRows">-</dd></div>
-            </dl>
-            <div class="sync-checks" id="syncChecks"></div>
-            <pre class="payload-preview" id="syncPayloadPreview">샘플 payload 대기</pre>
-            <div class="sync-history" aria-label="최근 OpenProject 동기화 실행">
-              <div class="compact-label"><span>최근 실행</span><small id="syncRunCount">0</small></div>
-              <div class="sync-run-list" id="syncRunList"></div>
-            </div>
+
           </article>
 
-          <!-- ── 운영 점검 ───────────────────────────────── -->
-          <article class="panel" id="operations">
+          <!-- ── 공지사항(게시판) ───────────────────────── -->
+          <article class="panel" id="announcements">
             <div class="panel-header">
-              <div><p class="eyebrow">운영</p><h2>제품화 체크</h2></div>
-              <span class="status-pill attention" id="operationsStatus">점검 중</span>
-            </div>
-            <div class="check-list" id="operationsChecks"></div>
-          </article>
-
-          <!-- ── 사용자 관리 ─────────────────────────────── -->
-          <article class="panel" id="users">
-            <div class="panel-header">
-              <div><p class="eyebrow">접근 권한</p><h2>사용자 관리</h2></div>
-              <span class="status-pill stable" id="userCount">0</span>
-            </div>
-            <form class="user-admin-form" id="userCreateForm">
-              <input id="userEmailInput"    name="email"        type="email"    autocomplete="off"          placeholder="email@company.com" required />
-              <input id="userNameInput"     name="display_name" type="text"     minlength="2" maxlength="120" placeholder="표시 이름" required />
-              <select id="userRoleInput" name="role" aria-label="사용자 역할">
-                <option value="viewer">조회자</option>
-                <option value="pmo">PMO</option>
-                <option value="admin">관리자</option>
-              </select>
-              <input id="userPasswordInput" name="password"     type="password" minlength="8" autocomplete="new-password" placeholder="초기 비밀번호" required />
-              <button class="primary-button" id="userSubmitButton" type="submit">계정 생성</button>
-            </form>
-            <p class="form-status" id="userFormStatus"></p>
-            <div class="table-wrap user-table">
-              <table>
-                <thead>
-                  <tr><th>사용자</th><th>역할</th><th>상태</th><th>최근 로그인</th><th>세션</th><th>작업</th></tr>
-                </thead>
-                <tbody id="userRows"></tbody>
-              </table>
-            </div>
-          </article>
-
-          <!-- ── 감사 로그 ───────────────────────────────── -->
-          <article class="panel" id="audit">
-            <div class="panel-header">
-              <div><p class="eyebrow">감사</p><h2>운영 감사 로그</h2></div>
-              <div class="panel-actions">
-                <span class="status-pill stable" id="auditCount">0</span>
-                <button class="icon-button" id="auditRefreshButton" type="button" aria-label="감사 로그 새로고침" title="새로고침">↻</button>
+              <div>
+                <p class="eyebrow">전사 커뮤니케이션</p>
+                <h2>공지사항</h2>
+                <p class="resource-lead">새 글 등록 시 대상 참여자에게 인앱 알림이 자동 전달됩니다 (이메일 설정 불필요).</p>
+              </div>
+              <div class="panel-header-actions announce-header-actions">
+                <select id="announceFilter" aria-label="공지 범위 필터">
+                  <option value="all">전체</option>
+                  <option value="tenant">전사 공지</option>
+                  <option value="project">프로젝트별 공지</option>
+                </select>
+                <span id="announceCount" class="wbs-row-count"></span>
+                <button class="primary-button announce-create-btn" id="createAnnouncementBtn" type="button" style="display:none">＋ 새 공지 작성</button>
               </div>
             </div>
-            <div class="audit-list" id="auditList"></div>
+
+            <div class="announce-list" id="announceList"></div>
           </article>
 
-          <!-- ── 설정 ────────────────────────────────────── -->
-          <article class="panel" id="settings">
-            <div class="panel-header">
-              <div><p class="eyebrow">설정</p><h2>플랫폼 설정</h2></div>
-              <span class="status-pill attention">어댑터</span>
+          <!-- 공지 작성/수정 다이얼로그 -->
+          <dialog class="dialog dialog-wide" id="announceDialog" aria-labelledby="announceDialogTitle">
+            <form class="dialog-panel" id="announceForm" method="dialog">
+              <div class="dialog-header">
+                <h3 id="announceDialogTitle">새 공지 작성</h3>
+                <button class="icon-button" type="button" id="announceDialogClose">×</button>
+              </div>
+              <div class="form-grid">
+                <label style="grid-column:1/-1"><span>제목 *</span><input id="announceTitle" type="text" required maxlength="200" /></label>
+                <label style="grid-column:1/-1"><span>대상</span>
+                  <div class="announce-target-row">
+                    <select id="announceScope"></select>
+                    <label class="announce-tenant-check"><input type="checkbox" id="announceTenantWide" /> 전사공지</label>
+                  </div>
+                </label>
+                <label class="announce-pin-label" style="grid-column:1/-1">
+                  <input type="checkbox" id="announcePinned" /> 상단 고정
+                </label>
+                <label style="grid-column:1/-1"><span>내용</span><textarea id="announceBody" rows="12" maxlength="4000" style="resize:vertical"></textarea></label>
+              </div>
+              <p class="form-status" id="announceFormStatus"></p>
+              <div class="dialog-footer">
+                <button class="secondary-button" type="button" id="announceDialogCancel">취소</button>
+                <button class="primary-button" type="submit" id="announceDialogSubmit">등록</button>
+              </div>
+            </form>
+          </dialog>
+
+          <!-- 공지 상세 보기 다이얼로그 -->
+          <dialog class="dialog dialog-wide" id="announceDetailDialog" aria-labelledby="announceDetailTitle">
+            <div class="dialog-panel">
+              <div class="dialog-header">
+                <h3 id="announceDetailTitle"></h3>
+                <button class="icon-button" type="button" id="announceDetailClose">×</button>
+              </div>
+              <div class="announce-detail-meta">
+                <span class="announce-scope-badge" id="announceDetailScope"></span>
+                <span class="announce-card-meta" id="announceDetailInfo"></span>
+                <label class="announce-tenant-check announce-detail-pin" id="announceDetailPinWrap" style="display:none">
+                  <input type="checkbox" id="announceDetailPinned" /> 상단 고정
+                </label>
+              </div>
+              <div class="announce-detail-body" id="announceDetailBody"></div>
+              <div class="dialog-footer">
+                <button class="secondary-button" type="button" id="announceDetailCancel">취소</button>
+                <button class="secondary-button" type="button" id="announceDetailEdit" style="display:none">수정</button>
+                <button class="danger-button" type="button" id="announceDetailDelete" style="display:none">삭제</button>
+              </div>
             </div>
-            <dl class="definition-list settings-engine">
-              <div><dt>모드</dt><dd id="settingsEngineMode">PM 엔진</dd></div>
-              <div><dt>경계</dt><dd id="settingsEngineBoundary">pm-engine-api</dd></div>
-              <div><dt>실행 상태</dt><dd id="settingsEngineRuntime">모의 실행 보호</dd></div>
-            </dl>
-            <div class="settings-layout">
-              <div class="settings-grid" id="settingsCards"></div>
-              <div class="settings-editor">
-                <select id="settingsKeySelect" aria-label="설정 항목"></select>
-                <textarea id="settingsJsonInput" spellcheck="false" aria-label="설정 JSON"></textarea>
-                <div class="settings-actions">
-                  <p class="form-status" id="settingsStatus"></p>
-                  <button class="primary-button" id="settingsSaveButton" type="button">설정 저장</button>
+          </dialog>
+
+          <!-- ── P2-02: 리스크 · 이슈 트래킹 ─────────── -->
+          <article class="panel" id="risks">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">리스크 관리</p>
+                <h2>리스크·이슈</h2>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <nav class="ri-tab-bar" id="riTabBar" role="tablist">
+                  <button class="ri-tab active" data-ri-tab="risks" role="tab">리스크</button>
+                  <button class="ri-tab" data-ri-tab="issues" role="tab">이슈</button>
+                </nav>
+                <button class="primary-button" id="createRiskBtn" type="button" style="font-size:0.82rem;min-height:30px;padding:0 14px">＋ 리스크 등록</button>
+                <button class="primary-button" id="createIssueBtn" type="button" style="font-size:0.82rem;min-height:30px;padding:0 14px;display:none">＋ 이슈 등록</button>
+              </div>
+            </div>
+
+            <!-- 필터 바 -->
+            <div class="ri-filter-bar">
+              <select id="riProjectFilter" aria-label="프로젝트 필터"><option value="">전체 프로젝트</option></select>
+              <select id="riStatusFilter" aria-label="상태 필터"><option value="">전체 상태</option></select>
+              <select id="riOwnerFilter" aria-label="담당자 필터"><option value="">담당자 전체</option></select>
+              <span id="riCount" class="wbs-row-count"></span>
+            </div>
+
+            <!-- 리스크 탭 -->
+            <div id="riTabRisks" class="ri-tab-content" role="tabpanel">
+              <div class="ri-table-wrap">
+                <table class="ri-table" id="riskTable">
+                  <thead>
+                    <tr>
+                      <th><button class="sortable-th" type="button" data-ri-sort="project_name">프로젝트 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="title">제목 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="severity">심각도 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="likelihood">가능성 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="owner">담당자 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="status">상태 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="due_date">목표일 <span aria-hidden="true"></span></button></th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="riskTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 이슈 탭 -->
+            <div id="riTabIssues" class="ri-tab-content" role="tabpanel" hidden>
+              <div class="ri-table-wrap">
+                <table class="ri-table" id="issueTable">
+                  <thead>
+                    <tr>
+                      <th><button class="sortable-th" type="button" data-ri-sort="project_name">프로젝트 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="title">제목 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="priority">우선순위 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="assignee">담당자 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="status">상태 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-ri-sort="due_date">목표일 <span aria-hidden="true"></span></button></th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="issueTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+
+          <!-- 리스크 등록 다이얼로그 -->
+          <dialog class="dialog" id="riskDialog" aria-labelledby="riskDialogTitle">
+            <form class="dialog-panel" id="riskForm" method="dialog">
+              <div class="dialog-header">
+                <h3 id="riskDialogTitle">리스크 등록</h3>
+                <button class="icon-button" type="button" id="riskDialogClose">×</button>
+              </div>
+              <div class="form-grid">
+                <label style="grid-column:1/-1"><span>제목 *</span><input id="riskTitle" type="text" required maxlength="200" /></label>
+                <label><span>심각도</span>
+                  <select id="riskSeverity"><option>높음</option><option selected>보통</option><option>낮음</option></select>
+                </label>
+                <label><span>발생 가능성</span>
+                  <select id="riskLikelihood"><option>높음</option><option selected>보통</option><option>낮음</option></select>
+                </label>
+                <label><span>담당자</span><input id="riskOwner" type="text" value="PMO" maxlength="80" /></label>
+                <label><span>목표일</span><input id="riskDueDate" type="date" /></label>
+                <label style="grid-column:1/-1"><span>설명</span><textarea id="riskDescription" rows="3" maxlength="2000" style="resize:vertical"></textarea></label>
+                <label style="grid-column:1/-1"><span>대응 전략</span><textarea id="riskMitigation" rows="2" maxlength="2000" style="resize:vertical"></textarea></label>
+              </div>
+              <p class="form-status" id="riskFormStatus"></p>
+              <div class="dialog-footer">
+                <button class="secondary-button" type="button" id="riskDialogCancel">취소</button>
+                <button class="primary-button" type="submit" id="riskDialogSubmit">등록</button>
+              </div>
+            </form>
+          </dialog>
+
+          <!-- 이슈 등록 다이얼로그 -->
+          <dialog class="dialog" id="issueDialog" aria-labelledby="issueDialogTitle">
+            <form class="dialog-panel" id="issueForm" method="dialog">
+              <div class="dialog-header">
+                <h3 id="issueDialogTitle">이슈 등록</h3>
+                <button class="icon-button" type="button" id="issueDialogClose">×</button>
+              </div>
+              <div class="form-grid">
+                <label style="grid-column:1/-1"><span>제목 *</span><input id="issueTitle" type="text" required maxlength="200" /></label>
+                <label><span>우선순위</span>
+                  <select id="issuePriority"><option>높음</option><option selected>보통</option><option>낮음</option></select>
+                </label>
+                <label><span>담당자</span><input id="issueAssignee" type="text" value="PMO" maxlength="80" /></label>
+                <label><span>목표일</span><input id="issueDueDate" type="date" /></label>
+                <label style="grid-column:1/-1"><span>설명</span><textarea id="issueDescription" rows="3" maxlength="2000" style="resize:vertical"></textarea></label>
+              </div>
+              <p class="form-status" id="issueFormStatus"></p>
+              <div class="dialog-footer">
+                <button class="secondary-button" type="button" id="issueDialogCancel">취소</button>
+                <button class="primary-button" type="submit" id="issueDialogSubmit">등록</button>
+              </div>
+            </form>
+          </dialog>
+
+          <!-- 리스크/이슈 상세 드로어 -->
+          <div class="project-drawer ri-detail-drawer" id="riDetailDrawer" aria-modal="true" role="dialog" aria-labelledby="riDetailTitle" hidden>
+            <div class="drawer-backdrop" id="riDetailBackdrop"></div>
+            <aside class="drawer-panel">
+              <div class="drawer-header">
+                <div>
+                  <p class="eyebrow" id="riDetailEyebrow">리스크·이슈 상세</p>
+                  <h2 id="riDetailTitle">-</h2>
+                </div>
+                <button class="icon-button" id="riDetailClose" type="button" aria-label="닫기" title="닫기">×</button>
+              </div>
+              <div class="drawer-content" id="riDetailBody"></div>
+            </aside>
+          </div>
+
+          <!-- ── P3-01: 프로젝트 상세 ── -->
+          <article class="panel" id="projectDetail">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">프로젝트</p>
+                <h2 id="pdTitle">—</h2>
+              </div>
+              <div class="panel-header-actions">
+                <button class="secondary-button" id="pdBackBtn">← 목록</button>
+              </div>
+            </div>
+            <nav class="pd-tab-bar" id="pdTabBar" role="tablist">
+              <button class="pd-tab active" data-pd-tab="overview"  role="tab">개요</button>
+              <button class="pd-tab"        data-pd-tab="wbs"       role="tab">WBS</button>
+              <button class="pd-tab"        data-pd-tab="risks"     role="tab">리스크</button>
+              <button class="pd-tab"        data-pd-tab="issues"    role="tab">이슈</button>
+              <button class="pd-tab"        data-pd-tab="cr"        role="tab">변경요청</button>
+              <button class="pd-tab"        data-pd-tab="approvals" role="tab">승인 이력</button>
+              <button class="pd-tab"        data-pd-tab="diff"      role="tab">버전 비교</button>
+              <button class="pd-tab"        data-pd-tab="members"   role="tab">멤버</button>
+            </nav>
+            <div id="pdBody" class="pd-body"></div>
+
+            <!-- 변경요청 생성 다이얼로그 -->
+            <dialog id="crDialog" aria-labelledby="crDialogTitle">
+              <form method="dialog" id="crForm">
+                <h3 id="crDialogTitle">변경요청 등록</h3>
+                <div class="form-grid">
+                  <label style="grid-column:1/-1"><span>제목 *</span><input id="crTitle" required maxlength="200" /></label>
+                  <label><span>우선순위</span>
+                    <select id="crPriority">
+                      <option value="높음">높음</option>
+                      <option value="보통" selected>보통</option>
+                      <option value="낮음">낮음</option>
+                    </select>
+                  </label>
+                  <label><span>요청자</span><input id="crRequestedBy" maxlength="50" /></label>
+                  <label><span>WBS 코드</span><input id="crWbsCode" maxlength="30" /></label>
+                  <label><span>일정 영향(일)</span><input id="crScheduleDays" type="number" /></label>
+                  <label><span>비용 영향</span><input id="crCost" type="number" step="0.01" /></label>
+                  <label style="grid-column:1/-1"><span>영향 범위</span><input id="crImpactScope" placeholder="일정, 비용, 품질, 인력 등" /></label>
+                  <label style="grid-column:1/-1"><span>설명</span><textarea id="crDescription" rows="3" maxlength="2000" style="resize:vertical"></textarea></label>
+                </div>
+                <p class="form-status" id="crFormStatus"></p>
+                <div class="dialog-footer">
+                  <button class="secondary-button" type="button" id="crDialogCancel">취소</button>
+                  <button class="primary-button" type="submit" id="crDialogSubmit">등록</button>
+                </div>
+              </form>
+            </dialog>
+          </article>
+
+          <!-- ── P3-05: 자원 배분 ── -->
+          <article class="panel" id="resource">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">PMO</p>
+                <h2>자원 배분</h2>
+                <p class="resource-lead">WBS 담당자 작업 부하, 사용자 계정별 할당, PMO 가동율을 같은 기간 기준으로 구분해 조회합니다.</p>
+              </div>
+              <div class="panel-header-actions">
+                <div class="resource-period-control" role="group" aria-label="조회 기간">
+                  <label class="period-field">
+                    <span>시작</span>
+                    <input type="date" id="resourceFrom" class="date-input" />
+                  </label>
+                  <span class="period-separator" aria-hidden="true">~</span>
+                  <label class="period-field">
+                    <span>종료</span>
+                    <input type="date" id="resourceTo" class="date-input" />
+                  </label>
+                </div>
+                <button class="secondary-button" id="resourceRefreshBtn">조회</button>
+              </div>
+            </div>
+            <nav class="resource-tab-bar" id="resourceTabBar" role="tablist" aria-label="자원 배분 보기">
+              <button class="resource-tab active" type="button" role="tab" aria-selected="true" data-resource-view="workload">WBS 작업 부하</button>
+              <button class="resource-tab" type="button" role="tab" aria-selected="false" data-resource-view="accounts">계정별 할당</button>
+              <button class="resource-tab" type="button" role="tab" aria-selected="false" data-resource-view="capacity">PMO 가동율</button>
+            </nav>
+            <div id="resourceBody" class="resource-body">
+              <p class="empty-state">날짜를 선택하고 조회하세요.</p>
+            </div>
+          </article>
+
+          <!-- ── 설정 (탭: 플랫폼 설정 | 승인 이력 | 운영 점검 | 사용자 | 감사 로그) ── -->
+          <article class="panel" id="settings" data-settings-tab="platform">
+            <div class="panel-header">
+              <div><p class="eyebrow">관리</p><h2>설정</h2></div>
+              <nav class="stg-tab-bar" id="settingsTabBar" role="tablist" aria-label="설정 탭">
+                <button class="stg-tab active" role="tab" data-stg-tab="platform"    aria-selected="true">플랫폼 설정</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="policy"      aria-selected="false">프로젝트 운영 정책</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="approvals"   aria-selected="false">승인 이력</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="operations"  aria-selected="false">운영 점검</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="users"       aria-selected="false">사용자</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="audit"       aria-selected="false">감사 로그</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="openproject" aria-selected="false">외부 연동</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="auth"        aria-selected="false">인증(LDAP)</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="smtp"        aria-selected="false">알림(SMTP)</button>
+                <button class="stg-tab"        role="tab" data-stg-tab="tenants"     aria-selected="false">테넌트</button>
+              </nav>
+            </div>
+
+            <!-- ── 탭 1: 플랫폼 설정 ── -->
+            <div id="stgTabPlatform" class="stg-tab-content" role="tabpanel">
+              <dl class="definition-list settings-engine">
+                <div><dt>모드</dt><dd id="settingsEngineMode">PM 엔진</dd></div>
+                <div><dt>경계</dt><dd id="settingsEngineBoundary">pm-engine-api</dd></div>
+                <div><dt>실행 상태</dt><dd id="settingsEngineRuntime">모의 반영 보호</dd></div>
+              </dl>
+              <div class="settings-layout">
+                <div class="settings-grid" id="settingsCards"></div>
+                <div class="settings-editor">
+                  <select id="settingsKeySelect" aria-label="설정 항목"></select>
+                  <textarea id="settingsJsonInput" spellcheck="false" aria-label="설정 JSON"></textarea>
+                  <div class="settings-actions">
+                    <p class="form-status" id="settingsStatus"></p>
+                    <button class="primary-button" id="settingsSaveButton" type="button">설정 저장</button>
+                  </div>
                 </div>
               </div>
+
+              <!-- 위젯 표시 설정 (대시보드 패널 + 좌측 메뉴 표시 여부) -->
+              <div class="stg-section" style="margin-top:24px;border-top:1px solid var(--border);padding-top:24px">
+                <h3>위젯 표시 설정</h3>
+                <p class="stg-desc">대시보드 패널과 좌측 메뉴의 표시 여부를 항목별로 켜고 끌 수 있습니다.</p>
+                <div class="widget-toggle-bar" id="widgetTogglePanel"></div>
+              </div>
+            </div>
+
+            <!-- ── 탭: 프로젝트 운영 정책 ── -->
+            <div id="stgTabPolicy" class="stg-tab-content" role="tabpanel" hidden>
+              <div id="projectPolicyPanel"></div>
+            </div>
+
+            <!-- ── 탭 2: 승인 이력 ── -->
+            <div id="stgTabApprovals" class="stg-tab-content" role="tabpanel" hidden>
+              <div id="stgApprovalList"></div>
+            </div>
+
+            <!-- ── 탭 3: 운영 점검 ── -->
+            <div id="stgTabOperations" class="stg-tab-content" role="tabpanel" hidden>
+              <div class="panel-header" style="margin-bottom:12px">
+                <span style="font-size:0.78rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">시스템 상태</span>
+                <span class="status-pill attention" id="operationsStatus">점검 중</span>
+              </div>
+              <div class="check-list" id="operationsChecks"></div>
+
+              <!-- P3-07: 백업/복원 섹션 -->
+              <div class="stg-section" style="margin-top:24px;border-top:1px solid var(--border);padding-top:24px">
+                <h3>DB 백업</h3>
+                <p class="stg-desc">PostgreSQL pg_dump을 실행해 .sql.gz 파일을 서버에 저장합니다.</p>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+                  <button class="primary-button" id="backupTriggerBtn">지금 백업</button>
+                  <button class="secondary-button" id="backupRefreshBtn">↻ 목록 새로고침</button>
+                  <span id="backupStatus" style="font-size:13px;color:var(--secondary-text)"></span>
+                </div>
+                <table class="ri-table" id="backupTable">
+                  <thead>
+                    <tr>
+                      <th>파일명</th>
+                      <th>크기</th>
+                      <th>생성일시</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="backupTableBody">
+                    <tr><td colspan="4" class="empty-state">백업 파일이 없습니다.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ── 탭 4: 사용자 ── -->
+            <div id="stgTabUsers" class="stg-tab-content" role="tabpanel" hidden>
+              <div class="panel-header" style="margin-bottom:12px">
+                <span style="font-size:0.78rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">사용자 관리</span>
+                <span class="status-pill stable" id="userCount">0</span>
+              </div>
+              <form class="user-admin-form" id="userCreateForm">
+                <input id="userEmailInput"    name="email"        type="email"    autocomplete="off"    placeholder="email@company.com" required />
+                <input id="userNameInput"     name="display_name" type="text"     minlength="2" maxlength="120" placeholder="표시 이름" required />
+                <select id="userRoleInput" name="role" aria-label="사용자 역할">
+                  <option value="viewer">조회자</option>
+                  <option value="pmo">PMO</option>
+                  <option value="admin">관리자</option>
+                </select>
+                <select id="userGroupInput" name="group_id" aria-label="소속 그룹" required>
+                  <option value="">소속 그룹 선택</option>
+                </select>
+                <input id="userPasswordInput" name="password"     type="password" minlength="8" autocomplete="new-password" placeholder="초기 비밀번호" required />
+                <button class="primary-button" id="userSubmitButton" type="submit">계정 생성</button>
+              </form>
+              <p class="form-status" id="userFormStatus"></p>
+              <div class="user-group-toolbar" aria-label="소속 그룹 관리">
+                <div class="user-group-list" id="userGroupList"></div>
+                <div class="user-group-create-row">
+                  <input id="userGroupNameInput" type="text" maxlength="100" autocomplete="off" placeholder="새 소속 그룹명" />
+                  <button class="secondary-button" id="userGroupCreateButton" type="button">그룹 추가</button>
+                </div>
+              </div>
+              <div class="table-control-row" aria-label="사용자 테이블 필터">
+                <select class="table-filter-select" id="userRoleFilter" aria-label="역할 필터">
+                  <option value="">역할 전체</option>
+                </select>
+                <select class="table-filter-select" id="userStatusFilter" aria-label="상태 필터">
+                  <option value="">상태 전체</option>
+                </select>
+                <select class="table-filter-select" id="userGroupFilter" aria-label="소속 그룹 필터">
+                  <option value="">그룹 전체</option>
+                </select>
+              </div>
+              <div class="table-wrap user-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th><button class="sortable-th" type="button" data-user-sort="email">사용자 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-user-sort="group_name">소속 그룹 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-user-sort="role">역할 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-user-sort="status">상태 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-user-sort="last_login_at">최근 로그인 <span aria-hidden="true"></span></button></th>
+                      <th><button class="sortable-th" type="button" data-user-sort="active_sessions">세션 <span aria-hidden="true"></span></button></th>
+                      <th>작업</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userRows"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- ── 탭 5: 감사 로그 ── -->
+            <div id="stgTabAudit" class="stg-tab-content" role="tabpanel" hidden>
+              <div class="audit-header-row">
+                <nav class="audit-sub-tab-bar" id="auditSubTabBar" role="tablist" aria-label="감사 로그 분류">
+                  <button class="audit-sub-tab active" data-audit-tab="all"      role="tab">전체</button>
+                  <button class="audit-sub-tab"        data-audit-tab="auth"     role="tab">인증</button>
+                  <button class="audit-sub-tab"        data-audit-tab="project"  role="tab">프로젝트/WBS</button>
+                  <button class="audit-sub-tab"        data-audit-tab="approval" role="tab">승인</button>
+                  <button class="audit-sub-tab"        data-audit-tab="system"   role="tab">시스템</button>
+                </nav>
+                <div class="panel-actions">
+                  <span class="status-pill stable" id="auditCount">0</span>
+                  <button class="secondary-button btn-sm" id="auditExportCsvBtn" type="button">CSV 내보내기</button>
+                  <button class="icon-button" id="auditRefreshButton" type="button" aria-label="감사 로그 새로고침" title="새로고침">↻</button>
+                </div>
+              </div>
+              <div class="audit-list audit-list-scroll" id="auditList"></div>
+            </div>
+
+            <!-- ── 탭 6: OpenProject 연계 ── -->
+            <div id="stgTabOpenproject" class="stg-tab-content" role="tabpanel" hidden>
+
+              <!-- 상단: 컨트롤 바 -->
+              <div class="sync-topbar">
+                <div class="sync-topbar-left">
+                  <span class="status-pill attention" id="syncEngineStatus">점검 중</span>
+                  <label class="external-integration-toggle">
+                    <input id="externalIntegrationToggle" type="checkbox" checked />
+                    <span>외부 연동 사용</span>
+                  </label>
+                </div>
+                <div class="sync-inline-controls">
+                  <select id="syncProjectSelect" aria-label="기준선 반영 프로젝트"></select>
+                  <button class="icon-button" id="syncRefreshButton" type="button" aria-label="상태 새로고침" title="새로고침">↻</button>
+                  <button class="sync-ctrl-btn" id="syncPreflightButton" type="button">점검</button>
+                  <button class="sync-ctrl-btn primary" id="syncDryRunButton" type="button">모의 반영</button>
+                  <button class="sync-ctrl-btn danger"  id="syncRunButton"    type="button" disabled>기준선 반영</button>
+                </div>
+              </div>
+
+              <!-- 엔진 상태 + 점검 결과 + Payload -->
+              <div class="sync-body">
+                <div class="sync-meta-row">
+                  <dl class="sync-meta-dl">
+                    <div><dt>모드</dt><dd id="syncMode">CE 엔진</dd></div>
+                    <div><dt>상태</dt><dd id="syncState">대기</dd></div>
+                    <div><dt>대기 행</dt><dd id="syncPendingRows">-</dd></div>
+                  </dl>
+                </div>
+                <div class="sync-checks" id="syncChecks"></div>
+                <pre class="payload-preview" id="syncPayloadPreview">모의 반영 또는 점검 버튼을 클릭하면 payload 미리보기가 표시됩니다.</pre>
+              </div>
+
+              <!-- 양방향 실시간 연계 -->
+              <div class="sync-reverse-section">
+                <div class="sync-reverse-header">
+                  <div class="sync-reverse-title-row">
+                    <span class="sync-reverse-badge">⇄ 양방향</span>
+                    <span class="sync-reverse-title">외부 도구 상태 반영</span>
+                  </div>
+                  <button class="sync-ctrl-btn" id="syncPullButton" type="button" disabled>← 상태 가져오기</button>
+                </div>
+                <div class="sync-reverse-body">
+
+                  <!-- A: 승인 시 자동 기준선 반영 (AX WBS → 외부 도구) -->
+                  <div class="sync-realtime-item">
+                    <div class="sync-realtime-icon sync-realtime-push">→</div>
+                    <div class="sync-realtime-content">
+                      <strong>승인 시 자동 기준선 반영</strong>
+                      <span>PMO가 WBS 기준선을 승인하면 외부 도구에 작업 항목을 생성합니다.</span>
+                    </div>
+                    <span class="sync-realtime-status" id="autoSyncStatus">설정 확인 중</span>
+                  </div>
+
+                  <!-- B: Webhook 실시간 수신 (OP → AX WBS) -->
+                  <div class="sync-realtime-item">
+                    <div class="sync-realtime-icon sync-realtime-pull">←</div>
+                    <div class="sync-realtime-content">
+                      <strong>Webhook 실시간 수신 (OpenProject → AX WBS)</strong>
+                      <span>외부 도구에서 진척률·상태가 변경되면 WBS Platform에 반영할 수 있습니다.</span>
+                      <div class="sync-webhook-row" style="margin-top:6px">
+                        <span class="sync-webhook-label">Webhook URL</span>
+                        <code class="sync-webhook-url" id="syncWebhookUrl">-</code>
+                        <button class="icon-button" id="syncWebhookCopyBtn" type="button" title="복사">📋</button>
+                      </div>
+                      <p style="font-size:0.72rem;color:var(--text-muted);margin:4px 0 0">
+                        OpenProject 관리 → Webhooks → 위 URL 등록 → 이벤트: work_package:updated
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- 수동 Pull -->
+                  <div class="sync-realtime-item">
+                    <div class="sync-realtime-icon" style="background:#f3f4f6;color:var(--text-muted)">↻</div>
+                    <div class="sync-realtime-content">
+                      <strong>수동 Pull (버튼)</strong>
+                      <p class="sync-pull-status" id="syncPullStatus" style="margin:2px 0 0">프로젝트 선택 후 버튼 클릭</p>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- 연계 프로젝트 뷰어 -->
+              <div class="sync-history-section">
+                <div class="sync-history-header">
+                  <span class="sync-history-title">기준선 반영 프로젝트</span>
+                  <small id="syncedProjectCount">0</small>
+                </div>
+                <div id="opSyncedProjectList" class="op-synced-list"></div>
+              </div>
+
+              <!-- 최근 실행 이력 -->
+              <div class="sync-history-section" aria-label="최근 기준선 반영 실행 이력">
+                <div class="sync-history-header">
+                  <span class="sync-history-title">최근 실행 이력</span>
+                  <small id="syncRunCount">0</small>
+                </div>
+                <div class="sync-run-list" id="syncRunList"></div>
+              </div>
+
+              <!-- 온프레미스 인스턴스 -->
+              <div class="op-instance-section" id="opInstanceSection">
+                <div class="op-instance-header">
+                  <div class="op-instance-title-row">
+                    <span class="op-instance-icon">🔗</span>
+                    <span class="op-instance-title">온프레미스 OpenProject</span>
+                    <span class="op-instance-status" id="opInstanceStatus"></span>
+                  </div>
+                  <div class="op-instance-actions">
+                    <button class="sync-ctrl-btn" id="opInstanceCheckBtn" type="button">연결 확인</button>
+                    <a class="sync-ctrl-btn primary op-instance-open-btn" id="opInstanceOpenBtn"
+                       href="#" target="_blank" rel="noopener" style="text-decoration:none" hidden>↗ 열기</a>
+                  </div>
+                </div>
+                <div class="op-instance-body">
+                  <div class="op-instance-url-row">
+                    <span class="op-url-label">인스턴스 주소</span>
+                    <code class="op-url-value" id="opInstanceUrl">-</code>
+                  </div>
+                  <div class="op-instance-meta" id="opInstanceMeta"></div>
+                </div>
+              </div>
+
+            </div><!-- /stgTabOpenproject -->
+
+            <!-- ── P3-08: 인증(LDAP) 탭 ── -->
+            <div id="stgTabAuth" class="stg-tab-content" role="tabpanel" hidden>
+              <div class="stg-section">
+                <h3>인증 설정</h3>
+                <p class="stg-desc">현재 인증 백엔드: <strong id="authBackendLabel">—</strong></p>
+                <div class="form-grid" style="max-width:520px">
+                  <label style="grid-column:1/-1"><span>LDAP 서버</span><input id="ldapServer" placeholder="ldap.example.com" /></label>
+                  <label><span>포트</span><input id="ldapPort" type="number" placeholder="389" /></label>
+                  <label><span>SSL</span>
+                    <select id="ldapUseSSL">
+                      <option value="false">비활성</option>
+                      <option value="true">활성(LDAPS)</option>
+                    </select>
+                  </label>
+                  <label style="grid-column:1/-1"><span>Bind DN</span><input id="ldapBindDN" placeholder="cn=service,dc=example,dc=com" /></label>
+                  <label style="grid-column:1/-1"><span>Base DN</span><input id="ldapBaseDN" placeholder="dc=example,dc=com" /></label>
+                  <label style="grid-column:1/-1"><span>사용자 필터</span><input id="ldapUserFilter" placeholder="(mail={email})" /></label>
+                  <label><span>이메일 속성</span><input id="ldapAttrEmail" placeholder="mail" /></label>
+                  <label><span>이름 속성</span><input id="ldapAttrName" placeholder="cn" /></label>
+                </div>
+                <div class="stg-section-actions" style="margin-top:16px;display:flex;gap:8px">
+                  <input id="ldapTestEmail" placeholder="테스트 이메일" style="width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px" />
+                  <input id="ldapTestPassword" type="password" placeholder="비밀번호" style="width:140px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px" />
+                  <button class="secondary-button" id="ldapTestBtn">연결 테스트</button>
+                  <button class="secondary-button" id="ldapDiagnosticsBtn">실 서버 검증</button>
+                </div>
+                <p class="form-status" id="ldapTestStatus"></p>
+                <div class="ldap-diagnostic-list" id="ldapDiagnosticList" aria-live="polite"></div>
+              </div>
+            </div><!-- /stgTabAuth -->
+
+            <!-- ── P3-08: 알림(SMTP) 탭 ── -->
+            <div id="stgTabSmtp" class="stg-tab-content" role="tabpanel" hidden>
+              <div class="stg-section">
+                <div class="stg-callout-info">
+                  <strong>📋 이메일 연동이 어려운 환경이라면 — 공지사항</strong>
+                  <p>SMTP 설정과 무관하게, <a href="#announcements">공지사항</a> 메뉴에서 새 글을 등록하면 대상 사용자(전사 또는 해당 프로젝트 멤버)에게 인앱 알림이 즉시 전달됩니다. 온프레미스 등 메일 서버 연동이 어려운 환경에서는 공지사항 기능을 활용하세요.</p>
+                </div>
+              </div>
+              <div class="stg-section" style="border-top:1px solid var(--line)">
+                <h3>이메일 알림 설정</h3>
+                <p class="stg-desc">승인·이슈 이벤트 발생 시 이메일 발송에 사용됩니다.</p>
+                <dl class="definition-list" id="smtpCurrentSettings">
+                  <dt>SMTP_HOST</dt><dd id="smtpHostVal">—</dd>
+                  <dt>SMTP_PORT</dt><dd id="smtpPortVal">—</dd>
+                  <dt>SMTP_USER</dt><dd id="smtpUserVal">—</dd>
+                  <dt>NOTIFY_FROM_EMAIL</dt><dd id="smtpFromVal">—</dd>
+                </dl>
+                <p class="stg-note" style="margin-top:12px">⚠ SMTP 설정은 환경 변수로 관리됩니다. 변경하려면 docker-compose.yml 또는 Helm values.yaml의 <code>SMTP_*</code> 값을 수정하세요.</p>
+              </div>
+              <div class="stg-section" style="border-top:1px solid var(--line)">
+                <h3>자동 발송 스케줄</h3>
+                <p class="stg-desc">주간 보고서 및 알림을 자동으로 발송하는 스케줄을 설정합니다.</p>
+                <div id="scheduleList" class="schedule-list">
+                  <div class="schedule-row" data-schedule-key="weekly-pmo">
+                    <span class="schedule-label">📊 PMO 주간 보고서</span>
+                    <span class="schedule-desc">매주 월요일 오전 9시 — 전체 프로젝트 현황 Excel 발송</span>
+                    <span class="schedule-state status-pill attention" id="weeklyScheduleState">대기</span>
+                    <label class="toggle-switch" title="주간 보고서 자동 발송">
+                      <input type="checkbox" id="schedWeeklyReport">
+                      <span class="toggle-track"></span>
+                    </label>
+                  </div>
+                  <div class="schedule-row" data-schedule-key="risk-escalation">
+                    <span class="schedule-label">🔴 리스크 에스컬레이션</span>
+                    <span class="schedule-desc">매일 오전 8시 — 미처리 고위험 리스크 담당자 이메일 발송</span>
+                    <span class="schedule-state status-pill attention" id="riskScheduleState">대기</span>
+                    <label class="toggle-switch" title="리스크 에스컬레이션 자동 발송">
+                      <input type="checkbox" id="schedRiskEscalation">
+                      <span class="toggle-track"></span>
+                    </label>
+                  </div>
+                  <div class="schedule-row" data-schedule-key="approval-reminder">
+                    <span class="schedule-label">📅 승인 대기 리마인더</span>
+                    <span class="schedule-desc">매일 오후 5시 — 승인 대기 중인 WBS 항목 승인자에게 발송</span>
+                    <span class="schedule-state status-pill attention" id="approvalScheduleState">대기</span>
+                    <label class="toggle-switch" title="승인 리마인더 자동 발송">
+                      <input type="checkbox" id="schedApprovalReminder">
+                      <span class="toggle-track"></span>
+                    </label>
+                  </div>
+                </div>
+                <div class="schedule-recipient-panel" id="scheduleRecipientPanel">
+                  <div class="schedule-recipient-head">
+                    <div>
+                      <strong>수신 이메일</strong>
+                      <span>자동 발송 스케줄 공통 수신자</span>
+                    </div>
+                    <span class="recipient-count" id="scheduleRecipientCount">0 / 10</span>
+                  </div>
+                  <div class="recipient-editor" id="schedWeeklyRecipientsEditor">
+                    <div class="recipient-chips" id="schedWeeklyRecipientChips" aria-live="polite"></div>
+                    <input class="schedule-input recipient-input" id="schedWeeklyRecipientInput" type="email" placeholder="이메일 입력 후 Enter" aria-label="자동 발송 수신자 추가" autocomplete="email" />
+                  </div>
+                  <p class="recipient-hint" id="schedWeeklyRecipientHint">쉼표, Enter 또는 붙여넣기로 추가할 수 있습니다.</p>
+                </div>
+                <button class="primary-button" id="saveScheduleBtn" style="margin-top:16px;min-width:100px;min-height:34px;font-size:13px" type="button">저장</button>
+                <p class="form-status" id="scheduleServerStatus"></p>
+                <div class="schedule-summary" id="scheduleSummary">
+                  <div class="schedule-summary-head">
+                    <strong>등록된 스케줄</strong>
+                    <span id="scheduleRuntimeSummary">서버 상태 확인 전</span>
+                  </div>
+                  <div class="schedule-summary-grid" id="scheduleSummaryList">
+                    <span>아직 불러온 스케줄이 없습니다.</span>
+                  </div>
+                </div>
+                <p class="stg-note" style="margin-top:10px">⚠ SMTP가 미설정인 경우 이메일 발송이 비활성화됩니다.</p>
+              </div>
+            </div><!-- /stgTabSmtp -->
+
+            <!-- ── P3-08: 테넌트 탭 (admin 전용) ── -->
+            <div id="stgTabTenants" class="stg-tab-content" role="tabpanel" hidden>
+              <div class="stg-section">
+                <h3>테넌트 관리</h3>
+                <p class="stg-desc">멀티테넌시 활성화 시 고객사별 데이터를 격리합니다.</p>
+                <div class="panel-header-actions" style="margin-bottom:12px">
+                  <button class="primary-button btn-sm" id="addTenantBtn">+ 테넌트 추가</button>
+                </div>
+                <table class="ri-table" id="tenantTable">
+                  <thead><tr><th>ID</th><th>이름</th><th>상태</th><th>프로젝트/WBS</th><th>생성일</th><th></th></tr></thead>
+                  <tbody id="tenantTableBody"></tbody>
+                </table>
+              </div>
+              <dialog id="tenantDialog" aria-labelledby="tenantDialogTitle">
+                <form method="dialog" id="tenantForm">
+                  <h3 id="tenantDialogTitle">테넌트 추가</h3>
+                  <div class="form-grid">
+                    <label><span>ID (영소문자·숫자·하이픈) *</span><input id="tenantId" required pattern="[a-z0-9\-]+" maxlength="60" /></label>
+                    <label><span>이름 *</span><input id="tenantName" required maxlength="100" /></label>
+                  </div>
+                  <p class="form-status" id="tenantFormStatus"></p>
+                  <div class="dialog-footer">
+                    <button class="secondary-button" type="button" id="tenantDialogCancel">취소</button>
+                    <button class="primary-button" type="submit" id="tenantDialogSubmit">추가</button>
+                  </div>
+                </form>
+              </dialog>
+            </div><!-- /stgTabTenants -->
+
+          </article>
+
+          <!-- ── WBS 현황 (내부 WBS 조회/모니터링) ── -->
+          <article class="panel op-view" id="op-view" data-op-tab="wp">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">WBS 현황</p>
+                <h2>WBS 현황</h2>
+              </div>
+              <div class="op-view-header-right">
+                <select id="opViewProjectSelect" class="wbs-project-select" aria-label="WBS 현황 프로젝트 선택" style="max-width:300px">
+                  <option value="">프로젝트 선택…</option>
+                </select>
+                <button class="sync-ctrl-btn" id="opViewRefreshBtn" type="button" disabled title="현재 프로젝트 WBS 다시 불러오기">↻ 새로고침</button>
+                <span class="status-pill stable" id="opViewSource" hidden>내부 WBS</span>
+              </div>
+            </div>
+
+            <div class="op-view-overview-strip">
+              <div class="workboard-alert-row op-view-summary" id="opViewSummary" aria-live="polite"></div>
+
+              <nav class="op-view-tabs" id="opViewTabs" role="tablist" aria-label="WBS 현황 보기">
+                <button class="op-view-tab active" data-op-tab="wp"       role="tab" aria-selected="true">목록</button>
+                <button class="op-view-tab"        data-op-tab="gantt"    role="tab" aria-selected="false">간트</button>
+                <button class="op-view-tab"        data-op-tab="assignee" role="tab" aria-selected="false">담당자별</button>
+                <button class="op-view-tab"        data-op-tab="delayed"  role="tab" aria-selected="false">지연 항목</button>
+              </nav>
+            </div>
+
+            <!-- 탭 1: 내부 WBS 목록 -->
+            <div id="opTabWp" class="op-tab-content" role="tabpanel">
+              <div class="wbs-pro-toolbar" style="border-top:none;padding-top:6px">
+                <div class="wbs-status-chips" id="opStatusChips" role="group" aria-label="상태 필터">
+                  <button class="wbs-chip active" data-op-chip="">전체</button>
+                  <button class="wbs-chip" data-op-chip="대기">⬜ 대기</button>
+                  <button class="wbs-chip" data-op-chip="진행중">🔵 진행중</button>
+                  <button class="wbs-chip" data-op-chip="완료">✅ 완료</button>
+                  <button class="wbs-chip" data-op-chip="지연">🔴 지연</button>
+                  <button class="wbs-chip" data-op-chip="보류">⏸ 보류</button>
+                </div>
+                <div class="wbs-pro-toolbar-right">
+                  <select id="opWpTypeFilter" aria-label="유형 필터"><option value="">전체 유형</option></select>
+                  <input id="opWpSearch" type="search" placeholder="검색…" aria-label="검색" />
+                  <span id="opWpCount" class="wbs-row-count"></span>
+                </div>
+              </div>
+              <!-- WBS 관리와 동일한 테이블 구조 -->
+              <div class="wbs-table-wrap" style="max-height:calc(100vh - 360px)">
+                <table class="wbs-pro-table">
+                  <thead>
+                    <tr>
+                      <th class="th-freeze th-code">WBS 코드</th>
+                      <th class="th-freeze th-name">작업명</th>
+                      <th class="th-owner">담당자</th>
+                      <th class="th-status">상태</th>
+                      <th class="th-progress">진행률</th>
+                      <th class="th-start">시작일</th>
+                      <th class="th-end">종료일</th>
+                      <th class="th-weight">가중치</th>
+                    </tr>
+                  </thead>
+                  <tbody id="opWpList"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 탭 2: 내부 WBS 간트 -->
+            <div id="opTabGantt" class="op-tab-content" role="tabpanel" hidden>
+              <div class="op-gantt-wrap" id="opGanttWrap">
+                <p class="sync-pull-status" style="padding:24px;text-align:center">
+                  프로젝트를 선택하면 간트 차트가 표시됩니다.
+                </p>
+              </div>
+            </div>
+
+            <!-- 탭 3: 담당자별 현황 -->
+            <div id="opTabAssignee" class="op-tab-content" role="tabpanel" hidden>
+              <div class="workboard-table-wrap" id="opAssigneeWrap"></div>
+            </div>
+
+            <!-- 탭 4: 지연 항목 -->
+            <div id="opTabDelayed" class="op-tab-content" role="tabpanel" hidden>
+              <div class="workboard-table-wrap" id="opDelayedWrap"></div>
             </div>
           </article>
 
@@ -372,7 +1306,7 @@
               <div><p class="eyebrow">도움말</p><h2>사용자 가이드</h2></div>
               <span class="status-pill stable" id="guideViewLabel">개요</span>
             </div>
-            <nav class="guide-menu" id="guideMenu" aria-label="가이드 메뉴 선택"></nav>
+            <nav class="guide-menu" id="guideMenu" role="tablist" aria-label="가이드 메뉴 선택"></nav>
             <div id="guideContent" class="guide-content" aria-live="polite"></div>
           </article>
 
@@ -391,6 +1325,7 @@
           <button class="icon-button" id="wbsRowDialogClose" type="button" aria-label="닫기" title="닫기">×</button>
         </div>
         <div class="form-grid">
+          <!-- 기본 정보 -->
           <label>
             <span>WBS 코드 <small>(비워두면 자동 생성)</small></span>
             <input id="wbsRowCode" name="code" type="text" maxlength="40" placeholder="예) SI.1.1" />
@@ -403,6 +1338,7 @@
             <span>작업명 <small>*</small></span>
             <input id="wbsRowName" name="name" type="text" maxlength="160" required />
           </label>
+          <!-- 분류 -->
           <label>
             <span>유형</span>
             <select id="wbsRowItemType" name="item_type">
@@ -417,13 +1353,10 @@
             </select>
           </label>
           <label>
-            <span>담당</span>
-            <input id="wbsRowOwner" name="owner" type="text" maxlength="80" />
+            <span>담당자</span>
+            <input id="wbsRowOwner" name="owner" type="text" maxlength="80" placeholder="담당자명" list="wbsUserDatalist" autocomplete="off" />
           </label>
-          <label>
-            <span>가중치 (0–100)</span>
-            <input id="wbsRowWeight" name="weight" type="number" min="0" max="100" step="0.01" />
-          </label>
+          <!-- 일정 / 가중치 -->
           <label>
             <span>시작일</span>
             <input id="wbsRowStartDate" name="start_date" type="date" />
@@ -432,11 +1365,118 @@
             <span>종료일</span>
             <input id="wbsRowFinishDate" name="finish_date" type="date" />
           </label>
+          <label>
+            <span>검토자 (R&R)</span>
+            <input id="wbsRowReviewer" name="reviewer" type="text" maxlength="80" placeholder="검토 담당자" list="wbsUserDatalist" autocomplete="off" />
+          </label>
+          <label>
+            <span>승인자 (R&R)</span>
+            <input id="wbsRowApprover" name="approver" type="text" maxlength="80" placeholder="최종 승인자" list="wbsUserDatalist" autocomplete="off" />
+          </label>
+          <label>
+            <span>조직 / 팀</span>
+            <input id="wbsRowTeam" name="team" type="text" maxlength="80" placeholder="예) PMO팀, 개발1팀" />
+          </label>
+          <label>
+            <span>가중치 (0–100)</span>
+            <input id="wbsRowWeight" name="weight" type="number" min="0" max="100" step="0.01" />
+          </label>
+          <label>
+            <span>공수 (시간)</span>
+            <input id="wbsRowEffort" name="effort" type="text" maxlength="20" placeholder="예) 8h" />
+          </label>
         </div>
         <p class="form-status" id="wbsRowFormStatus"></p>
         <div class="dialog-actions">
           <button class="secondary-button" id="wbsRowCancelButton" type="button">취소</button>
           <button class="primary-button"   id="wbsRowSubmitButton" type="submit">저장</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- ── 사용자 자동완성 목록 (동적으로 채워짐) ──────────── -->
+    <datalist id="wbsUserDatalist"></datalist>
+
+    <!-- ── 담당자 매핑 다이얼로그 ────────────────────────────── -->
+    <dialog class="dialog dialog-wide" id="ownerMapDialog" aria-labelledby="ownerMapDialogTitle">
+      <div class="dialog-panel" style="min-width:600px;max-width:820px">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">담당자 검증</p>
+            <h2 id="ownerMapDialogTitle">미등록 담당자 매핑</h2>
+          </div>
+          <button class="icon-button" id="ownerMapClose" type="button" aria-label="닫기" title="닫기">×</button>
+        </div>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px">
+          WBS 항목에 입력된 담당자 이름과 사용자 계정의 매칭 결과입니다. 미매칭 항목을 계정으로 연결하거나 이름을 통일한 후 일괄 적용하세요.
+        </p>
+        <div id="ownerMapBody" style="min-height:80px;max-height:400px;overflow-y:auto"></div>
+        <p class="form-status" id="ownerMapStatus"></p>
+        <div class="dialog-footer" style="margin-top:12px">
+          <button class="secondary-button" id="ownerMapCancelBtn" type="button">닫기</button>
+          <button class="primary-button"   id="ownerMapApplyBtn"  type="button">일괄 적용</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- ── 변경 요청 (CR) 다이얼로그 ─────────────────────── -->
+    <dialog class="dialog dialog-wide" id="wbsCrDialog" aria-labelledby="wbsCrDialogTitle">
+      <form class="dialog-panel" id="wbsCrForm" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">변경 관리</p>
+            <h2 id="wbsCrDialogTitle">변경 요청 (CR)</h2>
+          </div>
+          <button class="icon-button" id="wbsCrClose" type="button" aria-label="닫기" title="닫기">×</button>
+        </div>
+        <fieldset class="form-section">
+          <legend>변경 요청 정보</legend>
+          <div class="form-grid">
+            <label style="grid-column:1/-1">
+              <span>제목 *</span>
+              <input id="crTitle" type="text" maxlength="160" required placeholder="변경 요청 제목" />
+            </label>
+            <label>
+              <span>변경 유형</span>
+              <select id="crType">
+                <option value="scope">범위 변경</option>
+                <option value="schedule">일정 변경</option>
+                <option value="resource">자원 변경</option>
+                <option value="quality">품질 변경</option>
+                <option value="cost">비용 변경</option>
+              </select>
+            </label>
+            <label>
+              <span>영향도</span>
+              <select id="crImpact">
+                <option value="low">낮음</option>
+                <option value="medium">보통</option>
+                <option value="high">높음</option>
+                <option value="critical">긴급</option>
+              </select>
+            </label>
+            <label style="grid-column:1/-1">
+              <span>변경 사유 *</span>
+              <textarea id="crReason" rows="3" required placeholder="변경이 필요한 이유를 설명하세요"></textarea>
+            </label>
+            <label style="grid-column:1/-1">
+              <span>변경 전 (현재)</span>
+              <textarea id="crBefore" rows="2" placeholder="현재 상태 또는 기존 정의"></textarea>
+            </label>
+            <label style="grid-column:1/-1">
+              <span>변경 후 (요청)</span>
+              <textarea id="crAfter" rows="2" placeholder="변경 후 상태 또는 새 정의"></textarea>
+            </label>
+            <label style="grid-column:1/-1">
+              <span>영향 범위</span>
+              <textarea id="crScope" rows="2" placeholder="영향 받는 작업, 일정, 비용 등"></textarea>
+            </label>
+          </div>
+        </fieldset>
+        <p class="form-status" id="wbsCrStatus"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="wbsCrCancelBtn" type="button">취소</button>
+          <button class="primary-button" id="wbsCrSubmitBtn" type="submit">CR 등록</button>
         </div>
       </form>
     </dialog>
@@ -509,6 +1549,14 @@
               <select id="projectTemplateSelect" name="template_key" required></select>
             </label>
             <label>
+              <span>수행 방식</span>
+              <select id="projectDeliveryModeInput" name="delivery_mode">
+                <option value="waterfall">Waterfall - 표준 WBS/간트</option>
+                <option value="agile">Agile - 백로그/스프린트</option>
+                <option value="hybrid">Hybrid - WBS + Sprint</option>
+              </select>
+            </label>
+            <label>
               <span>고객사 / 발주처</span>
               <input id="projectClientInput" name="client_name" type="text" maxlength="120" placeholder="고객사명" />
             </label>
@@ -574,6 +1622,6 @@
     </dialog>
 
     <script src="./config.js"></script>
-    <script src="./app.js?v=20260604-v2"></script>
+    <script src="./app.js?v=20260611-session-expiry-01"></script>
   </body>
 </html>

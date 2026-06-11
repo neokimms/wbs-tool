@@ -45,6 +45,8 @@ viewer           / viewer
 
 운영/Helm 배포에서는 기본값으로 별칭 로그인이 꺼져 있습니다. 데모 목적으로만 켤 때는 `api.enableLoginAliases=true`를 사용하고, 운영 전에는 다시 비활성화합니다.
 
+로그인 세션 유효시간은 기본 12시간이며 `WBS_SESSION_TTL_HOURS` 환경변수로 조정합니다. 세션이 만료된 상태로 화면을 계속 사용 중이면 다음 API 호출에서 401을 받아 자동으로 로그인 화면으로 전환되고 "세션이 만료되었습니다. 다시 로그인해주세요." 메시지가 표시됩니다.
+
 ## 3. 승인과 상태
 
 프로젝트 상태 전이는 API에서 강제됩니다.
@@ -102,10 +104,35 @@ mock adapter는 외부 OpenProject API를 호출하지 않고 sync 이력과 pro
 - 승인/반려
 - Excel preview/apply/resequence
 - PM engine dry-run/actual sync
+- 주간 보고서 스케줄 변경/생성/발송 실패
 
 포털 `Audit` 메뉴에서 확인하고, API는 `/api/audit-events`를 사용합니다.
 
-## 7. 백업과 복구
+## 7. 주간 보고서 자동 발송
+
+API는 `weekly-pmo` 기본 스케줄을 제공합니다. 기본값은 비활성입니다. 활성화하면 APScheduler가 정해진 요일/시간에 프로젝트, 승인, Excel import, OpenProject sync 현황을 Excel로 생성합니다.
+
+SMTP 설정이 있으면 메일로 첨부 발송하고, SMTP가 없으면 파일 생성과 실행 이력만 남깁니다.
+
+```bash
+WBS_REPORT_SCHEDULER_ENABLED=true
+WBS_REPORT_TIMEZONE=Asia/Seoul
+WBS_SMTP_HOST=smtp.example.com
+WBS_SMTP_PORT=587
+WBS_SMTP_USERNAME=wbs@example.com
+WBS_SMTP_PASSWORD=replace-me
+WBS_SMTP_FROM=wbs@example.com
+```
+
+```bash
+PATCH /api/report-schedules/weekly-pmo
+POST  /api/report-schedules/weekly-pmo/run
+GET   /api/report-runs
+```
+
+`day_of_week`는 `0=월요일`부터 `6=일요일`까지입니다. 실행 결과는 `wbs_report_runs`와 감사 로그에 저장됩니다.
+
+## 8. 백업과 복구
 
 PostgreSQL 백업:
 
@@ -119,7 +146,7 @@ bash scripts/backup-postgres.sh
 CONFIRM_RESTORE=YES bash scripts/restore-postgres.sh backups/postgres/wbs_platform_YYYYMMDD-HHMMSS.dump wbs_platform
 ```
 
-## 8. 운영 점검
+## 9. 운영 점검
 
 포털 `Operations` 메뉴 또는 API로 점검합니다.
 

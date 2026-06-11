@@ -1,0 +1,90 @@
+# 온프레미스 / 노트북(K8s) 배포 오버레이
+#
+# 대상: 고객사 자체 Kubernetes(예: kubeadm, RKE2, k3s)에 단일 클러스터로 설치하는 경우.
+# - PostgreSQL은 차트가 함께 배포하는 StatefulSet(postgresql.enabled=true)을 사용합니다.
+# - 시크릿은 외부 시크릿 매니저 없이 kubectl로 직접 관리합니다(externalSecret.enabled=false).
+# - 소규모 클러스터(노드 1~2대) 가정으로 HPA/PDB는 기본 비활성화합니다.
+#
+# 사용법:
+#   helm upgrade --install wbs-platform infra/helm/wbs-platform \
+#     --namespace wbs --create-namespace \
+#     -f infra/helm/wbs-platform/values-onprem.yaml \
+#     --set postgresql.auth.password='<DB비밀번호>' \
+#     --set api.openprojectApiToken='<OP_API_TOKEN>' \
+#     --set api.portalOrigin='https://wbs.internal.example.com' \
+#     --set portal.apiBaseUrl='https://wbs-api.internal.example.com'
+
+fullnameOverride: "wbs-platform"
+
+api:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/neokimms/wbs-api
+    tag: "0.2.0"
+  portalOrigin: "https://wbs.internal.example.com"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  hpa:
+    enabled: false
+  pdb:
+    # 단일/소수 노드 클러스터에서는 PDB(minAvailable)가 노드 드레인을 막을 수 있어 기본 비활성화
+    enabled: false
+  authBackend: local   # 사내 AD/LDAP 연동 시 ldap로 변경 후 ldap* 값을 --set으로 주입
+  multitenancyEnabled: false   # 단일 고객사 설치 기본값 (필요 시 true로 변경)
+  defaultTenantId: default
+
+portal:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/neokimms/wbs-portal
+    tag: "0.2.0"
+  apiBaseUrl: "https://wbs-api.internal.example.com"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  hpa:
+    enabled: false
+  pdb:
+    enabled: false
+
+postgresql:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""   # 클러스터 기본 StorageClass 사용 (필요 시 명시)
+
+externalSecret:
+  enabled: false   # 온프레미스는 kubectl create secret 등으로 직접 관리
+
+ingress:
+  enabled: true
+  className: nginx   # 클러스터에 ingress-nginx가 설치되어 있어야 함
+  annotations: {}
+  hosts:
+    - host: wbs.internal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: portal
+    - host: wbs-api.internal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api
+  tls: []   # 사내 인증서는 별도 TLS Secret 생성 후 host별로 추가
+
+networkPolicy:
+  enabled: false   # CNI(Calico/Cilium)가 NetworkPolicy를 지원하면 true 권장
+
+monitoring:
+  prometheusAnnotations: true

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "prod"
+    },
+    "location": {
+      "value": "koreacentral"
+    },
+    "postgresAdminLogin": {
+      "value": "wbsadmin"
+    },
+    "postgresAdminPassword": {
+      "value": "REPLACE_WITH_SECURE_PASSWORD"
+    },
+    "postgresSkuName": {
+      "value": "Standard_B1ms"
+    },
+    "postgresSkuTier": {
+      "value": "Burstable"
+    },
+    "postgresStorageSizeGB": {
+      "value": 32
+    },
+    "postgresHighAvailability": {
+      "value": false
+    },
+    "aksNodeVmSize": {
+      "value": "Standard_D2s_v5"
+    },
+    "aksNodeCount": {
+      "value": 3
+    },
+    "acrSku": {
+      "value": "Standard"
+    },
+    "esoNamespace": {
+      "value": "external-secrets"
+    },
+    "esoServiceAccountName": {
+      "value": "external-secrets"
+    }
+  }
+}

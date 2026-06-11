@@ -23,7 +23,14 @@ metadata:
     {{- include "wbs-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
+  {{- if not .Values.api.hpa.enabled }}
   replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "wbs-platform.selectorLabels" . | nindent 6 }}
@@ -107,10 +114,66 @@ spec:
               value: {{ .Values.api.auditRetentionDays | quote }}
             - name: WBS_RUN_MIGRATIONS_ON_STARTUP
               value: {{ .Values.api.runMigrationsOnStartup | quote }}
+            - name: WBS_REPORT_SCHEDULER_ENABLED
+              value: {{ .Values.api.reportSchedulerEnabled | quote }}
+            - name: WBS_REPORT_TIMEZONE
+              value: {{ .Values.api.reportTimezone | quote }}
+            - name: WBS_REPORT_OUTPUT_DIR
+              value: {{ .Values.api.reportOutputDir | quote }}
+            - name: WBS_SMTP_HOST
+              value: {{ .Values.api.reportSmtpHost | quote }}
+            - name: WBS_SMTP_PORT
+              value: {{ .Values.api.reportSmtpPort | quote }}
+            - name: WBS_SMTP_USERNAME
+              value: {{ .Values.api.reportSmtpUsername | quote }}
+            - name: WBS_SMTP_PASSWORD
+              value: {{ .Values.api.reportSmtpPassword | quote }}
+            - name: WBS_SMTP_FROM
+              value: {{ .Values.api.reportSmtpFrom | quote }}
+            - name: WBS_SMTP_USE_TLS
+              value: {{ .Values.api.reportSmtpUseTls | quote }}
+            - name: WBS_SMTP_USE_SSL
+              value: {{ .Values.api.reportSmtpUseSsl | quote }}
+            - name: AUTH_BACKEND
+              value: {{ .Values.api.authBackend | quote }}
+            - name: LDAP_SERVER
+              value: {{ .Values.api.ldapServer | quote }}
+            - name: LDAP_PORT
+              value: {{ .Values.api.ldapPort | quote }}
+            - name: LDAP_USE_SSL
+              value: {{ .Values.api.ldapUseSSL | quote }}
+            - name: LDAP_BIND_DN
+              value: {{ .Values.api.ldapBindDN | quote }}
+            - name: LDAP_BIND_PASSWORD
+              value: {{ .Values.api.ldapBindPassword | quote }}
+            - name: LDAP_BASE_DN
+              value: {{ .Values.api.ldapBaseDN | quote }}
+            - name: LDAP_USER_FILTER
+              value: {{ .Values.api.ldapUserFilter | quote }}
+            - name: LDAP_ATTR_EMAIL
+              value: {{ .Values.api.ldapAttrEmail | quote }}
+            - name: LDAP_ATTR_NAME
+              value: {{ .Values.api.ldapAttrName | quote }}
+            - name: MULTITENANCY_ENABLED
+              value: {{ .Values.api.multitenancyEnabled | quote }}
+            - name: DEFAULT_TENANT_ID
+              value: {{ .Values.api.defaultTenantId | quote }}
+            - name: SMTP_HOST
+              value: {{ .Values.api.smtpHost | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.api.smtpPort | quote }}
+            - name: SMTP_USER
+              value: {{ .Values.api.smtpUser | quote }}
+            - name: SMTP_PASSWORD
+              value: {{ .Values.api.smtpPassword | quote }}
+            - name: NOTIFY_FROM_EMAIL
+              value: {{ .Values.api.notifyFromEmail | quote }}
             - name: BACKUP_DIR
               value: {{ .Values.api.backupDir | quote }}
-          {{- if .Values.api.backupVolume.enabled }}
           volumeMounts:
+            - name: report-output-dir
+              mountPath: {{ .Values.api.reportOutputDir | quote }}
+          {{- if .Values.api.backupVolume.enabled }}
             - name: backup-dir
               mountPath: {{ .Values.api.backupDir | quote }}
               readOnly: {{ .Values.api.backupVolume.readOnly }}
@@ -129,8 +192,16 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
-      {{- if .Values.api.backupVolume.enabled }}
       volumes:
+      {{- if .Values.api.reportOutputVolume.enabled }}
+        - name: report-output-dir
+          persistentVolumeClaim:
+            claimName: {{ required "api.reportOutputVolume.existingClaim is required when api.reportOutputVolume.enabled=true" .Values.api.reportOutputVolume.existingClaim | quote }}
+      {{- else }}
+        - name: report-output-dir
+          emptyDir: {}
+      {{- end }}
+      {{- if .Values.api.backupVolume.enabled }}
         - name: backup-dir
           persistentVolumeClaim:
             claimName: {{ required "api.backupVolume.existingClaim is required when api.backupVolume.enabled=true" .Values.api.backupVolume.existingClaim | quote }}

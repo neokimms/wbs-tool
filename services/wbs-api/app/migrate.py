@@ -10,7 +10,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://wbs:wbs_dev_password@localhost:5432/wbs_platform",
 )
-MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
+MIGRATION_DIR = Path(__file__).resolve().parent.parent / "migrations"
 
 
 async def init_connection(connection: asyncpg.Connection) -> None:
@@ -32,7 +32,8 @@ async def migrate() -> None:
     connection = await asyncpg.connect(DATABASE_URL)
     try:
         await init_connection(connection)
-        await connection.execute(MIGRATION_PATH.read_text(encoding="utf-8"))
+        for path in sorted(MIGRATION_DIR.glob("*.sql")):
+            await connection.execute(path.read_text(encoding="utf-8"))
     finally:
         await connection.close()
 

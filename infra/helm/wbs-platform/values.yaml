@@ -29,6 +29,19 @@ api:
   loginAliasesJson: ""
   auditRetentionDays: 365
   runMigrationsOnStartup: true
+  reportSchedulerEnabled: true
+  reportTimezone: "Asia/Seoul"
+  reportOutputDir: "/app/outputs/reports"
+  reportOutputVolume:
+    enabled: false
+    existingClaim: ""
+  reportSmtpHost: ""
+  reportSmtpPort: 587
+  reportSmtpUsername: ""
+  reportSmtpPassword: ""
+  reportSmtpFrom: ""
+  reportSmtpUseTls: true
+  reportSmtpUseSsl: false
   migrationJob:
     enabled: false
     backoffLimit: 3
@@ -44,6 +57,35 @@ api:
     limits:
       cpu: 500m
       memory: 512Mi
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  pdb:
+    enabled: true
+    minAvailable: 1
+  # P2-06: SSO/LDAP
+  authBackend: local      # local | ldap
+  ldapServer: ""
+  ldapPort: 389
+  ldapUseSSL: false
+  ldapBindDN: ""
+  ldapBindPassword: ""
+  ldapBaseDN: ""
+  ldapUserFilter: "(mail={email})"
+  ldapAttrEmail: mail
+  ldapAttrName: cn
+  # P2-05: 멀티 테넌시
+  multitenancyEnabled: true
+  defaultTenantId: default
+  # 알림 SMTP
+  smtpHost: ""
+  smtpPort: 587
+  smtpUser: ""
+  smtpPassword: ""
+  notifyFromEmail: ""
 
 portal:
   replicaCount: 2
@@ -62,6 +104,32 @@ portal:
     limits:
       cpu: 200m
       memory: 128Mi
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+networkPolicy:
+  enabled: false
+  allowIngressFromNamespaces: false
+  ingressNamespace: ingress-nginx
+  allowSMTP: true
+
+externalSecret:
+  enabled: false
+  secretStoreName: aws-secretsmanager
+  secretStoreKind: ClusterSecretStore
+  refreshInterval: 1h
+  remoteKeyPrefix: wbs-platform
+  # remoteKeyPrefix와 키 이름 사이의 구분자.
+  # AWS Secrets Manager / Vault는 경로 구분자 "/"를 지원하지만,
+  # Azure Key Vault 시크릿 이름은 "/"를 허용하지 않으므로 "-"로 재정의해야 함.
+  keySeparator: "/"
+  extraKeys: []
 
 postgresql:
   enabled: true

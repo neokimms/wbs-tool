@@ -1,0 +1,104 @@
+{{- if .Values.networkPolicy.enabled }}
+# API: 포털에서의 인바운드만 허용 + PostgreSQL 아웃바운드
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "wbs-platform.fullname" . }}-api
+  labels:
+    {{- include "wbs-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "wbs-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: portal
+        {{- if .Values.networkPolicy.allowIngressFromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # PostgreSQL
+    {{- if .Values.postgresql.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- else }}
+    # 외부 관리형 PostgreSQL (예: Azure Database for PostgreSQL Flexible Server) - 클러스터 외부 아웃바운드
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: {{ include "wbs-platform.databasePort" . }}
+    {{- end }}
+    # OpenProject (PM 엔진)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: openproject
+      ports:
+        - protocol: TCP
+          port: 8080
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+    # SMTP (알림 이메일)
+    {{- if .Values.networkPolicy.allowSMTP }}
+    - ports:
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 465
+    {{- end }}
+---
+# 포털: 외부 인바운드 허용 + API 아웃바운드만 허용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "wbs-platform.fullname" . }}-portal
+  labels:
+    {{- include "wbs-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: portal
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "wbs-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: portal
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # API
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 8000
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+{{- end }}
