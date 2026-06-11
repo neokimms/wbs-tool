@@ -5528,7 +5528,12 @@ function renderInternalGantt(rows) {
   if (!datedRows.length) {
     return `<div class="workboard-empty">시작일 또는 종료일이 있는 WBS 작업 항목이 없습니다. 상세에서 기간을 입력하면 간트에 표시됩니다.</div>`;
   }
-  const allDates = datedRows.flatMap((row) => [row.start_date, row.finish_date].filter(Boolean)).map(parseIsoDate).filter(Boolean);
+  const project = currentWorkboardProject();
+  const projectDates = [project?.start_date, project?.metadata?.end_date].filter(Boolean);
+  const allDates = datedRows.flatMap((row) => [row.start_date, row.finish_date].filter(Boolean))
+    .concat(projectDates)
+    .map(parseIsoDate)
+    .filter(Boolean);
   const minDate = new Date(Math.min(...allDates));
   const maxDate = new Date(Math.max(...allDates));
   minDate.setUTCDate(1);
