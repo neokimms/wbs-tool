@@ -167,6 +167,7 @@ button {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 160ms ease;
 }
 
 .sidebar {
@@ -179,6 +180,60 @@ button {
   backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
+  transition: padding 160ms ease;
+}
+
+/* 사이드바 접힘 상태 (데스크탑 전용 - 모바일 드로어 레이아웃과 충돌 방지) */
+@media (min-width: 769px) {
+  body.sidebar-collapsed .app-shell {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  body.sidebar-collapsed .sidebar {
+    padding: 22px 10px;
+  }
+
+  body.sidebar-collapsed .brand {
+    justify-content: center;
+  }
+
+  body.sidebar-collapsed .brand > div:not(.brand-mark) {
+    display: none;
+  }
+
+  body.sidebar-collapsed .nav-list a {
+    position: relative;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  body.sidebar-collapsed .nav-label {
+    display: none;
+  }
+
+  body.sidebar-collapsed .nav-list a::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--text);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 6px 10px;
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease;
+    z-index: 50;
+  }
+
+  body.sidebar-collapsed .nav-list a:hover::after {
+    opacity: 1;
+  }
 }
 
 .brand {
@@ -9128,6 +9183,32 @@ body.dark-mode .pd-tab:hover {
   background: var(--surface-muted);
 }
 
+/* 사이드바 접기/펼치기 버튼 (데스크탑) */
+.sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 160ms ease;
+}
+
+.sidebar-toggle-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--surface-muted);
+}
+
 /* 사이드바 백드롭 */
 .sidebar-backdrop {
   display: none;
@@ -9186,6 +9267,11 @@ body.dark-mode .pd-tab:hover {
   /* 햄버거 표시 */
   .mob-menu-btn {
     display: inline-flex;
+  }
+
+  /* 사이드바 접기 버튼은 데스크탑 전용 */
+  .sidebar-toggle-btn {
+    display: none;
   }
 
   /* 워크스페이스 */

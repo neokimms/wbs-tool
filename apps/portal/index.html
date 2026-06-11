@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AX WBS</title>
-    <link rel="stylesheet" href="./styles.css?v=20260611-announce-theme-01" />
+    <link rel="stylesheet" href="./styles.css?v=20260612-sidebar-collapse-01" />
   </head>
   <body data-auth="pending">
 
@@ -59,17 +59,17 @@
           </div>
         </div>
         <nav class="nav-list">
-          <a class="active" href="#dashboard"  data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/></svg></span><span class="nav-label">대시보드</span></a>
-          <a href="#announcements"             data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4V4Zm12 1.5V8h2.5L16 5.5ZM6 11h8v2H6v-2Zm0 4h8v2H6v-2Zm0-8h6v2H6V7Z"/></svg></span><span class="nav-label">공지사항</span></a>
-          <a href="#portfolio"                 data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4V7Zm2 2v8h12V9H6Zm2-4h8v2H8V5Z"/></svg></span><span class="nav-label">프로젝트 현황</span></a>
-          <a href="#op-view"                   data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4V5Zm0 6h10v4H4v-4Zm12 0h4v10h-4V11ZM4 17h10v4H4v-4Z"/></svg></span><span class="nav-label">WBS 현황</span></a>
-          <a href="#wbs-plan"                  data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h5v5H5V4Zm0 11h5v5H5v-5Zm9-6h5v5h-5V9Zm-4-2h2v2h-2V7Zm2 5h2v2h-2v-2Zm-2 5h4v2h-4v-2Z"/></svg></span><span class="nav-label">WBS 관리</span></a>
-          <a href="#workboard"                 data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h5v14H4V5Zm7 0h4v14h-4V5Zm6 0h3v14h-3V5Z"/></svg></span><span class="nav-label">작업 현황</span></a>
-          <a href="#templates"                 data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z"/></svg></span><span class="nav-label">표준/일반 WBS 관리</span></a>
-          <a href="#risks"                     data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm1 13h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg></span><span class="nav-label">리스크·이슈</span></a>
-          <a href="#resource"                  data-min-role="pmo"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c0-4 3-7 6-7s6 3 6 7H2Zm12.5 0c-.2-2.2-1-4-2.3-5.4 1-.6 2.2-.9 3.8-.9 3 0 5 2.5 5 6.3h-6.5Z"/></svg></span><span class="nav-label">자원 배분</span></a>
-          <a href="#settings"                  data-min-role="pmo"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 3h-3l-.4 2.2c-.6.2-1.1.4-1.6.7L6.6 4.7 4.5 6.8l1.2 1.9c-.3.5-.5 1-.7 1.6L3 10.7v3l2 .4c.2.6.4 1.1.7 1.6l-1.2 1.9 2.1 2.1 1.9-1.2c.5.3 1 .5 1.6.7l.4 2.2h3l.4-2.2c.6-.2 1.1-.4 1.6-.7l1.9 1.2 2.1-2.1-1.2-1.9c.3-.5.5-1 .7-1.6l2-.4v-3l-2-.4c-.2-.6-.4-1.1-.7-1.6l1.2-1.9-2.1-2.1-1.9 1.2c-.5-.3-1-.5-1.6-.7L13.5 3ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg></span><span class="nav-label">설정</span></a>
-          <a href="#guide" class="nav-guide-link" data-min-role="viewer"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm3 2v11a1 1 0 0 0 1 1h8V7a1 1 0 0 0-1-1H8Zm2 3h5v2h-5V9Zm0 4h5v2h-5v-2Z"/></svg></span><span class="nav-label">사용자 가이드</span></a>
+          <a class="active" href="#dashboard"  data-min-role="viewer" data-tooltip="대시보드"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/></svg></span><span class="nav-label">대시보드</span></a>
+          <a href="#announcements"             data-min-role="viewer" data-tooltip="공지사항"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4V4Zm12 1.5V8h2.5L16 5.5ZM6 11h8v2H6v-2Zm0 4h8v2H6v-2Zm0-8h6v2H6V7Z"/></svg></span><span class="nav-label">공지사항</span></a>
+          <a href="#portfolio"                 data-min-role="viewer" data-tooltip="프로젝트 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4V7Zm2 2v8h12V9H6Zm2-4h8v2H8V5Z"/></svg></span><span class="nav-label">프로젝트 현황</span></a>
+          <a href="#op-view"                   data-min-role="viewer" data-tooltip="WBS 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4V5Zm0 6h10v4H4v-4Zm12 0h4v10h-4V11ZM4 17h10v4H4v-4Z"/></svg></span><span class="nav-label">WBS 현황</span></a>
+          <a href="#wbs-plan"                  data-min-role="viewer" data-tooltip="WBS 관리"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h5v5H5V4Zm0 11h5v5H5v-5Zm9-6h5v5h-5V9Zm-4-2h2v2h-2V7Zm2 5h2v2h-2v-2Zm-2 5h4v2h-4v-2Z"/></svg></span><span class="nav-label">WBS 관리</span></a>
+          <a href="#workboard"                 data-min-role="viewer" data-tooltip="작업 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h5v14H4V5Zm7 0h4v14h-4V5Zm6 0h3v14h-3V5Z"/></svg></span><span class="nav-label">작업 현황</span></a>
+          <a href="#templates"                 data-min-role="viewer" data-tooltip="표준/일반 WBS 관리"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z"/></svg></span><span class="nav-label">표준/일반 WBS 관리</span></a>
+          <a href="#risks"                     data-min-role="viewer" data-tooltip="리스크·이슈"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm1 13h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg></span><span class="nav-label">리스크·이슈</span></a>
+          <a href="#resource"                  data-min-role="pmo" data-tooltip="자원 배분"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c0-4 3-7 6-7s6 3 6 7H2Zm12.5 0c-.2-2.2-1-4-2.3-5.4 1-.6 2.2-.9 3.8-.9 3 0 5 2.5 5 6.3h-6.5Z"/></svg></span><span class="nav-label">자원 배분</span></a>
+          <a href="#settings"                  data-min-role="pmo" data-tooltip="설정"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 3h-3l-.4 2.2c-.6.2-1.1.4-1.6.7L6.6 4.7 4.5 6.8l1.2 1.9c-.3.5-.5 1-.7 1.6L3 10.7v3l2 .4c.2.6.4 1.1.7 1.6l-1.2 1.9 2.1 2.1 1.9-1.2c.5.3 1 .5 1.6.7l.4 2.2h3l.4-2.2c.6-.2 1.1-.4 1.6-.7l1.9 1.2 2.1-2.1-1.2-1.9c.3-.5.5-1 .7-1.6l2-.4v-3l-2-.4c-.2-.6-.4-1.1-.7-1.6l1.2-1.9-2.1-2.1-1.9 1.2c-.5-.3-1-.5-1.6-.7L13.5 3ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg></span><span class="nav-label">설정</span></a>
+          <a href="#guide" class="nav-guide-link" data-min-role="viewer" data-tooltip="사용자 가이드"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm3 2v11a1 1 0 0 0 1 1h8V7a1 1 0 0 0-1-1H8Zm2 3h5v2h-5V9Zm0 4h5v2h-5v-2Z"/></svg></span><span class="nav-label">사용자 가이드</span></a>
         </nav>
       </aside>
 
@@ -82,6 +82,10 @@
           <div style="display:flex;align-items:center;gap:10px">
             <!-- 햄버거 메뉴 (모바일) -->
             <button class="mob-menu-btn" id="mobMenuBtn" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+            <!-- 사이드바 접기/펼치기 (데스크탑) -->
+            <button class="sidebar-toggle-btn" id="sidebarToggleBtn" type="button" aria-label="메뉴 접기" aria-pressed="false" title="메뉴 접기">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4V4Zm2 2v12h4V6H6Zm6 0v12h6V6h-6Z"/></svg>
+            </button>
             <div>
               <p class="eyebrow" id="topbarEyebrow">기업 WBS 플랫폼</p>
               <h1 id="topbarTitle">대시보드</h1>
@@ -1622,6 +1626,6 @@
     </dialog>
 
     <script src="./config.js"></script>
-    <script src="./app.js?v=20260611-gantt-range-01"></script>
+    <script src="./app.js?v=20260612-sidebar-collapse-01"></script>
   </body>
 </html>

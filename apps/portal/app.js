@@ -11874,6 +11874,31 @@ document.querySelector("#settingsTabBar")?.addEventListener("click", (e) => {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
+   사이드바 접기/펼치기 (데스크탑)
+   ═══════════════════════════════════════════════════════════════ */
+(function initSidebarCollapse() {
+  const STORAGE_KEY = "wbs-sidebar-collapsed";
+  const btn = document.getElementById("sidebarToggleBtn");
+  const body = document.body;
+  if (!btn) return;
+
+  function applyCollapsed(collapsed) {
+    body.classList.toggle("sidebar-collapsed", collapsed);
+    btn.setAttribute("aria-pressed", collapsed ? "true" : "false");
+    btn.setAttribute("aria-label", collapsed ? "메뉴 펼치기" : "메뉴 접기");
+    btn.title = collapsed ? "메뉴 펼치기" : "메뉴 접기";
+  }
+
+  applyCollapsed(localStorage.getItem(STORAGE_KEY) === "true");
+
+  btn.addEventListener("click", () => {
+    const collapsed = !body.classList.contains("sidebar-collapsed");
+    applyCollapsed(collapsed);
+    localStorage.setItem(STORAGE_KEY, collapsed ? "true" : "false");
+  });
+})();
+
+/* ═══════════════════════════════════════════════════════════════
    대시보드 위젯 커스터마이징
    ═══════════════════════════════════════════════════════════════ */
 (function initWidgetCustomizer() {
