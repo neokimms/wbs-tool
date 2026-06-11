@@ -1997,8 +1997,11 @@ function openAnnounceDialog(announcement = null) {
   const titleEl = document.querySelector("#announceDialogTitle");
   const scopeSelect = document.querySelector("#announceScope");
   const tenantWideCheck = document.querySelector("#announceTenantWide");
+  const hasProjects = state.projects.length > 0;
   if (scopeSelect) {
-    scopeSelect.innerHTML = state.projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("");
+    scopeSelect.innerHTML = hasProjects
+      ? state.projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")
+      : `<option value="">(선택 가능한 프로젝트 없음)</option>`;
   }
 
   state.announceEditId = announcement?.id || null;
@@ -2019,7 +2022,7 @@ function openAnnounceDialog(announcement = null) {
   } else {
     if (tenantWideCheck) {
       tenantWideCheck.checked = true;
-      tenantWideCheck.disabled = false;
+      tenantWideCheck.disabled = !hasProjects;
     }
     if (scopeSelect) scopeSelect.disabled = true;
   }
@@ -11808,11 +11811,10 @@ document.querySelector("#settingsTabBar")?.addEventListener("click", (e) => {
     }
   }
 
-  // 저장된 설정 우선, 없으면 시스템 설정
+  // 저장된 설정 우선, 없으면 라이트 모드로 시작 (시스템 설정과 무관)
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved === "dark") applyTheme(true);
-  else if (saved === "light") applyTheme(false);
-  else applyTheme(prefersDark.matches);
+  else applyTheme(false);
 
   // 시스템 선호도 변경 감지 (저장값 없을 때만)
   prefersDark.addEventListener("change", e => {

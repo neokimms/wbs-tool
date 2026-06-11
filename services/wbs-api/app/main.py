@@ -63,6 +63,8 @@ MIGRATION_PATHS = [
     Path(__file__).resolve().parent.parent / "migrations" / "008_agile_wbs.sql",
     Path(__file__).resolve().parent.parent / "migrations" / "009_agile_hybrid_samples.sql",
     Path(__file__).resolve().parent.parent / "migrations" / "010_project_operation_policy.sql",
+    Path(__file__).resolve().parent.parent / "migrations" / "011_agile_wbs_sync.sql",
+    Path(__file__).resolve().parent.parent / "migrations" / "012_project_members.sql",
     Path(__file__).resolve().parent.parent / "migrations" / "013_announcements.sql",
 ]
 RUN_MIGRATIONS_ON_STARTUP = os.getenv("WBS_RUN_MIGRATIONS_ON_STARTUP", "true").lower() in {"1", "true", "yes", "on"}

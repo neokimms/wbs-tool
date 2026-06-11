@@ -7644,6 +7644,15 @@ body[data-portal-view="risks"] #risks { display: flex; flex-direction: column; }
   height: 14px;
   margin: 0;
 }
+.announce-pin-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  flex-shrink: 0;
+}
 #announceDialog #announceBody {
   min-height: 240px;
 }
