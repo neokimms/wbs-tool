@@ -4,10 +4,13 @@
 #   scripts/deploy.sh azure infra [--rg NAME] [--location LOC] [--env-name NAME]
 #   scripts/deploy.sh azure app   [--rg NAME] [--namespace NS] [--env-name NAME]
 #   scripts/deploy.sh azure aca infra|build|apps|all [--rg NAME] [--location LOC] [--env-name NAME] [--image-tag TAG]
+#   scripts/deploy.sh azure aca power-schedule [--rg NAME] [--env-name NAME]
 #
 # onprem    : 루트 docker-compose.yml 기반 온프레미스/노트북 설치
 # azure     : infra/azure Bicep 인프라 프로비저닝 + infra/helm/wbs-platform values-azure.yaml Helm 배포 (AKS)
 # azure aca : Azure Container Apps 기반 경량/저비용 배포 (AKS 대신, OpenProject 제외, scale-to-zero)
+# azure aca power-schedule : 야간 자동 off/on 예약 ACA Job(wbs-power-off/on) 1회 생성
+#                            (매일 20:00 KST off, 08:00 KST on - Postgres 정지/시작 + Container Apps replicas 0)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -154,17 +157,88 @@ case "$TARGET" in
           echo "API URL : $(az deployment group show -g "$RG" -n "$DEPLOY_APPS" --query properties.outputs.apiUrl.value -o tsv)"
         }
 
+        run_aca_power_schedule() {
+          local pg_fqdn pg_name env_id sub_id identity_name identity_id identity_client_id identity_principal_id off_script on_script
+
+          az extension add --name containerapp --upgrade -y >/dev/null 2>&1 || true
+
+          pg_fqdn=$(az deployment group show -g "$RG" -n "$DEPLOY_BASE" --query properties.outputs.postgresFqdn.value -o tsv)
+          pg_name="${pg_fqdn%%.*}"
+          env_id=$(az deployment group show -g "$RG" -n "$DEPLOY_BASE" --query properties.outputs.environmentId.value -o tsv)
+          sub_id=$(az account show --query id -o tsv)
+
+          identity_name="wbs-power-schedule-id"
+          az identity create -g "$RG" -n "$identity_name" >/dev/null
+          identity_id=$(az identity show -g "$RG" -n "$identity_name" --query id -o tsv)
+          identity_client_id=$(az identity show -g "$RG" -n "$identity_name" --query clientId -o tsv)
+          identity_principal_id=$(az identity show -g "$RG" -n "$identity_name" --query principalId -o tsv)
+
+          # 신규 ID의 RBAC 전파에 시간이 걸릴 수 있어 실패 시 잠시 대기 후 재시도
+          for _ in 1 2 3 4 5; do
+            if az role assignment create \
+              --assignee-object-id "$identity_principal_id" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Contributor" \
+              --scope "/subscriptions/${sub_id}/resourceGroups/${RG}" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 10
+          done
+
+          off_script="set -e; az login --identity --username ${identity_client_id} >/dev/null; az postgres flexible-server stop -g ${RG} -n ${pg_name} || true; az containerapp update -g ${RG} -n wbs-api --min-replicas 0 --max-replicas 0 >/dev/null; az containerapp update -g ${RG} -n wbs-portal --min-replicas 0 --max-replicas 0 >/dev/null; echo off-done"
+          on_script="set -e; az login --identity --username ${identity_client_id} >/dev/null; az postgres flexible-server start -g ${RG} -n ${pg_name} || true; az containerapp update -g ${RG} -n wbs-api --min-replicas 0 --max-replicas 1 >/dev/null; az containerapp update -g ${RG} -n wbs-portal --min-replicas 0 --max-replicas 1 >/dev/null; echo on-done"
+
+          az containerapp job create \
+            --name wbs-power-off \
+            --resource-group "$RG" \
+            --environment "$env_id" \
+            --trigger-type Schedule \
+            --cron-expression "0 11 * * *" \
+            --replica-timeout 600 \
+            --replica-retry-limit 1 \
+            --replica-completion-count 1 \
+            --parallelism 1 \
+            --image mcr.microsoft.com/azure-cli:latest \
+            --cpu 0.5 --memory 1Gi \
+            --mi-user-assigned "$identity_id" \
+            --command "/bin/bash" \
+            --args "-c" "$off_script"
+
+          az containerapp job create \
+            --name wbs-power-on \
+            --resource-group "$RG" \
+            --environment "$env_id" \
+            --trigger-type Schedule \
+            --cron-expression "0 23 * * *" \
+            --replica-timeout 600 \
+            --replica-retry-limit 1 \
+            --replica-completion-count 1 \
+            --parallelism 1 \
+            --image mcr.microsoft.com/azure-cli:latest \
+            --cpu 0.5 --memory 1Gi \
+            --mi-user-assigned "$identity_id" \
+            --command "/bin/bash" \
+            --args "-c" "$on_script"
+
+          echo "야간 자동 off/on 예약 Job 생성 완료"
+          echo "  wbs-power-off : 매일 20:00 KST (cron '0 11 * * *' UTC) - Postgres stop + Container Apps replicas 0"
+          echo "  wbs-power-on  : 매일 08:00 KST (cron '0 23 * * *' UTC) - Postgres start + Container Apps replicas 0/1"
+          echo "수동 테스트: az containerapp job start -g $RG -n wbs-power-off"
+          echo "실행 이력  : az containerapp job execution list -g $RG -n wbs-power-off -o table"
+        }
+
         case "$ACA_ACTION" in
           infra) run_aca_infra ;;
           build) run_aca_build ;;
           apps) run_aca_apps ;;
+          power-schedule) run_aca_power_schedule ;;
           all)
             run_aca_infra
             run_aca_build
             run_aca_apps
             ;;
           *)
-            echo "알 수 없는 동작: $ACA_ACTION (infra|build|apps|all)" >&2
+            echo "알 수 없는 동작: $ACA_ACTION (infra|build|apps|all|power-schedule)" >&2
             usage
             ;;
         esac
