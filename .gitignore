@@ -14,3 +14,4 @@ backups/*
 !backups/postgres/
 backups/postgres/*
 !backups/postgres/.gitkeep
+services/legalize/.env
