@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>KT AX WBS</title>
-    <link rel="stylesheet" href="./styles.css?v=20261002-pm-core" />
+    <link rel="stylesheet" href="./styles.css?v=20261002-split" />
   </head>
   <body data-auth="pending">
 
@@ -536,17 +536,17 @@
                 <button class="icon-button" type="button" id="announceDialogClose">×</button>
               </div>
               <div class="form-grid">
-                <label style="grid-column:1/-1"><span>제목 *</span><input id="announceTitle" type="text" required maxlength="200" /></label>
-                <label style="grid-column:1/-1"><span>대상</span>
+                <label class="u-span-all"><span>제목 *</span><input id="announceTitle" type="text" required maxlength="200" /></label>
+                <label class="u-span-all"><span>대상</span>
                   <div class="announce-target-row">
                     <select id="announceScope"></select>
                     <label class="announce-tenant-check"><input type="checkbox" id="announceTenantWide" /> 전사공지</label>
                   </div>
                 </label>
-                <label class="announce-pin-label" style="grid-column:1/-1">
+                <label class="announce-pin-label u-span-all">
                   <input type="checkbox" id="announcePinned" /> 상단 고정
                 </label>
-                <label style="grid-column:1/-1"><span>내용</span><textarea id="announceBody" rows="12" maxlength="4000" style="resize:vertical"></textarea></label>
+                <label class="u-span-all"><span>내용</span><textarea id="announceBody" rows="12" maxlength="4000" class="u-resize-y"></textarea></label>
               </div>
               <p class="form-status" id="announceFormStatus"></p>
               <div class="dialog-footer">
@@ -621,7 +621,7 @@
                 <button class="icon-button" type="button" id="meetingDialogClose">×</button>
               </div>
               <div class="form-grid">
-                <label style="grid-column:1/-1"><span>회의명 *</span><input id="mtTitle" required maxlength="200" placeholder="예: 주간 진척 점검 회의" /></label>
+                <label class="u-span-all"><span>회의명 *</span><input id="mtTitle" required maxlength="200" placeholder="예: 주간 진척 점검 회의" /></label>
                 <label><span>유형</span>
                   <select id="mtType"><option>정기</option><option>착수</option><option>검토</option><option>이슈</option><option>고객</option><option>기타</option></select>
                 </label>
@@ -630,10 +630,10 @@
                 <label><span>장소</span><input id="mtLocation" maxlength="200" placeholder="회의실 / Teams" /></label>
                 <label><span>진행자</span><input id="mtFacilitator" maxlength="80" list="mtMemberList" /></label>
                 <label><span>상태</span><select id="mtStatus"><option value="Draft">작성중</option><option value="Final">확정</option></select></label>
-                <label style="grid-column:1/-1"><span>참석자 (쉼표로 구분)</span><input id="mtAttendees" maxlength="2000" placeholder="홍길동, 김PM, 이개발" /></label>
-                <label style="grid-column:1/-1"><span>안건</span><textarea id="mtAgenda" rows="2" maxlength="20000"></textarea></label>
-                <label style="grid-column:1/-1"><span>회의 내용</span><textarea id="mtMinutes" rows="5" maxlength="50000"></textarea></label>
-                <label style="grid-column:1/-1"><span>결정 사항</span><textarea id="mtDecisions" rows="2" maxlength="20000"></textarea></label>
+                <label class="u-span-all"><span>참석자 (쉼표로 구분)</span><input id="mtAttendees" maxlength="2000" placeholder="홍길동, 김PM, 이개발" /></label>
+                <label class="u-span-all"><span>안건</span><textarea id="mtAgenda" rows="2" maxlength="20000"></textarea></label>
+                <label class="u-span-all"><span>회의 내용</span><textarea id="mtMinutes" rows="5" maxlength="50000"></textarea></label>
+                <label class="u-span-all"><span>결정 사항</span><textarea id="mtDecisions" rows="2" maxlength="20000"></textarea></label>
               </div>
               <div class="mt-ai-editor">
                 <div class="mt-ai-editor-head">
@@ -646,7 +646,7 @@
               <p class="form-status" id="meetingFormStatus"></p>
               <div class="dialog-footer">
                 <button class="secondary-button mt-danger" type="button" id="meetingDeleteBtn" hidden>삭제</button>
-                <span style="flex:1"></span>
+                <span class="u-flex-1"></span>
                 <button class="secondary-button" type="button" id="meetingDialogCancel">취소</button>
                 <button class="primary-button" type="submit" id="meetingDialogSubmit">저장</button>
               </div>
@@ -661,21 +661,21 @@
                 <button class="icon-button" type="button" id="actionItemDialogClose">×</button>
               </div>
               <div class="form-grid">
-                <label style="grid-column:1/-1"><span>내용 *</span><input id="aiTitle" required maxlength="200" /></label>
+                <label class="u-span-all"><span>내용 *</span><input id="aiTitle" required maxlength="200" /></label>
                 <label><span>담당자</span><input id="aiAssignee" maxlength="80" list="mtMemberList" /></label>
                 <label><span>기한</span><input id="aiDueDate" type="date" /></label>
                 <label><span>상태</span><select id="aiStatus"><option>대기</option><option>진행중</option><option>완료</option><option>보류</option><option>취소</option></select></label>
                 <label><span>우선순위</span><select id="aiPriority"><option>높음</option><option selected>보통</option><option>낮음</option></select></label>
                 <label><span>연결 WBS 작업</span><select id="aiWbsCode"><option value="">— 없음 —</option></select></label>
                 <label><span>연결 이슈</span><select id="aiIssueId"><option value="">— 없음 —</option></select></label>
-                <label style="grid-column:1/-1"><span>상세</span><textarea id="aiDescription" rows="2" maxlength="4000"></textarea></label>
-                <label style="grid-column:1/-1"><span>코멘트 추가</span><input id="aiComment" maxlength="1000" placeholder="진행 상황 메모" /></label>
+                <label class="u-span-all"><span>상세</span><textarea id="aiDescription" rows="2" maxlength="4000"></textarea></label>
+                <label class="u-span-all"><span>코멘트 추가</span><input id="aiComment" maxlength="1000" placeholder="진행 상황 메모" /></label>
               </div>
               <div id="aiMetaInfo" class="mt-ai-meta"></div>
               <p class="form-status" id="actionItemFormStatus"></p>
               <div class="dialog-footer">
                 <button class="secondary-button mt-danger" type="button" id="actionItemDeleteBtn" hidden>삭제</button>
-                <span style="flex:1"></span>
+                <span class="u-flex-1"></span>
                 <button class="secondary-button" type="button" id="actionItemDialogCancel">취소</button>
                 <button class="primary-button" type="submit" id="actionItemDialogSubmit">저장</button>
               </div>
@@ -757,7 +757,7 @@
                 <button class="icon-button" type="button" id="riskDialogClose">×</button>
               </div>
               <div class="form-grid">
-                <label style="grid-column:1/-1"><span>제목 *</span><input id="riskTitle" type="text" required maxlength="200" /></label>
+                <label class="u-span-all"><span>제목 *</span><input id="riskTitle" type="text" required maxlength="200" /></label>
                 <label><span>심각도</span>
                   <select id="riskSeverity"><option>높음</option><option selected>보통</option><option>낮음</option></select>
                 </label>
@@ -766,8 +766,8 @@
                 </label>
                 <label><span>담당자</span><input id="riskOwner" type="text" value="PMO" maxlength="80" /></label>
                 <label><span>목표일</span><input id="riskDueDate" type="date" /></label>
-                <label style="grid-column:1/-1"><span>설명</span><textarea id="riskDescription" rows="3" maxlength="2000" style="resize:vertical"></textarea></label>
-                <label style="grid-column:1/-1"><span>대응 전략</span><textarea id="riskMitigation" rows="2" maxlength="2000" style="resize:vertical"></textarea></label>
+                <label class="u-span-all"><span>설명</span><textarea id="riskDescription" rows="3" maxlength="2000" class="u-resize-y"></textarea></label>
+                <label class="u-span-all"><span>대응 전략</span><textarea id="riskMitigation" rows="2" maxlength="2000" class="u-resize-y"></textarea></label>
               </div>
               <p class="form-status" id="riskFormStatus"></p>
               <div class="dialog-footer">
@@ -785,13 +785,13 @@
                 <button class="icon-button" type="button" id="issueDialogClose">×</button>
               </div>
               <div class="form-grid">
-                <label style="grid-column:1/-1"><span>제목 *</span><input id="issueTitle" type="text" required maxlength="200" /></label>
+                <label class="u-span-all"><span>제목 *</span><input id="issueTitle" type="text" required maxlength="200" /></label>
                 <label><span>우선순위</span>
                   <select id="issuePriority"><option>높음</option><option selected>보통</option><option>낮음</option></select>
                 </label>
                 <label><span>담당자</span><input id="issueAssignee" type="text" value="PMO" maxlength="80" /></label>
                 <label><span>목표일</span><input id="issueDueDate" type="date" /></label>
-                <label style="grid-column:1/-1"><span>설명</span><textarea id="issueDescription" rows="3" maxlength="2000" style="resize:vertical"></textarea></label>
+                <label class="u-span-all"><span>설명</span><textarea id="issueDescription" rows="3" maxlength="2000" class="u-resize-y"></textarea></label>
               </div>
               <p class="form-status" id="issueFormStatus"></p>
               <div class="dialog-footer">
@@ -845,7 +845,7 @@
               <form method="dialog" id="crForm">
                 <h3 id="crDialogTitle">변경요청 등록</h3>
                 <div class="form-grid">
-                  <label style="grid-column:1/-1"><span>제목 *</span><input id="crTitle" required maxlength="200" /></label>
+                  <label class="u-span-all"><span>제목 *</span><input id="crTitle" required maxlength="200" /></label>
                   <label><span>우선순위</span>
                     <select id="crPriority">
                       <option value="높음">높음</option>
@@ -857,8 +857,8 @@
                   <label><span>WBS 코드</span><input id="crWbsCode" maxlength="30" /></label>
                   <label><span>일정 영향(일)</span><input id="crScheduleDays" type="number" /></label>
                   <label><span>비용 영향</span><input id="crCost" type="number" step="0.01" /></label>
-                  <label style="grid-column:1/-1"><span>영향 범위</span><input id="crImpactScope" placeholder="일정, 비용, 품질, 인력 등" /></label>
-                  <label style="grid-column:1/-1"><span>설명</span><textarea id="crDescription" rows="3" maxlength="2000" style="resize:vertical"></textarea></label>
+                  <label class="u-span-all"><span>영향 범위</span><input id="crImpactScope" placeholder="일정, 비용, 품질, 인력 등" /></label>
+                  <label class="u-span-all"><span>설명</span><textarea id="crDescription" rows="3" maxlength="2000" class="u-resize-y"></textarea></label>
                 </div>
                 <p class="form-status" id="crFormStatus"></p>
                 <div class="dialog-footer">
@@ -959,7 +959,7 @@
 
             <!-- ── 탭 3: 운영 점검 ── -->
             <div id="stgTabOperations" class="stg-tab-content" role="tabpanel" hidden>
-              <div class="panel-header" style="margin-bottom:12px">
+              <div class="panel-header u-mb-12">
                 <span style="font-size:0.78rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">시스템 상태</span>
                 <span class="status-pill attention" id="operationsStatus">점검 중</span>
               </div>
@@ -992,7 +992,7 @@
 
             <!-- ── 탭 4: 사용자 ── -->
             <div id="stgTabUsers" class="stg-tab-content" role="tabpanel" hidden>
-              <div class="panel-header" style="margin-bottom:12px">
+              <div class="panel-header u-mb-12">
                 <span style="font-size:0.78rem;color:var(--text-muted);font-weight:700;text-transform:uppercase">사용자 관리</span>
                 <span class="status-pill stable" id="userCount">0</span>
               </div>
@@ -1199,7 +1199,7 @@
                 <h3>인증 설정</h3>
                 <p class="stg-desc">현재 인증 백엔드: <strong id="authBackendLabel">—</strong></p>
                 <div class="form-grid" style="max-width:520px">
-                  <label style="grid-column:1/-1"><span>LDAP 서버</span><input id="ldapServer" placeholder="ldap.example.com" /></label>
+                  <label class="u-span-all"><span>LDAP 서버</span><input id="ldapServer" placeholder="ldap.example.com" /></label>
                   <label><span>포트</span><input id="ldapPort" type="number" placeholder="389" /></label>
                   <label><span>SSL</span>
                     <select id="ldapUseSSL">
@@ -1207,9 +1207,9 @@
                       <option value="true">활성(LDAPS)</option>
                     </select>
                   </label>
-                  <label style="grid-column:1/-1"><span>Bind DN</span><input id="ldapBindDN" placeholder="cn=service,dc=example,dc=com" /></label>
-                  <label style="grid-column:1/-1"><span>Base DN</span><input id="ldapBaseDN" placeholder="dc=example,dc=com" /></label>
-                  <label style="grid-column:1/-1"><span>사용자 필터</span><input id="ldapUserFilter" placeholder="(mail={email})" /></label>
+                  <label class="u-span-all"><span>Bind DN</span><input id="ldapBindDN" placeholder="cn=service,dc=example,dc=com" /></label>
+                  <label class="u-span-all"><span>Base DN</span><input id="ldapBaseDN" placeholder="dc=example,dc=com" /></label>
+                  <label class="u-span-all"><span>사용자 필터</span><input id="ldapUserFilter" placeholder="(mail={email})" /></label>
                   <label><span>이메일 속성</span><input id="ldapAttrEmail" placeholder="mail" /></label>
                   <label><span>이름 속성</span><input id="ldapAttrName" placeholder="cn" /></label>
                 </div>
@@ -1241,7 +1241,7 @@
                   <dt>SMTP_USER</dt><dd id="smtpUserVal">—</dd>
                   <dt>NOTIFY_FROM_EMAIL</dt><dd id="smtpFromVal">—</dd>
                 </dl>
-                <p class="stg-note" style="margin-top:12px">⚠ SMTP 설정은 환경 변수로 관리됩니다. 변경하려면 docker-compose.yml 또는 Helm values.yaml의 <code>SMTP_*</code> 값을 수정하세요.</p>
+                <p class="stg-note u-mt-12">⚠ SMTP 설정은 환경 변수로 관리됩니다. 변경하려면 docker-compose.yml 또는 Helm values.yaml의 <code>SMTP_*</code> 값을 수정하세요.</p>
               </div>
               <div class="stg-section" style="border-top:1px solid var(--line)">
                 <h3>자동 발송 스케줄</h3>
@@ -1309,7 +1309,7 @@
               <div class="stg-section">
                 <h3>테넌트 관리</h3>
                 <p class="stg-desc">멀티테넌시 활성화 시 고객사별 데이터를 격리합니다.</p>
-                <div class="panel-header-actions" style="margin-bottom:12px">
+                <div class="panel-header-actions u-mb-12">
                   <button class="primary-button btn-sm" id="addTenantBtn">+ 테넌트 추가</button>
                 </div>
                 <table class="ri-table" id="tenantTable">
@@ -1531,7 +1531,7 @@
             <span>상위 WBS 코드</span>
             <input id="wbsRowParentCode" name="parent_code" type="text" maxlength="40" placeholder="예) SI.1" />
           </label>
-          <label style="grid-column: 1 / -1">
+          <label class="u-span-all">
             <span>작업명 <small>*</small></span>
             <input id="wbsRowName" name="name" type="text" maxlength="160" required />
           </label>
@@ -1609,7 +1609,7 @@
         </p>
         <div id="ownerMapBody" style="min-height:80px;max-height:400px;overflow-y:auto"></div>
         <p class="form-status" id="ownerMapStatus"></p>
-        <div class="dialog-footer" style="margin-top:12px">
+        <div class="dialog-footer u-mt-12">
           <button class="secondary-button" id="ownerMapCancelBtn" type="button">닫기</button>
           <button class="primary-button"   id="ownerMapApplyBtn"  type="button">일괄 적용</button>
         </div>
@@ -1629,7 +1629,7 @@
         <fieldset class="form-section">
           <legend>변경 요청 정보</legend>
           <div class="form-grid">
-            <label style="grid-column:1/-1">
+            <label class="u-span-all">
               <span>제목 *</span>
               <input id="crTitle" type="text" maxlength="160" required placeholder="변경 요청 제목" />
             </label>
@@ -1652,19 +1652,19 @@
                 <option value="critical">긴급</option>
               </select>
             </label>
-            <label style="grid-column:1/-1">
+            <label class="u-span-all">
               <span>변경 사유 *</span>
               <textarea id="crReason" rows="3" required placeholder="변경이 필요한 이유를 설명하세요"></textarea>
             </label>
-            <label style="grid-column:1/-1">
+            <label class="u-span-all">
               <span>변경 전 (현재)</span>
               <textarea id="crBefore" rows="2" placeholder="현재 상태 또는 기존 정의"></textarea>
             </label>
-            <label style="grid-column:1/-1">
+            <label class="u-span-all">
               <span>변경 후 (요청)</span>
               <textarea id="crAfter" rows="2" placeholder="변경 후 상태 또는 새 정의"></textarea>
             </label>
-            <label style="grid-column:1/-1">
+            <label class="u-span-all">
               <span>영향 범위</span>
               <textarea id="crScope" rows="2" placeholder="영향 받는 작업, 일정, 비용 등"></textarea>
             </label>
@@ -1729,7 +1729,7 @@
         <fieldset class="form-section">
           <legend>기본 정보 <small>* 필수</small></legend>
           <div class="form-grid">
-            <label style="grid-column: 1 / -1">
+            <label class="u-span-all">
               <span>프로젝트명 *</span>
               <input id="projectNameInput" name="name" type="text" minlength="2" maxlength="120" required />
             </label>
@@ -1819,7 +1819,30 @@
     </dialog>
 
     <script src="./config.js"></script>
-    <script src="./app.js?v=20261002-pm-core"></script>
-    <script src="./meetings.js?v=20261002-pm-core"></script>
+    <!-- 포털 스크립트: 클래식 스크립트로 전역 스코프를 공유 — 순서 변경 금지 (boot.js 는 항상 마지막) -->
+    <script src="./js/core-state.js?v=20261002-split"></script>
+    <script src="./js/guide-content.js?v=20261002-split"></script>
+    <script src="./js/core-utils.js?v=20261002-split"></script>
+    <script src="./js/dashboard.js?v=20261002-split"></script>
+    <script src="./js/templates-projects.js?v=20261002-split"></script>
+    <script src="./js/approvals-imports-sync.js?v=20261002-split"></script>
+    <script src="./js/settings-guide.js?v=20261002-split"></script>
+    <script src="./js/wbs-plan.js?v=20261002-split"></script>
+    <script src="./js/data-actions.js?v=20261002-split"></script>
+    <script src="./js/op-view.js?v=20261002-split"></script>
+    <script src="./js/navigation-session.js?v=20261002-split"></script>
+    <script src="./js/events-global.js?v=20261002-split"></script>
+    <script src="./js/wbs-extras.js?v=20261002-split"></script>
+    <script src="./js/wbs-events.js?v=20261002-split"></script>
+    <script src="./js/notifications.js?v=20261002-split"></script>
+    <script src="./js/workboard.js?v=20261002-split"></script>
+    <script src="./js/announcements.js?v=20261002-split"></script>
+    <script src="./js/risks.js?v=20261002-split"></script>
+    <script src="./js/project-detail.js?v=20261002-split"></script>
+    <script src="./js/admin-ops.js?v=20261002-split"></script>
+    <script src="./js/ui-shell.js?v=20261002-split"></script>
+    <script src="./js/notes.js?v=20261002-split"></script>
+    <script src="./js/meetings.js?v=20261002-split"></script>
+    <script src="./js/boot.js?v=20261002-split"></script>
   </body>
 </html>

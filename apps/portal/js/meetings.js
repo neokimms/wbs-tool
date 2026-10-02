@@ -460,7 +460,7 @@
         <span>회의 <strong>${meetings.length}</strong></span>
         <span>미결 Action <strong>${actions.length}</strong></span>
         <span class="${overdue ? "mt-warn" : ""}">기한 경과 <strong>${overdue}</strong></span>
-        <span style="flex:1"></span>
+        <span class="u-flex-1"></span>
         <button class="primary-button mt-small" type="button" data-pd-open-meetings>회의·Action 화면에서 관리 →</button>
       </div>
       <h4 class="mt-pd-sub">최근 회의</h4>

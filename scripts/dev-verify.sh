@@ -24,7 +24,7 @@ LOG=outputs/verify.log
   done
   echo "API_HEALTH=$ok"
   echo "PORTAL_HTTP=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3010/)"
-  for asset in $(grep -oE '\./[a-z-]+\.(js|css)' apps/portal/index.html | sort -u); do
+  for asset in $(grep -oE '\./[a-z/-]+\.(js|css)' apps/portal/index.html | sort -u); do
     echo "ASSET ${asset} $(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3010/${asset#./}")"
   done
   echo "== tests (container, isolated DB wbs_test)"

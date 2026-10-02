@@ -70,6 +70,15 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, DEMO_E2E)
 
+    def test_portal_scripts_are_wired_in_order(self):
+        """분리된 포털 스크립트가 모두 index.html 에 있고 boot.js 가 마지막에 로드되는지."""
+        import re
+        srcs = re.findall(r'<script src="\./(js/[a-z-]+\.js)', PORTAL_HTML)
+        files = sorted(str(p.relative_to(ROOT / "apps/portal")) for p in (ROOT / "apps/portal/js").glob("*.js"))
+        self.assertEqual(sorted(srcs), files)
+        self.assertEqual(srcs[-1], "js/boot.js")
+        self.assertEqual(srcs[0], "js/core-state.js")
+
 
 if __name__ == "__main__":
     unittest.main()

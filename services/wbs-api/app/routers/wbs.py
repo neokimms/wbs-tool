@@ -1020,7 +1020,16 @@ async def wbs_diff(project_id: str, request: Request, baseline_id: str | None = 
             )
 
         if not bl_row:
-            return {"added": list(current.values()), "removed": [], "changed": [], "unchanged": []}
+            # 베이스라인이 아직 없음 — 화면이 같은 형식으로 처리할 수 있도록 summary 포함
+            return {
+                "project_id": project_id,
+                "baseline_id": None,
+                "has_baseline": False,
+                "summary": {"added": len(current), "removed": 0, "changed": 0, "unchanged": 0},
+                "added": list(current.values()),
+                "removed": [],
+                "changed": [],
+            }
 
         baseline_snapshot = bl_row["snapshot"] if isinstance(bl_row["snapshot"], list) else json.loads(bl_row["snapshot"])
         baseline = {item["code"]: item for item in baseline_snapshot}
@@ -1053,6 +1062,7 @@ async def wbs_diff(project_id: str, request: Request, baseline_id: str | None = 
     return {
         "project_id": project_id,
         "baseline_id": baseline_id,
+        "has_baseline": True,
         "summary": {
             "added": len(added),
             "removed": len(removed),

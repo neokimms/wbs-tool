@@ -22,6 +22,8 @@ class BaselineDiffTests(unittest.TestCase):
         r = env().get(f"/api/projects/{pid}/wbs-diff")
         self.assertEqual(r.status, 200, r)
         self.assertEqual(len(r.body["added"]), len(SAMPLE_WBS))
+        self.assertFalse(r.body["has_baseline"])
+        self.assertEqual(r.body["summary"]["added"], len(SAMPLE_WBS))  # 화면이 summary 를 필수로 사용
 
     def test_diff_after_approval_baseline(self):
         e = env()
@@ -36,6 +38,8 @@ class BaselineDiffTests(unittest.TestCase):
         d = e.get(f"/api/projects/{pid}/wbs-diff")
         self.assertEqual(d.status, 200, d)
         self.assertEqual([c["code"] for c in d.body["changed"]], ["P.1.1"])
+        self.assertTrue(d.body["has_baseline"])
+        self.assertEqual(d.body["summary"]["changed"], 1)
 
 
 class MigrationIdempotencyTests(unittest.TestCase):

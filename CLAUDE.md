@@ -108,9 +108,7 @@ SKIP_BUILD=1 ./scripts/dev-verify.sh
 ### 코드 변경 후 배포
 ```bash
 # 포털 파일 배포
-docker cp apps/portal/index.html wbstoolagent-wbs-portal-1:/usr/share/nginx/html/index.html
-docker cp apps/portal/app.js     wbstoolagent-wbs-portal-1:/usr/share/nginx/html/app.js
-docker cp apps/portal/styles.css wbstoolagent-wbs-portal-1:/usr/share/nginx/html/styles.css
+docker cp apps/portal/. wbstoolagent-wbs-portal-1:/usr/share/nginx/html/
 docker exec wbstoolagent-wbs-portal-1 nginx -s reload
 
 # API 변경 배포
@@ -120,7 +118,11 @@ docker restart wbstoolagent-wbs-api-1
 ```
 
 ### 캐시 버스팅
-`index.html`의 `styles.css?v=` 및 `app.js?v=` 버전 문자열 갱신 필요.
+`index.html`의 `styles.css?v=` 및 `js/*.js?v=` 버전 문자열 갱신 필요. 새 화면 스크립트는 `boot.js` 앞에 추가.
+
+### 스타일 규칙
+- 색상: `:root` 토큰(`--blue`, `--c-green-100` 등 상태 팔레트) 사용 — 새 하드코딩 HEX 금지
+- 반복 인라인 style 대신 `u-*` 유틸리티 클래스 (`u-span-all`, `u-text-muted` …)
 
 ### 검증 순서
 1. `node -e "new Function(js)"` — JS 구문 확인
@@ -161,7 +163,7 @@ docker restart wbstoolagent-wbs-api-1
 | 프로젝트 역할 | `main.py` `PROJECT_ROLES` | admin(관리자)·pm·pmo=편집 / member·reviewer=협업 / viewer=열람. 멤버 관리=admin·pm |
 | 회의·Action Item | migration `016_meetings_action_items.sql` | `/api/projects/{id}/meetings`, `/api/projects/{id}/action-items`, `/api/me/action-items` |
 
-포털 JS는 `app.js` + `meetings.js`(회의·Action·멤버 탭). 진척 롤업은 `computeWbsRollupMap()`이 서버 산식과 동일하게 계산.
+포털 JS는 `apps/portal/js/*.js` 화면별 파일(클래식 스크립트, 전역 스코프 공유 — `index.html` 로드 순서 유지, `boot.js` 항상 마지막). 진척 롤업은 `computeWbsRollupMap()`이 서버 산식과 동일하게 계산.
 
 ## 디자인 시스템 요약
 
