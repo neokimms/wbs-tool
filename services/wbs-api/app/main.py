@@ -26,6 +26,16 @@ from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel, Field
 
+try:  # uvicorn app.main:app (패키지) / 스크립트 실행 모두 지원
+    from app.wbs_rules import (
+        apply_rollup_to_items,
+        compute_wbs_rollup,
+        hierarchy_rules_payload,
+        validate_hierarchy,
+    )
+except ImportError:  # pragma: no cover
+    from wbs_rules import apply_rollup_to_items, compute_wbs_rollup, hierarchy_rules_payload, validate_hierarchy  # type: ignore
+
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
@@ -68,6 +78,7 @@ MIGRATION_PATHS = [
     Path(__file__).resolve().parent.parent / "migrations" / "013_announcements.sql",
     Path(__file__).resolve().parent.parent / "migrations" / "014_notes.sql",
     Path(__file__).resolve().parent.parent / "migrations" / "015_notes_softdelete.sql",
+    Path(__file__).resolve().parent.parent / "migrations" / "016_meetings_action_items.sql",
 ]
 RUN_MIGRATIONS_ON_STARTUP = os.getenv("WBS_RUN_MIGRATIONS_ON_STARTUP", "true").lower() in {"1", "true", "yes", "on"}
 SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
@@ -112,6 +123,21 @@ ALLOWED_USER_ROLES = {"admin", "pmo", "viewer"}
 ALLOWED_USER_STATUSES = {"Active", "Suspended"}
 MUTATING_ROLES = {"admin", "pmo"}
 ADMIN_ROLES = {"admin"}
+# ── 프로젝트 단위 역할 (wbs_project_members.project_role) ──────────────────
+#   admin    프로젝트 관리자 — 모든 권한 + 멤버 관리
+#   pmo      PMO           — WBS·리스크·이슈·변경 편집
+#   pm       PM            — WBS·리스크·이슈·변경 편집 + 멤버 관리(관리자 지정 제외)
+#   member   팀원          — 본인 작업 진척 입력, 회의·Action Item·이슈 등록
+#   reviewer 검토자        — 열람 + 검토 대상 작업 갱신, 회의·Action Item 등록
+#   viewer   열람자        — 읽기 전용
+PROJECT_ROLES = {"admin", "pmo", "pm", "member", "reviewer", "viewer"}
+PROJECT_ROLE_LABELS = {
+    "admin": "프로젝트 관리자", "pmo": "PMO", "pm": "PM",
+    "member": "팀원", "reviewer": "검토자", "viewer": "열람자",
+}
+PROJECT_MUTATING_ROLES = {"admin", "pmo", "pm"}
+PROJECT_MANAGE_ROLES = {"admin", "pm"}
+PROJECT_COLLAB_ROLES = {"admin", "pmo", "pm", "member", "reviewer"}
 WORK_ITEM_STATUSES = {"대기", "진행중", "완료", "지연", "보류"}
 WORK_ITEM_PRIORITIES = {"높음", "보통", "낮음"}
 PROJECT_DELIVERY_MODES = {"waterfall", "agile", "hybrid"}
@@ -408,11 +434,11 @@ class ProjectDeliveryModeUpdate(BaseModel):
 
 class ProjectMemberCreate(BaseModel):
     user_id: UUID
-    project_role: str = Field(..., min_length=3, max_length=20)
+    project_role: str = Field(..., min_length=2, max_length=20)
 
 
 class ProjectMemberUpdate(BaseModel):
-    project_role: str = Field(..., min_length=3, max_length=20)
+    project_role: str = Field(..., min_length=2, max_length=20)
 
 
 class WbsItemsBatch(BaseModel):
@@ -821,8 +847,19 @@ async def get_effective_project_role(
 
 
 def ensure_project_mutate_role(project: dict[str, Any]) -> None:
-    """fetch_tenant_project()가 채운 프로젝트별 실질 권한이 admin/pmo가 아니면 변경 차단."""
-    if project.get("_project_role") not in MUTATING_ROLES:
+    """fetch_tenant_project()가 채운 프로젝트별 실질 권한이 admin/pmo/pm이 아니면 변경 차단."""
+    if project.get("_project_role") not in PROJECT_MUTATING_ROLES:
+        raise HTTPException(status_code=403, detail="Insufficient role")
+
+
+def ensure_project_collab_role(project: dict[str, Any]) -> None:
+    """회의·Action Item·이슈 등록 등 협업 행위 — 열람자(viewer)만 차단."""
+    if project.get("_project_role") not in PROJECT_COLLAB_ROLES:
+        raise HTTPException(status_code=403, detail="열람자는 등록할 수 없습니다")
+
+
+def ensure_project_manage_role(project: dict[str, Any]) -> None:
+    if project.get("_project_role") not in PROJECT_MANAGE_ROLES:
         raise HTTPException(status_code=403, detail="Insufficient role")
 
 
@@ -1600,6 +1637,7 @@ async def build_weekly_report_workbook(
         wbs_progress = await connection.fetch(
             """
             SELECT
+                p.id AS project_id,
                 p.name AS project_name,
                 p.owner,
                 p.status AS project_status,
@@ -1635,6 +1673,9 @@ async def build_weekly_report_workbook(
             ORDER BY p.updated_at DESC
             LIMIT 100
             """
+        )
+        weekly_rollups = await fetch_rollups_for_projects(
+            connection, [row["project_id"] for row in wbs_progress], period_end.date() if isinstance(period_end, datetime) else None
         )
 
     wb = Workbook()
@@ -1687,7 +1728,7 @@ async def build_weekly_report_workbook(
     append_report_table(
         progress_sheet,
         "내부 WBS 진행 현황",
-        ["프로젝트", "담당", "상태", "작업 항목", "완료", "지연", "평균 진척률"],
+        ["프로젝트", "담당", "상태", "작업 항목", "완료", "지연", "진척률(가중)", "계획 진척률", "SPI"],
         [
             [
                 row["project_name"],
@@ -1696,7 +1737,9 @@ async def build_weekly_report_workbook(
                 row["total_items"],
                 row["done_items"],
                 row["overdue_items"],
-                f"{row['avg_progress'] or 0}%",
+                f"{weekly_rollups.get(str(row['project_id']), {}).get('summary', {}).get('progress_pct', 0)}%",
+                f"{weekly_rollups.get(str(row['project_id']), {}).get('summary', {}).get('planned_pct', 0)}%",
+                weekly_rollups.get(str(row['project_id']), {}).get('summary', {}).get('spi') or "—",
             ]
             for row in wbs_progress
         ],
@@ -2589,6 +2632,12 @@ def validate_wbs_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
                 }
             )
 
+    # 계층 깊이·유형 규칙 (wbs_rules.validate_hierarchy — WBS_HIERARCHY_MODE로 strict/warn/off)
+    if not errors:
+        h_errors, h_warnings = validate_hierarchy(rows)
+        errors.extend(h_errors)
+        warnings.extend(h_warnings)
+
     return errors, warnings
 
 
@@ -3087,6 +3136,44 @@ async def fetch_project_wbs_items(connection: asyncpg.Connection, project_id: UU
         project_id,
     )
     return [normalize_record(record) for record in records]
+
+
+async def fetch_project_rollup(
+    connection: asyncpg.Connection, project_id: UUID, as_of: date | None = None
+) -> dict[str, Any]:
+    """프로젝트 WBS 진척 롤업 (공통 산식 — wbs_rules.compute_wbs_rollup)."""
+    rows = await fetch_project_wbs_items(connection, project_id)
+    return compute_wbs_rollup(rows, as_of)
+
+
+async def fetch_rollups_for_projects(
+    connection: asyncpg.Connection, project_ids: list[UUID], as_of: date | None = None
+) -> dict[str, dict[str, Any]]:
+    """여러 프로젝트의 롤업을 한 번의 조회로 계산. {project_id(str): rollup}"""
+    if not project_ids:
+        return {}
+    records = await connection.fetch(
+        """
+        SELECT project_id, code, parent_code, name, item_type, owner, weight,
+               start_date, finish_date, sort_order, metadata
+        FROM wbs_project_wbs_items
+        WHERE project_id = ANY($1::uuid[])
+        """,
+        project_ids,
+    )
+    grouped: dict[str, list[dict[str, Any]]] = {str(pid): [] for pid in project_ids}
+    for record in records:
+        row = normalize_record(record)
+        row["metadata"] = normalize_metadata(row.get("metadata"))
+        grouped.setdefault(str(record["project_id"]), []).append(row)
+    return {pid: compute_wbs_rollup(rows, as_of) for pid, rows in grouped.items()}
+
+
+async def project_has_children(connection: asyncpg.Connection, project_id: UUID, code: str) -> bool:
+    return bool(await connection.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM wbs_project_wbs_items WHERE project_id = $1 AND parent_code = $2)",
+        project_id, code,
+    ))
 
 
 def work_item_status(row: dict[str, Any]) -> str:
@@ -5600,7 +5687,8 @@ async def list_projects(request: Request) -> list[dict[str, Any]]:
             records = await connection.fetch(
                 """
                 SELECT id, name, template_key, owner, status, start_date, delivery_mode,
-                       openproject_project_id, metadata, tenant_id, created_at, updated_at
+                       openproject_project_id, metadata, tenant_id, created_at, updated_at,
+                       'admin' AS project_role
                 FROM wbs_projects
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC
@@ -5612,7 +5700,8 @@ async def list_projects(request: Request) -> list[dict[str, Any]]:
             records = await connection.fetch(
                 """
                 SELECT p.id, p.name, p.template_key, p.owner, p.status, p.start_date, p.delivery_mode,
-                       p.openproject_project_id, p.metadata, p.tenant_id, p.created_at, p.updated_at
+                       p.openproject_project_id, p.metadata, p.tenant_id, p.created_at, p.updated_at,
+                       m.project_role
                 FROM wbs_projects p
                 JOIN wbs_project_members m
                   ON m.project_id = p.id AND m.tenant_id = p.tenant_id
@@ -5828,8 +5917,7 @@ async def list_project_member_candidates(project_id: str, request: Request) -> l
     tid = get_tenant_id(request)
     async with get_pool(request).acquire() as connection:
         project = await fetch_tenant_project(connection, request, parsed_id)
-        if project["_project_role"] != "admin":
-            raise HTTPException(status_code=403, detail="Insufficient role")
+        ensure_project_manage_role(project)
         records = await connection.fetch(
             """
             SELECT u.id, u.email, u.display_name, u.role AS global_role
@@ -5853,15 +5941,16 @@ async def add_project_member(project_id: str, payload: ProjectMemberCreate, requ
     if not parsed_id:
         raise HTTPException(status_code=400, detail="Invalid project id")
     role = payload.project_role.strip().lower()
-    if role not in ALLOWED_USER_ROLES:
+    if role not in PROJECT_ROLES:
         raise HTTPException(status_code=400, detail="Invalid project role")
 
     tid = get_tenant_id(request)
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
             project = await fetch_tenant_project(connection, request, parsed_id, for_update=True)
-            if project["_project_role"] != "admin":
-                raise HTTPException(status_code=403, detail="Insufficient role")
+            ensure_project_manage_role(project)
+            if project["_project_role"] == "pm" and role == "admin":
+                raise HTTPException(status_code=403, detail="PM은 프로젝트 관리자 역할을 지정할 수 없습니다")
 
             target_user = await connection.fetchrow(
                 "SELECT id, email, display_name FROM wbs_users WHERE id = $1 AND tenant_id = $2",
@@ -5912,14 +6001,13 @@ async def update_project_member(
     if not parsed_id or not parsed_member_id:
         raise HTTPException(status_code=400, detail="Invalid id")
     role = payload.project_role.strip().lower()
-    if role not in ALLOWED_USER_ROLES:
+    if role not in PROJECT_ROLES:
         raise HTTPException(status_code=400, detail="Invalid project role")
 
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
             project = await fetch_tenant_project(connection, request, parsed_id, for_update=True)
-            if project["_project_role"] != "admin":
-                raise HTTPException(status_code=403, detail="Insufficient role")
+            ensure_project_manage_role(project)
 
             member = await connection.fetchrow(
                 """
@@ -5933,6 +6021,8 @@ async def update_project_member(
             )
             if not member:
                 raise HTTPException(status_code=404, detail="Member not found")
+            if project["_project_role"] == "pm" and (role == "admin" or member["project_role"] == "admin"):
+                raise HTTPException(status_code=403, detail="PM은 프로젝트 관리자 역할을 변경할 수 없습니다")
 
             if member["project_role"] == "admin" and role != "admin":
                 remaining_admins = await connection.fetchval(
@@ -5981,8 +6071,7 @@ async def remove_project_member(project_id: str, member_id: str, request: Reques
     async with get_pool(request).acquire() as connection:
         async with connection.transaction():
             project = await fetch_tenant_project(connection, request, parsed_id, for_update=True)
-            if project["_project_role"] != "admin":
-                raise HTTPException(status_code=403, detail="Insufficient role")
+            ensure_project_manage_role(project)
 
             member = await connection.fetchrow(
                 """
@@ -5996,6 +6085,8 @@ async def remove_project_member(project_id: str, member_id: str, request: Reques
             )
             if not member:
                 raise HTTPException(status_code=404, detail="Member not found")
+            if project["_project_role"] == "pm" and member["project_role"] == "admin":
+                raise HTTPException(status_code=403, detail="PM은 프로젝트 관리자를 제외할 수 없습니다")
 
             if member["project_role"] == "admin":
                 remaining_admins = await connection.fetchval(
@@ -6798,6 +6889,26 @@ async def reject_approval(approval_id: str, payload: ApprovalDecision, request: 
     return updated
 
 
+async def _dashboard_phase_rows(request: Request, project_ids: list[UUID]) -> list[dict[str, Any]]:
+    if not project_ids:
+        return []
+    async with get_pool(request).acquire() as connection:
+        records = await connection.fetch(
+            """
+            SELECT i.project_id, i.code, i.name, i.parent_code, p.name AS project_name
+            FROM wbs_project_wbs_items i
+            JOIN wbs_projects p ON p.id = i.project_id
+            WHERE i.project_id = ANY($1::uuid[]) AND i.item_type = '단계'
+              AND (i.parent_code IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM wbs_project_wbs_items x
+                    WHERE x.project_id = i.project_id AND x.code = i.parent_code AND x.item_type = '단계'))
+            ORDER BY p.name, i.sort_order, i.code
+            """,
+            project_ids,
+        )
+    return [normalize_record(r) for r in records]
+
+
 @app.get("/api/dashboard")
 async def dashboard(request: Request) -> dict[str, Any]:
     tid = get_tenant_id(request)
@@ -6842,32 +6953,17 @@ async def dashboard(request: Request) -> dict[str, Any]:
             tid,
         )
 
-        # P2-01: SPI/CPI — weight × progress 기반 집계
-        wbs_agg_rows = await connection.fetch(
+        # P2-01: 진척률·SPI — 공통 산식(wbs_rules) 기반 집계
+        dash_projects = await connection.fetch(
             """
-            SELECT
-                p.id AS project_id,
-                p.name AS project_name,
-                p.status AS project_status,
-                p.start_date,
-                p.metadata->>'end_date' AS end_date,
-                COALESCE(SUM(
-                    CASE WHEN i.item_type NOT IN ('프로젝트') THEN
-                        COALESCE((i.metadata->>'weight')::numeric, i.weight, 0)
-                    ELSE 0 END
-                ), 0) AS total_weight,
-                COALESCE(SUM(
-                    CASE WHEN i.item_type NOT IN ('프로젝트') THEN
-                        COALESCE((i.metadata->>'weight')::numeric, i.weight, 0)
-                        * COALESCE((i.metadata->>'progress')::numeric, 0) / 100.0
-                    ELSE 0 END
-                ), 0) AS earned_weight
+            SELECT p.id AS project_id, p.name AS project_name, p.status AS project_status
             FROM wbs_projects p
-            LEFT JOIN wbs_project_wbs_items i ON i.project_id = p.id
             WHERE p.status NOT IN ('Closed') AND p.tenant_id = $1
-            GROUP BY p.id, p.name, p.status, p.start_date, p.metadata
             """,
             tid,
+        )
+        dash_rollups = await fetch_rollups_for_projects(
+            connection, [r["project_id"] for r in dash_projects]
         )
 
         # P2-01: 리스크·이슈 카운트 (wbs_risks / wbs_issues 테이블 존재 시)
@@ -6883,50 +6979,45 @@ async def dashboard(request: Request) -> dict[str, Any]:
         except Exception:
             pass
 
-        # P2-01: 상태별 히트맵 — 단계(Phase)별 평균 진행률
-        heatmap_rows = await connection.fetch(
-            """
-            SELECT
-                p.name AS project_name,
-                i.name AS phase_name,
-                COALESCE(
-                    (SELECT AVG(COALESCE((c.metadata->>'progress')::numeric, 0))
-                     FROM wbs_project_wbs_items c
-                     WHERE c.project_id = p.id AND c.parent_code = i.code
-                    ), 0
-                ) AS avg_progress
-            FROM wbs_projects p
-            JOIN wbs_project_wbs_items i ON i.project_id = p.id AND i.item_type = '단계'
-            WHERE p.status NOT IN ('Closed') AND p.tenant_id = $1
-            ORDER BY p.name, i.sort_order
-            LIMIT 50
-            """,
-            tid,
-        )
-
-    # SPI/CPI 계산 (portfolio 수준)
-    total_earned = sum(float(r["earned_weight"]) for r in wbs_agg_rows)
-    total_planned = sum(float(r["total_weight"]) for r in wbs_agg_rows)
-    today = date.today()
-
+    # SPI(EV/PV)·진척률 — 공통 산식
     project_kpis = []
-    for r in wbs_agg_rows:
-        tw = float(r["total_weight"]) or 0
-        ew = float(r["earned_weight"]) or 0
-        progress_pct = round(ew / tw * 100, 1) if tw else 0
-        # 단순 SPI: earned / planned (일정 정보 없으면 progress 기반)
-        spi = round(ew / tw, 3) if tw else None
+    heatmap_rows: list[dict[str, Any]] = []
+    total_ev = total_pv = total_earned = total_weight_all = 0.0
+    for r in sorted(dash_projects, key=lambda x: x["project_name"]):
+        roll = dash_rollups.get(str(r["project_id"]), {"summary": {}, "nodes": {}})
+        sm = roll["summary"]
+        total_ev += sm.get("earned_value", 0.0)
+        total_pv += sm.get("planned_value", 0.0)
+        total_earned += sm.get("earned_weight", 0.0)
+        total_weight_all += sm.get("total_weight", 0.0)
         project_kpis.append({
             "project_id": str(r["project_id"]),
             "project_name": r["project_name"],
             "project_status": r["project_status"],
-            "total_weight": tw,
-            "earned_weight": round(ew, 2),
-            "progress_pct": progress_pct,
-            "spi": spi,
+            "total_weight": sm.get("total_weight", 0.0),
+            "earned_weight": sm.get("earned_weight", 0.0),
+            "progress_pct": sm.get("progress_pct", 0.0),
+            "planned_pct": sm.get("planned_pct", 0.0),
+            "spi": sm.get("spi"),
+            "delayed_leaf_count": sm.get("delayed_leaf_count", 0),
         })
+    # 단계별 히트맵: '단계' 유형 항목의 롤업 진척률 (프로젝트 최상위 단계 기준)
+    phase_records = await _dashboard_phase_rows(request, [r["project_id"] for r in dash_projects])
+    name_by_id = {str(r["project_id"]): r["project_name"] for r in dash_projects}
+    for ph in phase_records:
+        node = dash_rollups.get(str(ph["project_id"]), {"nodes": {}})["nodes"].get(ph["code"])
+        if node is None:
+            continue
+        heatmap_rows.append({
+            "project_name": name_by_id.get(str(ph["project_id"]), ""),
+            "phase_name": ph["name"],
+            "avg_progress": node["progress"],
+        })
+        if len(heatmap_rows) >= 50:
+            break
 
-    portfolio_spi = round(total_earned / total_planned, 3) if total_planned else None
+    portfolio_spi = round(total_ev / total_pv, 3) if total_pv > 0 else None
+    portfolio_progress = round(total_earned / total_weight_all * 100.0, 1) if total_weight_all else 0.0
 
     return {
         "metrics": {
@@ -6937,6 +7028,8 @@ async def dashboard(request: Request) -> dict[str, Any]:
             "risk_count": int(risk_count),
             "issue_count": int(issue_count),
             "portfolio_spi": portfolio_spi,
+            "portfolio_progress": portfolio_progress,
+            "progress_formula": "leaf 입력 · 상위 가중 롤업 / SPI = EV ÷ PV",
             "openproject_sync": "ready",
             "database": "PostgreSQL 17",
         },
@@ -7799,11 +7892,63 @@ async def list_project_work_items(project_id: str, request: Request) -> list[dic
     async with get_pool(request).acquire() as connection:
         project = await fetch_tenant_project(connection, request, parsed_id)
         rows = await fetch_project_wbs_items(connection, parsed_id)
-    return [
+        action_counts = {
+            r["wbs_code"]: r["open_count"]
+            for r in await connection.fetch(
+                """
+                SELECT wbs_code, count(*)::int AS open_count FROM wbs_action_items
+                WHERE project_id = $1 AND wbs_code IS NOT NULL AND status NOT IN ('완료','취소')
+                GROUP BY wbs_code
+                """,
+                parsed_id,
+            )
+        }
+    for row in rows:
+        row["action_open_count"] = action_counts.get(row.get("code"), 0)
+    rollup = compute_wbs_rollup(rows)
+    items = [
         serialize_work_item_row({**row, "project_id": parsed_id}, project)
         for row in rows
         if (row.get("item_type") or "작업") != "프로젝트"
     ]
+    return apply_rollup_to_items(items, rollup)
+
+
+@app.get("/api/projects/{project_id}/progress")
+async def get_project_progress(project_id: str, request: Request) -> dict[str, Any]:
+    """공통 산식 기반 진척 롤업 — 요약 + 항목별(node) 진척/계획진척/SPI."""
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    as_of = parse_date(request.query_params.get("as_of")) if request.query_params.get("as_of") else None
+    async with get_pool(request).acquire() as connection:
+        await fetch_tenant_project(connection, request, parsed_id)
+        rollup = await fetch_project_rollup(connection, parsed_id, as_of)
+    return rollup
+
+
+@app.get("/api/wbs/rules")
+async def get_wbs_rules() -> dict[str, Any]:
+    """WBS 계층 깊이·유형 규칙과 진척/SPI 산식 안내."""
+    return hierarchy_rules_payload()
+
+
+@app.get("/api/project-roles")
+async def list_project_roles() -> dict[str, Any]:
+    """프로젝트 단위 역할 정의 (멤버 관리 화면용)."""
+    order = ["admin", "pm", "pmo", "member", "reviewer", "viewer"]
+    return {
+        "roles": [
+            {
+                "key": key,
+                "label": PROJECT_ROLE_LABELS[key],
+                "can_edit_wbs": key in PROJECT_MUTATING_ROLES,
+                "can_manage_members": key in PROJECT_MANAGE_ROLES,
+                "can_collaborate": key in PROJECT_COLLAB_ROLES,
+            }
+            for key in order
+        ]
+    }
 
 
 @app.patch("/api/projects/{project_id}/work-items/{item_code:path}")
@@ -7826,7 +7971,7 @@ async def update_project_work_item(
             row = await fetch_project_work_item(connection, parsed_id, item_code, for_update=True)
             if not row:
                 raise HTTPException(status_code=404, detail="Work item not found")
-            if project["_project_role"] not in MUTATING_ROLES and not work_item_matches_user(row, user):
+            if project["_project_role"] not in PROJECT_MUTATING_ROLES and not work_item_matches_user(row, user):
                 raise HTTPException(status_code=403, detail="Only PMO/admin or assigned users can update this work item")
 
             metadata = normalize_metadata(row.get("metadata"))
@@ -7849,8 +7994,15 @@ async def update_project_work_item(
             if next_start and next_finish and next_finish < next_start:
                 raise HTTPException(status_code=400, detail="Finish date is earlier than start date")
 
+            if payload.progress is not None and await project_has_children(connection, parsed_id, item_code):
+                raise HTTPException(
+                    status_code=400,
+                    detail="상위 항목의 진척률은 하위 작업에서 자동 계산됩니다. 최하위 작업의 진척률을 입력하세요.",
+                )
             if payload.status is not None:
                 metadata["status"] = payload.status
+                if payload.status == "완료" and payload.progress is None:
+                    metadata["progress"] = 100  # 완료 처리 시 진척률 100% 동기화
             if payload.progress is not None:
                 metadata["progress"] = payload.progress
             if payload.priority is not None:
@@ -8022,7 +8174,7 @@ async def upload_project_work_item_attachment(
             row = await fetch_project_work_item(connection, parsed_id, item_code, for_update=True)
             if not row:
                 raise HTTPException(status_code=404, detail="Work item not found")
-            if project["_project_role"] not in MUTATING_ROLES and not work_item_matches_user(row, user):
+            if project["_project_role"] not in PROJECT_MUTATING_ROLES and not work_item_matches_user(row, user):
                 raise HTTPException(status_code=403, detail="Only PMO/admin or assigned users can upload attachments")
 
             metadata = normalize_metadata(row.get("metadata"))
@@ -8429,7 +8581,7 @@ async def update_agile_item(
             current_item = agile_item_response(current)
             project = await fetch_tenant_project(connection, request, current["project_id"])
             policy = await fetch_project_operation_policy(connection, tid)
-            if project["_project_role"] not in MUTATING_ROLES:
+            if project["_project_role"] not in PROJECT_MUTATING_ROLES:
                 assignee_key = work_item_identity_key(current_item.get("assignee"))
                 user_keys = work_item_user_tokens(user)
                 if assignee_key not in user_keys:
@@ -8929,7 +9081,14 @@ async def scan_work_item_alerts(request: Request) -> dict[str, Any]:
                         row["code"],
                         metadata,
                     )
-    return {"scanned": scanned, "created": created, "data_source": "internal_wbs"}
+    action_result = await _scan_action_item_alerts(get_pool(request), tid)
+    return {
+        "scanned": scanned,
+        "created": created + action_result["created"],
+        "action_items_scanned": action_result["scanned"],
+        "action_items_alerted": action_result["created"],
+        "data_source": "internal_wbs",
+    }
 
 
 @app.get("/api/openproject")
@@ -9779,7 +9938,7 @@ async def create_risk(project_id: str, payload: RiskCreate, request: Request) ->
     tid = get_tenant_id(request)
     async with get_pool(request).acquire() as connection:
         project = await fetch_tenant_project(connection, request, pid)
-        ensure_project_mutate_role(project)
+        ensure_project_collab_role(project)
         user = getattr(request.state, "user", None)
         row = await connection.fetchrow(
             """
@@ -9885,7 +10044,7 @@ async def create_issue(project_id: str, payload: IssueCreate, request: Request) 
     tid = get_tenant_id(request)
     async with get_pool(request).acquire() as connection:
         project = await fetch_tenant_project(connection, request, pid)
-        ensure_project_mutate_role(project)
+        ensure_project_collab_role(project)
         user = getattr(request.state, "user", None)
         row = await connection.fetchrow(
             """
@@ -10338,22 +10497,8 @@ async def get_project_detail(project_id: str, request: Request) -> dict[str, Any
     async with get_pool(request).acquire() as connection:
         project = await fetch_tenant_project(connection, request, parsed_id)
 
-        # WBS 통계 (status는 metadata->>'status'에 저장)
-        wbs_stats = await connection.fetchrow(
-            """
-            SELECT
-                count(*) AS total_items,
-                count(*) FILTER (WHERE metadata->>'status' = '완료') AS done_items,
-                COALESCE(SUM(COALESCE((metadata->>'weight')::numeric, weight, 0)), 0) AS total_weight,
-                COALESCE(SUM(
-                    COALESCE((metadata->>'weight')::numeric, weight, 0)
-                    * COALESCE((metadata->>'progress')::numeric, 0) / 100.0
-                ), 0) AS earned_weight
-            FROM wbs_project_wbs_items
-            WHERE project_id = $1 AND item_type NOT IN ('프로젝트')
-            """,
-            parsed_id,
-        )
+        # WBS 통계 — 공통 산식(wbs_rules)
+        detail_rollup = await fetch_project_rollup(connection, parsed_id)
 
         # 리스크 요약
         risks = await connection.fetch(
@@ -10402,21 +10547,23 @@ async def get_project_detail(project_id: str, request: Request) -> dict[str, Any
             parsed_id,
         )
 
-    tw = float(wbs_stats["total_weight"] or 0)
-    ew = float(wbs_stats["earned_weight"] or 0)
-    progress_pct = round(ew / tw * 100, 1) if tw else 0
-    spi = round(ew / tw, 3) if tw else None
+    sm = detail_rollup["summary"]
 
     return {
         "project": normalize_record(project),
         "project_role": project["_project_role"],
         "wbs_summary": {
-            "total_items": wbs_stats["total_items"],
-            "done_items": wbs_stats["done_items"],
-            "total_weight": round(tw, 2),
-            "earned_weight": round(ew, 2),
-            "progress_pct": progress_pct,
-            "spi": spi,
+            "total_items": sm["item_count"],
+            "leaf_items": sm["leaf_count"],
+            "done_items": sm["done_leaf_count"],
+            "delayed_items": sm["delayed_leaf_count"],
+            "total_weight": sm["total_weight"],
+            "earned_weight": sm["earned_weight"],
+            "progress_pct": sm["progress_pct"],
+            "planned_pct": sm["planned_pct"],
+            "spi": sm["spi"],
+            "as_of": sm["as_of"],
+            "formula": sm["formula"],
         },
         "risks": [normalize_record(r) for r in risks],
         "issues": [normalize_record(i) for i in issues],
@@ -11107,27 +11254,18 @@ async def portfolio_burndown(
             *params,
         ) if await _table_exists(connection, "wbs_progress_snapshots") else []
 
-        # 스냅샷 없으면 현재 값으로 단일 포인트 생성
+        # 스냅샷 없으면 현재 값(공통 산식)으로 단일 포인트 생성
         if not snapshot_rows:
-            cur = await connection.fetchrow(
-                """
-                SELECT COALESCE(SUM(
-                    CASE WHEN i.item_type NOT IN ('프로젝트') THEN
-                        COALESCE((i.metadata->>'weight')::numeric, i.weight, 0) ELSE 0 END
-                ), 0) AS total_weight,
-                COALESCE(SUM(
-                    CASE WHEN i.item_type NOT IN ('프로젝트') THEN
-                        COALESCE((i.metadata->>'weight')::numeric, i.weight, 0)
-                        * COALESCE((i.metadata->>'progress')::numeric, 0) / 100.0
-                    ELSE 0 END
-                ), 0) AS earned_weight
-                FROM wbs_projects p
-                LEFT JOIN wbs_project_wbs_items i ON i.project_id = p.id
-                WHERE p.tenant_id = $1 AND p.status NOT IN ('Closed')
-                """,
-                tid,
-            )
-            snapshot_rows = [{"snapshot_date": today, "earned": cur["earned_weight"], "total": cur["total_weight"]}]
+            only_pid = safe_uuid(project_id) if project_id else None
+            cur_ids = [r["id"] for r in await connection.fetch(
+                "SELECT id FROM wbs_projects WHERE tenant_id = $1 AND status NOT IN ('Closed')"
+                " AND ($2::uuid IS NULL OR id = $2::uuid)",
+                tid, only_pid,
+            )]
+            cur_rollups = await fetch_rollups_for_projects(connection, cur_ids)
+            earned = sum(r["summary"]["earned_weight"] for r in cur_rollups.values())
+            total = sum(r["summary"]["total_weight"] for r in cur_rollups.values())
+            snapshot_rows = [{"snapshot_date": today, "earned": earned, "total": total}]
 
     series = [
         {
@@ -11917,3 +12055,651 @@ async def restore_note(note_id: str, request: Request):
 
 def _get_tenant(request: Request) -> str:
     return getattr(request.state, "tenant_id", None) or "default"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 회의(Meeting) · Action Item
+#   · Action Item = 담당자·기한·상태 + WBS 작업/이슈 연결 → '내 작업'·알림과 연동
+#   · 권한: 등록=협업 역할(admin/pmo/pm/member/reviewer), 수정=편집 역할 또는 작성자/담당자
+# ══════════════════════════════════════════════════════════════════════════
+
+MEETING_TYPES = {"정기", "착수", "검토", "이슈", "고객", "기타"}
+MEETING_STATUSES = {"Draft", "Final"}
+ACTION_ITEM_STATUSES = {"대기", "진행중", "완료", "보류", "취소"}
+ACTION_ITEM_CLOSED = {"완료", "취소"}
+
+
+class ActionItemInput(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str = Field("", max_length=4000)
+    assignee: str | None = Field(None, max_length=80)
+    assignee_user_id: UUID | None = None
+    due_date: date | None = None
+    status: str = Field("대기", pattern="^(대기|진행중|완료|보류|취소)$")
+    priority: str = Field("보통", pattern="^(높음|보통|낮음)$")
+    wbs_code: str | None = Field(None, max_length=120)
+    issue_id: UUID | None = None
+
+
+class ActionItemUpdate(BaseModel):
+    title: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=4000)
+    assignee: str | None = Field(None, max_length=80)
+    assignee_user_id: UUID | None = None
+    due_date: date | None = None
+    status: str | None = Field(None, pattern="^(대기|진행중|완료|보류|취소)$")
+    priority: str | None = Field(None, pattern="^(높음|보통|낮음)$")
+    wbs_code: str | None = Field(None, max_length=120)
+    issue_id: UUID | None = None
+    comment: str | None = Field(None, max_length=1000)
+
+
+class MeetingCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    meeting_type: str = Field("정기", max_length=20)
+    meeting_date: date | None = None
+    start_time: str | None = Field(None, max_length=20)
+    location: str | None = Field(None, max_length=200)
+    facilitator: str | None = Field(None, max_length=80)
+    attendees: list[str] = Field(default_factory=list, max_length=100)
+    agenda: str = Field("", max_length=20000)
+    minutes: str = Field("", max_length=50000)
+    decisions: str = Field("", max_length=20000)
+    status: str = Field("Draft", pattern="^(Draft|Final)$")
+    action_items: list[ActionItemInput] = Field(default_factory=list, max_length=100)
+
+
+class MeetingUpdate(BaseModel):
+    title: str | None = Field(None, min_length=1, max_length=200)
+    meeting_type: str | None = Field(None, max_length=20)
+    meeting_date: date | None = None
+    start_time: str | None = Field(None, max_length=20)
+    location: str | None = Field(None, max_length=200)
+    facilitator: str | None = Field(None, max_length=80)
+    attendees: list[str] | None = Field(None, max_length=100)
+    agenda: str | None = Field(None, max_length=20000)
+    minutes: str | None = Field(None, max_length=50000)
+    decisions: str | None = Field(None, max_length=20000)
+    status: str | None = Field(None, pattern="^(Draft|Final)$")
+
+
+ACTION_ITEM_SELECT = """
+    a.id, a.tenant_id, a.project_id, a.meeting_id, a.title, a.description, a.assignee,
+    a.assignee_user_id, a.due_date, a.status, a.priority, a.wbs_code, a.issue_id, a.source,
+    a.completed_at, a.metadata, a.created_by, a.created_by_name, a.created_at, a.updated_at,
+    p.name AS project_name, m.title AS meeting_title, m.meeting_date,
+    i.title AS issue_title, w.name AS wbs_name
+"""
+ACTION_ITEM_FROM = """
+    FROM wbs_action_items a
+    JOIN wbs_projects p ON p.id = a.project_id
+    LEFT JOIN wbs_meetings m ON m.id = a.meeting_id
+    LEFT JOIN wbs_issues i ON i.id = a.issue_id
+    LEFT JOIN wbs_project_wbs_items w ON w.project_id = a.project_id AND w.code = a.wbs_code
+"""
+
+
+def serialize_action_item(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
+    item = normalize_record(record) if isinstance(record, asyncpg.Record) else dict(record)
+    item["metadata"] = normalize_metadata(item.get("metadata"))
+    for key in ("id", "project_id", "meeting_id", "assignee_user_id", "issue_id", "created_by"):
+        if item.get(key) is not None:
+            item[key] = str(item[key])
+    due = parse_date(item.get("due_date"))
+    item["is_overdue"] = bool(due and due < date.today() and item.get("status") not in ACTION_ITEM_CLOSED)
+    item["display_status"] = "지연" if item["is_overdue"] else item.get("status")
+    return item
+
+
+def action_item_matches_user(item: dict[str, Any], user: dict[str, Any]) -> bool:
+    if item.get("assignee_user_id") and str(item["assignee_user_id"]) == str(user.get("id")):
+        return True
+    key = work_item_identity_key(item.get("assignee"))
+    return bool(key) and key in work_item_user_tokens(user)
+
+
+async def _resolve_assignee(
+    connection: asyncpg.Connection, tenant_id: str, project_id: UUID,
+    assignee: str | None, assignee_user_id: UUID | None,
+) -> tuple[str | None, UUID | None, dict[str, Any] | None]:
+    """담당자 이름/ID → (표시명, user_id, user). 프로젝트 멤버(또는 테넌트 사용자) 기준."""
+    if assignee_user_id:
+        user = await connection.fetchrow(
+            "SELECT id, email, display_name FROM wbs_users WHERE id = $1 AND tenant_id = $2 AND status = 'Active'",
+            assignee_user_id, tenant_id,
+        )
+        if not user:
+            raise HTTPException(status_code=400, detail="담당자를 찾을 수 없습니다")
+        return (user["display_name"] or user["email"], user["id"], normalize_record(user))
+    name = (assignee or "").strip() or None
+    if not name:
+        return (None, None, None)
+    users = await resolve_work_item_notification_users(connection, tenant_id, [name])
+    if len(users) == 1:
+        return (name, safe_uuid(users[0]["id"]), users[0])
+    return (name, None, None)
+
+
+async def _validate_links(
+    connection: asyncpg.Connection, project_id: UUID, wbs_code: str | None, issue_id: UUID | None,
+) -> None:
+    if wbs_code:
+        ok = await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM wbs_project_wbs_items WHERE project_id = $1 AND code = $2)",
+            project_id, wbs_code,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"WBS 코드 '{wbs_code}'가 이 프로젝트에 없습니다")
+    if issue_id:
+        ok = await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM wbs_issues WHERE id = $1 AND project_id = $2)", issue_id, project_id,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail="연결할 이슈가 이 프로젝트에 없습니다")
+
+
+async def _notify_action_assignee(
+    connection: asyncpg.Connection, *, project: dict[str, Any], item: dict[str, Any],
+    user: dict[str, Any] | None, event_type: str, title: str,
+) -> None:
+    if not user or not safe_uuid(user.get("id")):
+        return
+    due = item.get("due_date")
+    due_text = due.isoformat() if isinstance(due, date) else (due or "기한 없음")
+    await send_notification(
+        connection,
+        user_id=safe_uuid(user["id"]),
+        event_type=event_type,
+        title=title,
+        body=f"{project.get('name')} / {item.get('title')} (기한: {due_text})",
+        entity_type="action_item",
+        entity_id=str(item.get("id")),
+        metadata={
+            "project_id": str(project["id"]),
+            "project_name": project.get("name"),
+            "action_item_id": str(item.get("id")),
+            "meeting_id": str(item["meeting_id"]) if item.get("meeting_id") else None,
+        },
+        email_to=None,
+    )
+
+
+async def _insert_action_item(
+    connection: asyncpg.Connection, request: Request, project: dict[str, Any],
+    payload: ActionItemInput, *, meeting_id: UUID | None, source: str,
+) -> dict[str, Any]:
+    actor = getattr(request.state, "user", None) or {}
+    await _validate_links(connection, project["id"], payload.wbs_code, payload.issue_id)
+    name, user_id, assignee_user = await _resolve_assignee(
+        connection, project["tenant_id"], project["id"], payload.assignee, payload.assignee_user_id
+    )
+    record = await connection.fetchrow(
+        """
+        INSERT INTO wbs_action_items
+          (tenant_id, project_id, meeting_id, title, description, assignee, assignee_user_id,
+           due_date, status, priority, wbs_code, issue_id, source, completed_at,
+           created_by, created_by_name)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+                CASE WHEN $9 = '완료' THEN now() ELSE NULL END, $14, $15)
+        RETURNING id, meeting_id, title, due_date
+        """,
+        project["tenant_id"], project["id"], meeting_id, payload.title.strip(), payload.description,
+        name, user_id, payload.due_date, payload.status, payload.priority,
+        (payload.wbs_code or None), payload.issue_id, source,
+        safe_uuid(actor.get("id")), actor.get("display_name") or actor.get("email"),
+    )
+    item = normalize_record(record)
+    if assignee_user and str(assignee_user.get("id")) != str(actor.get("id")):
+        await _notify_action_assignee(
+            connection, project=project, item=item, user=assignee_user,
+            event_type="action_item.assigned", title="Action Item 배정",
+        )
+    return item
+
+
+async def _fetch_action_item(connection: asyncpg.Connection, item_id: UUID, tenant_id: str) -> dict[str, Any] | None:
+    record = await connection.fetchrow(
+        f"SELECT {ACTION_ITEM_SELECT} {ACTION_ITEM_FROM} WHERE a.id = $1 AND a.tenant_id = $2",
+        item_id, tenant_id,
+    )
+    return serialize_action_item(record) if record else None
+
+
+def _serialize_meeting(record: asyncpg.Record | dict[str, Any]) -> dict[str, Any]:
+    m = normalize_record(record) if isinstance(record, asyncpg.Record) else dict(record)
+    for key in ("id", "project_id", "created_by"):
+        if m.get(key) is not None:
+            m[key] = str(m[key])
+    if isinstance(m.get("attendees"), str):
+        try:
+            m["attendees"] = json.loads(m["attendees"])
+        except ValueError:
+            m["attendees"] = []
+    m["metadata"] = normalize_metadata(m.get("metadata"))
+    return m
+
+
+MEETING_SELECT = """
+    m.id, m.tenant_id, m.project_id, m.title, m.meeting_type, m.meeting_date, m.start_time,
+    m.location, m.facilitator, m.attendees, m.agenda, m.minutes, m.decisions, m.status,
+    m.metadata, m.created_by, m.created_by_name, m.created_at, m.updated_at,
+    p.name AS project_name,
+    (SELECT count(*) FROM wbs_action_items x WHERE x.meeting_id = m.id)::int AS action_count,
+    (SELECT count(*) FROM wbs_action_items x WHERE x.meeting_id = m.id AND x.status NOT IN ('완료','취소'))::int AS open_action_count
+"""
+
+
+@app.get("/api/projects/{project_id}/meetings")
+async def list_project_meetings(project_id: str, request: Request) -> list[dict[str, Any]]:
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    async with get_pool(request).acquire() as connection:
+        await fetch_tenant_project(connection, request, parsed_id)
+        records = await connection.fetch(
+            f"""
+            SELECT {MEETING_SELECT}
+            FROM wbs_meetings m JOIN wbs_projects p ON p.id = m.project_id
+            WHERE m.project_id = $1 AND m.deleted_at IS NULL
+            ORDER BY m.meeting_date DESC, m.created_at DESC
+            LIMIT 200
+            """,
+            parsed_id,
+        )
+    return [_serialize_meeting(r) for r in records]
+
+
+@app.post("/api/projects/{project_id}/meetings", status_code=201)
+async def create_project_meeting(project_id: str, payload: MeetingCreate, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    if payload.meeting_type not in MEETING_TYPES:
+        raise HTTPException(status_code=400, detail=f"회의 유형은 {', '.join(sorted(MEETING_TYPES))} 중 하나입니다")
+    actor = getattr(request.state, "user", None) or {}
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            project = await fetch_tenant_project(connection, request, parsed_id)
+            ensure_project_collab_role(project)
+            record = await connection.fetchrow(
+                """
+                INSERT INTO wbs_meetings
+                  (tenant_id, project_id, title, meeting_type, meeting_date, start_time, location,
+                   facilitator, attendees, agenda, minutes, decisions, status, created_by, created_by_name)
+                VALUES ($1,$2,$3,$4,COALESCE($5, CURRENT_DATE),$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15)
+                RETURNING id
+                """,
+                project["tenant_id"], parsed_id, payload.title.strip(), payload.meeting_type,
+                payload.meeting_date, payload.start_time, payload.location, payload.facilitator,
+                [a.strip() for a in payload.attendees if a and a.strip()],
+                payload.agenda, payload.minutes, payload.decisions, payload.status,
+                safe_uuid(actor.get("id")), actor.get("display_name") or actor.get("email"),
+            )
+            meeting_id = record["id"]
+            for ai in payload.action_items:
+                await _insert_action_item(connection, request, project, ai, meeting_id=meeting_id, source="meeting")
+            await insert_audit_event(
+                connection, request=request, event_type="meeting.created",
+                entity_type="meeting", entity_id=meeting_id,
+                summary=f"회의 등록: {project['name']} / {payload.title}",
+                metadata={"project_id": str(parsed_id), "action_items": len(payload.action_items)},
+            )
+    return await get_meeting(str(meeting_id), request)
+
+
+@app.get("/api/meetings/{meeting_id}")
+async def get_meeting(meeting_id: str, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(meeting_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid meeting id")
+    tid = get_tenant_id(request)
+    async with get_pool(request).acquire() as connection:
+        record = await connection.fetchrow(
+            f"""
+            SELECT {MEETING_SELECT}
+            FROM wbs_meetings m JOIN wbs_projects p ON p.id = m.project_id
+            WHERE m.id = $1 AND m.tenant_id = $2 AND m.deleted_at IS NULL
+            """,
+            parsed_id, tid,
+        )
+        if not record:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        project = await fetch_tenant_project(connection, request, record["project_id"])
+        items = await connection.fetch(
+            f"SELECT {ACTION_ITEM_SELECT} {ACTION_ITEM_FROM} WHERE a.meeting_id = $1 "
+            "ORDER BY a.created_at, COALESCE(a.due_date, DATE '9999-12-31'), a.title",
+            parsed_id,
+        )
+    meeting = _serialize_meeting(record)
+    meeting["action_items"] = [serialize_action_item(r) for r in items]
+    meeting["project_role"] = project["_project_role"]
+    return meeting
+
+
+@app.patch("/api/meetings/{meeting_id}")
+async def update_meeting(meeting_id: str, payload: MeetingUpdate, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(meeting_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid meeting id")
+    tid = get_tenant_id(request)
+    actor = getattr(request.state, "user", None) or {}
+    fields = payload.model_dump(exclude_unset=True)
+    if "meeting_type" in fields and fields["meeting_type"] not in MEETING_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid meeting type")
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            current = await connection.fetchrow(
+                "SELECT * FROM wbs_meetings WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL FOR UPDATE",
+                parsed_id, tid,
+            )
+            if not current:
+                raise HTTPException(status_code=404, detail="Meeting not found")
+            project = await fetch_tenant_project(connection, request, current["project_id"])
+            is_author = current["created_by"] and str(current["created_by"]) == str(actor.get("id"))
+            if project["_project_role"] not in PROJECT_MUTATING_ROLES and not is_author:
+                raise HTTPException(status_code=403, detail="작성자 또는 PM/PMO만 수정할 수 있습니다")
+            allowed = ["title", "meeting_type", "meeting_date", "start_time", "location", "facilitator",
+                       "attendees", "agenda", "minutes", "decisions", "status"]
+            sets, values = [], []
+            for key in allowed:
+                if key in fields:
+                    value = fields[key]
+                    if key == "attendees":
+                        value = [a.strip() for a in (value or []) if a and a.strip()]
+                        sets.append(f"{key} = ${len(values) + 2}::jsonb")
+                    else:
+                        sets.append(f"{key} = ${len(values) + 2}")
+                    values.append(value)
+            if sets:
+                await connection.execute(
+                    f"UPDATE wbs_meetings SET {', '.join(sets)}, updated_at = now() WHERE id = $1",
+                    parsed_id, *values,
+                )
+                await insert_audit_event(
+                    connection, request=request, event_type="meeting.updated",
+                    entity_type="meeting", entity_id=parsed_id,
+                    summary=f"회의 수정: {project['name']} / {fields.get('title') or current['title']}",
+                    metadata={"fields": sorted(fields.keys())},
+                )
+    return await get_meeting(meeting_id, request)
+
+
+@app.delete("/api/meetings/{meeting_id}")
+async def delete_meeting(meeting_id: str, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(meeting_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid meeting id")
+    tid = get_tenant_id(request)
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            current = await connection.fetchrow(
+                "SELECT id, project_id, title FROM wbs_meetings WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL",
+                parsed_id, tid,
+            )
+            if not current:
+                raise HTTPException(status_code=404, detail="Meeting not found")
+            project = await fetch_tenant_project(connection, request, current["project_id"])
+            ensure_project_mutate_role(project)
+            await connection.execute("UPDATE wbs_meetings SET deleted_at = now() WHERE id = $1", parsed_id)
+            await insert_audit_event(
+                connection, request=request, event_type="meeting.deleted",
+                entity_type="meeting", entity_id=parsed_id,
+                summary=f"회의 삭제(보존): {project['name']} / {current['title']}",
+            )
+    return {"id": meeting_id, "deleted": True}
+
+
+@app.get("/api/projects/{project_id}/action-items")
+async def list_project_action_items(
+    project_id: str, request: Request, status: str | None = None, mine: bool = False,
+    wbs_code: str | None = None, issue_id: str | None = None,
+) -> list[dict[str, Any]]:
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    user = getattr(request.state, "user", None) or {}
+    async with get_pool(request).acquire() as connection:
+        await fetch_tenant_project(connection, request, parsed_id)
+        where, params = ["a.project_id = $1"], [parsed_id]
+        if status == "open":
+            where.append("a.status NOT IN ('완료','취소')")
+        elif status:
+            params.append(status)
+            where.append(f"a.status = ${len(params)}")
+        if wbs_code:
+            params.append(wbs_code)
+            where.append(f"a.wbs_code = ${len(params)}")
+        if issue_id and safe_uuid(issue_id):
+            params.append(safe_uuid(issue_id))
+            where.append(f"a.issue_id = ${len(params)}")
+        records = await connection.fetch(
+            f"""
+            SELECT {ACTION_ITEM_SELECT} {ACTION_ITEM_FROM}
+            WHERE {' AND '.join(where)}
+            ORDER BY (a.status IN ('완료','취소')), COALESCE(a.due_date, DATE '9999-12-31'), a.created_at
+            LIMIT 500
+            """,
+            *params,
+        )
+    items = [serialize_action_item(r) for r in records]
+    if mine:
+        items = [i for i in items if action_item_matches_user(i, user)]
+    return items
+
+
+@app.post("/api/projects/{project_id}/action-items", status_code=201)
+async def create_project_action_item(project_id: str, payload: ActionItemInput, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(project_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid project id")
+    meeting_id = safe_uuid(request.query_params.get("meeting_id")) if request.query_params.get("meeting_id") else None
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            project = await fetch_tenant_project(connection, request, parsed_id)
+            ensure_project_collab_role(project)
+            if meeting_id:
+                ok = await connection.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM wbs_meetings WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL)",
+                    meeting_id, parsed_id,
+                )
+                if not ok:
+                    raise HTTPException(status_code=400, detail="회의를 찾을 수 없습니다")
+            item = await _insert_action_item(
+                connection, request, project, payload,
+                meeting_id=meeting_id, source="meeting" if meeting_id else "manual",
+            )
+            await insert_audit_event(
+                connection, request=request, event_type="action_item.created",
+                entity_type="action_item", entity_id=item["id"],
+                summary=f"Action Item 등록: {project['name']} / {payload.title}",
+                metadata={"wbs_code": payload.wbs_code, "issue_id": str(payload.issue_id) if payload.issue_id else None},
+            )
+        return await _fetch_action_item(connection, item["id"], project["tenant_id"])
+
+
+@app.patch("/api/action-items/{item_id}")
+async def update_action_item(item_id: str, payload: ActionItemUpdate, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(item_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid action item id")
+    tid = get_tenant_id(request)
+    actor = getattr(request.state, "user", None) or {}
+    fields = payload.model_dump(exclude_unset=True)
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            current = await _fetch_action_item(connection, parsed_id, tid)
+            if not current:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            project = await fetch_tenant_project(connection, request, safe_uuid(current["project_id"]))
+            is_author = current.get("created_by") and current["created_by"] == str(actor.get("id"))
+            is_assignee = action_item_matches_user(current, actor)
+            can_edit_all = project["_project_role"] in PROJECT_MUTATING_ROLES or is_author
+            if not can_edit_all and not is_assignee:
+                raise HTTPException(status_code=403, detail="담당자·작성자 또는 PM/PMO만 수정할 수 있습니다")
+            if not can_edit_all:
+                # 담당자는 진행 상태·코멘트만 갱신
+                blocked = set(fields) - {"status", "comment"}
+                if blocked:
+                    raise HTTPException(status_code=403, detail="담당자는 상태와 코멘트만 변경할 수 있습니다")
+            await _validate_links(
+                connection, project["id"],
+                fields.get("wbs_code") if "wbs_code" in fields else None,
+                fields.get("issue_id") if "issue_id" in fields else None,
+            )
+            metadata = normalize_metadata(current.get("metadata"))
+            sets, values = [], []
+
+            def put(col: str, value: Any) -> None:
+                values.append(value)
+                sets.append(f"{col} = ${len(values) + 1}")
+
+            new_assignee_user = None
+            if "assignee" in fields or "assignee_user_id" in fields:
+                name, user_id, new_assignee_user = await _resolve_assignee(
+                    connection, tid, project["id"], fields.get("assignee"), fields.get("assignee_user_id")
+                )
+                put("assignee", name)
+                put("assignee_user_id", user_id)
+            for col in ("title", "description", "due_date", "priority", "wbs_code", "issue_id"):
+                if col in fields:
+                    put(col, fields[col] or None if col in ("wbs_code",) else fields[col])
+            if "status" in fields:
+                put("status", fields["status"])
+                if fields["status"] == "완료" and current.get("status") != "완료":
+                    sets.append("completed_at = now()")
+                elif fields["status"] != "완료":
+                    sets.append("completed_at = NULL")
+            if fields.get("comment"):
+                comments = list(metadata.get("comments") or [])
+                comments.append({
+                    "author": actor.get("display_name") or actor.get("email"),
+                    "text": fields["comment"].strip(),
+                    "ts": utc_now_iso(),
+                })
+                metadata["comments"] = comments[-50:]
+            history = list(metadata.get("history") or [])
+            changed = sorted(k for k in fields if k != "comment")
+            if changed:
+                history.append({"actor": actor.get("display_name") or actor.get("email"),
+                                "fields": changed, "at": utc_now_iso()})
+                metadata["history"] = history[-50:]
+            put("metadata", metadata)
+            sets[-1] = sets[-1] + "::jsonb"
+            await connection.execute(
+                f"UPDATE wbs_action_items SET {', '.join(sets)}, updated_at = now() WHERE id = $1",
+                parsed_id, *values,
+            )
+            updated = await _fetch_action_item(connection, parsed_id, tid)
+            if new_assignee_user and str(new_assignee_user.get("id")) != str(actor.get("id")):
+                await _notify_action_assignee(
+                    connection, project=project, item=updated, user=new_assignee_user,
+                    event_type="action_item.assigned", title="Action Item 배정",
+                )
+            await insert_audit_event(
+                connection, request=request, event_type="action_item.updated",
+                entity_type="action_item", entity_id=parsed_id,
+                summary=f"Action Item 수정: {project['name']} / {updated['title']}",
+                metadata={"fields": changed},
+            )
+    return updated
+
+
+@app.delete("/api/action-items/{item_id}")
+async def delete_action_item(item_id: str, request: Request) -> dict[str, Any]:
+    parsed_id = safe_uuid(item_id)
+    if not parsed_id:
+        raise HTTPException(status_code=400, detail="Invalid action item id")
+    tid = get_tenant_id(request)
+    async with get_pool(request).acquire() as connection:
+        async with connection.transaction():
+            current = await _fetch_action_item(connection, parsed_id, tid)
+            if not current:
+                raise HTTPException(status_code=404, detail="Action item not found")
+            project = await fetch_tenant_project(connection, request, safe_uuid(current["project_id"]))
+            ensure_project_mutate_role(project)
+            await connection.execute("DELETE FROM wbs_action_items WHERE id = $1", parsed_id)
+            await insert_audit_event(
+                connection, request=request, event_type="action_item.deleted",
+                entity_type="action_item", entity_id=parsed_id,
+                summary=f"Action Item 삭제: {project['name']} / {current['title']}",
+            )
+    return {"id": item_id, "deleted": True}
+
+
+@app.get("/api/me/action-items")
+async def list_my_action_items(request: Request, include_closed: bool = False) -> list[dict[str, Any]]:
+    """내 작업 — 나에게 배정된 Action Item (멤버인 프로젝트 범위)."""
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    tid = get_tenant_id(request)
+    async with get_pool(request).acquire() as connection:
+        params: list[Any] = [tid]
+        member_filter = ""
+        if user.get("role") != "admin":
+            params.append(safe_uuid(user.get("id")))
+            member_filter = f"""AND EXISTS (SELECT 1 FROM wbs_project_members pm
+                                WHERE pm.project_id = a.project_id AND pm.user_id = ${len(params)})"""
+        closed_filter = "" if include_closed else "AND a.status NOT IN ('완료','취소')"
+        records = await connection.fetch(
+            f"""
+            SELECT {ACTION_ITEM_SELECT} {ACTION_ITEM_FROM}
+            WHERE a.tenant_id = $1 {member_filter} {closed_filter}
+            ORDER BY COALESCE(a.due_date, DATE '9999-12-31'), a.created_at
+            LIMIT 500
+            """,
+            *params,
+        )
+    return [i for i in (serialize_action_item(r) for r in records) if action_item_matches_user(i, user)]
+
+
+@app.post("/api/action-items/alerts/scan")
+async def scan_action_item_alerts(request: Request) -> dict[str, Any]:
+    """기한 경과 Action Item 담당자에게 하루 1회 지연 알림."""
+    require_roles(request, {"admin", "pmo"})
+    return await _scan_action_item_alerts(get_pool(request), get_tenant_id(request))
+
+
+async def _scan_action_item_alerts(pool: asyncpg.Pool, tenant_id: str) -> dict[str, Any]:
+    today_key = date.today().isoformat()
+    created = scanned = 0
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            records = await connection.fetch(
+                f"""
+                SELECT {ACTION_ITEM_SELECT} {ACTION_ITEM_FROM}
+                WHERE a.tenant_id = $1 AND a.status NOT IN ('완료','취소')
+                  AND a.due_date < CURRENT_DATE
+                """,
+                tenant_id,
+            )
+            for record in records:
+                scanned += 1
+                item = serialize_action_item(record)
+                meta = item["metadata"]
+                alerts = normalize_metadata(meta.get("alerts"))
+                if alerts.get("overdue") == today_key:
+                    continue
+                users = []
+                if item.get("assignee_user_id"):
+                    u = await connection.fetchrow(
+                        "SELECT id, email, display_name FROM wbs_users WHERE id = $1",
+                        safe_uuid(item["assignee_user_id"]),
+                    )
+                    users = [normalize_record(u)] if u else []
+                elif item.get("assignee"):
+                    users = await resolve_work_item_notification_users(connection, tenant_id, [item["assignee"]])
+                project = {"id": item["project_id"], "name": item.get("project_name")}
+                for u in users:
+                    await _notify_action_assignee(
+                        connection, project=project, item=item, user=u,
+                        event_type="action_item.delayed", title="Action Item 기한 경과",
+                    )
+                    created += 1
+                alerts["overdue"] = today_key
+                meta["alerts"] = alerts
+                await connection.execute(
+                    "UPDATE wbs_action_items SET metadata = $2::jsonb WHERE id = $1",
+                    safe_uuid(item["id"]), meta,
+                )
+    return {"scanned": scanned, "created": created}

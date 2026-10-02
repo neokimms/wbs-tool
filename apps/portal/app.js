@@ -571,7 +571,13 @@ async function request(path, options = {}) {
     let detail = `Request failed: ${response.status}`;
     try {
       const errorBody = await response.json();
-      detail = typeof errorBody.detail === "string" ? errorBody.detail : JSON.stringify(errorBody.detail || detail);
+      const d = errorBody.detail;
+      if (typeof d === "string") detail = d;
+      else if (d && Array.isArray(d.errors)) {
+        // WBS 검증 실패 등 — 행 번호와 메시지를 읽기 쉽게 표시
+        const lines = d.errors.slice(0, 5).map((e) => `${e.row ? `${e.row}행: ` : ""}${e.message}`);
+        detail = `${d.message || "검증 실패"} — ${lines.join(" / ")}${d.errors.length > 5 ? ` 외 ${d.errors.length - 5}건` : ""}`;
+      } else detail = JSON.stringify(d || detail);
     } catch (error) {
       detail = response.statusText || detail;
     }
@@ -943,8 +949,41 @@ function canManageUsers() {
   return state.currentUser?.role === "admin";
 }
 
-function canMutateWork() {
-  return ["admin", "pmo"].includes(state.currentUser?.role);
+/* 프로젝트 단위 역할 — admin(관리자)·pmo·pm은 편집, member·reviewer는 협업, viewer는 열람 */
+const PROJECT_ROLE_LABELS = { admin: "프로젝트 관리자", pm: "PM", pmo: "PMO", member: "팀원", reviewer: "검토자", viewer: "열람자" };
+const PROJECT_EDIT_ROLES   = ["admin", "pmo", "pm"];
+const PROJECT_COLLAB_ROLES = ["admin", "pmo", "pm", "member", "reviewer"];
+
+function projectRoleOf(projectId) {
+  if (!projectId) return null;
+  if (state.currentUser?.role === "admin") return "admin";
+  const p = (state.projects || []).find((x) => String(x.id) === String(projectId));
+  return p?.project_role || null;
+}
+
+function currentContextProjectId() {
+  const view = document.body.dataset.portalView;
+  if (view === "workboard") return document.getElementById("workboardProjectSelect")?.value || null;
+  if (view === "meetings") return document.getElementById("mtProjectSelect")?.value || null;
+  if (view === "project-detail" || view === "projectDetail") return state.projectDetail?.project?.id || null;
+  return state.wbsPlanProjectId || null;
+}
+
+function canMutateWork(projectId) {
+  const user = state.currentUser;
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const role = projectRoleOf(projectId || currentContextProjectId());
+  if (role) return PROJECT_EDIT_ROLES.includes(role);
+  return ["admin", "pmo"].includes(user.role);
+}
+
+function canCollaborate(projectId) {
+  const user = state.currentUser;
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const role = projectRoleOf(projectId || currentContextProjectId());
+  return role ? PROJECT_COLLAB_ROLES.includes(role) : ["admin", "pmo"].includes(user.role);
 }
 
 function canViewAudit() {
@@ -1097,7 +1136,7 @@ function renderDashboardKpiBanner() {
           <div class="kpi-progress-bar"><div class="kpi-progress-fill" style="width:${Math.min(progress,100)}%"></div></div>
           <span>${progress}%</span>
         </div>
-        <div class="kpi-card-spi ${spiCls}">SPI ${spiVal}</div>
+        <div class="kpi-card-spi ${spiCls}" title="계획 ${k.planned_pct ?? 0}% 대비 실적 ${progress}% (SPI = EV ÷ PV)">SPI ${spiVal}</div>
       </div>`;
   }).join("");
 
@@ -3274,12 +3313,60 @@ function renderWbsWeightMini() {
 }
 
 /* 테이블 단일 행 HTML */
+
+/* ── WBS 진척률 공통 산식 (서버 wbs_rules.compute_wbs_rollup 과 동일 규칙) ──
+   · 진척률은 최하위 작업에만 입력, 상위 항목은 leaf 가중 평균으로 자동 계산
+   · 리스크/이슈/변경요청 제외, 마일스톤은 명시 가중치 없으면 0 */
+const WBS_NON_PROGRESS_TYPES = new Set(["리스크", "이슈", "변경요청"]);
+function computeWbsRollupMap(rows) {
+  const items = (rows || []).filter((r) => r && r.code && !WBS_NON_PROGRESS_TYPES.has(r.item_type || "작업"));
+  const byCode = new Map(items.map((r) => [r.code, r]));
+  const kids = new Map();
+  items.forEach((r) => {
+    const parent = r.parent_code && byCode.has(r.parent_code) ? r.parent_code : null;
+    if (!kids.has(parent)) kids.set(parent, []);
+    kids.get(parent).push(r.code);
+  });
+  const metaOf = (r) => (r.metadata && typeof r.metadata === "object" ? r.metadata : {});
+  const rawW = (r) => { const v = Number(metaOf(r).weight ?? r.weight); return Number.isFinite(v) && v > 0 ? v : null; };
+  const leafPct = (r) => { const m = metaOf(r); if ((m.status || r.status) === "완료") return 100; const v = Number(m.progress ?? r.progress ?? 0); return Math.max(0, Math.min(100, Number.isFinite(v) ? v : 0)); };
+  const eff = new Map();
+  (function assign(parent, pw) {
+    const ks = kids.get(parent) || [];
+    if (!ks.length) return;
+    let ws = ks.map((k) => rawW(byCode.get(k)));
+    const isMs = ks.map((k) => (byCode.get(k).item_type || "") === "마일스톤");
+    const sharable = ws.map((w, i) => (w == null && !isMs[i] ? i : -1)).filter((i) => i >= 0);
+    if (ws.every((w) => w == null) && sharable.length) ws = ws.map((_, i) => (sharable.includes(i) ? pw / sharable.length : 0));
+    else ws = ws.map((w) => w || 0);
+    ks.forEach((k, i) => { eff.set(k, ws[i]); assign(k, ws[i]); });
+  })(null, 100);
+  const out = new Map();
+  function walk(code) {
+    const ks = kids.get(code) || [];
+    const r = byCode.get(code);
+    if (!ks.length) { const p = leafPct(r); const w = eff.get(code) || 0; out.set(code, { isLeaf: true, progress: Math.round(p) }); return [w, w * p / 100, [p]]; }
+    let wt = 0, we = 0, leafVals = [];
+    ks.forEach((k) => { const [a, b, c] = walk(k); wt += a; we += b; leafVals = leafVals.concat(c); });
+    const prog = wt > 0 ? (we / wt) * 100 : (leafVals.length ? leafVals.reduce((x, y) => x + y, 0) / leafVals.length : 0);
+    out.set(code, { isLeaf: false, progress: Math.round(prog * 10) / 10 });
+    return [wt, we, leafVals];
+  }
+  (kids.get(null) || []).forEach(walk);
+  return out;
+}
+function wbsRowIsParent(code) {
+  return (state.wbsPlanRows || []).some((r) => r.parent_code === code);
+}
+
 function renderWbsProRow(row, depth, hasChildren, canMutate) {
   const meta      = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
   const type      = row.item_type || "작업";
   const status    = meta.status || "대기";
   const priority  = meta.priority || "보통";
-  const progress  = meta.progress ?? 0;
+  const _roll     = state._wbsRollup && state._wbsRollup.get(row.code);
+  const isRollup  = !!(_roll && !_roll.isLeaf);
+  const progress  = _roll ? _roll.progress : (meta.progress ?? 0);  // leaf: '완료'는 100%로 표시(서버 산식과 동일)
   const expanded  = hasChildren ? isWbsExpanded(row.code) : true;
   const sc        = STATUS_STYLE[status] || STATUS_STYLE["대기"];
   const isDone    = status === "완료";
@@ -3348,7 +3435,7 @@ function renderWbsProRow(row, depth, hasChildren, canMutate) {
           <div class="wbs-pro-progress-bar">
             <div class="wbs-pro-progress-fill ${progCls}" style="width:${progress}%"></div>
           </div>
-          <span class="wbs-progress-pct">${progress}%</span>
+          <span class="wbs-progress-pct"${isRollup ? ' title="하위 작업 가중 합산(자동 계산)"' : ""}>${progress}%${isRollup ? '<span class="wbs-rollup-mark">Σ</span>' : ""}</span>
         </div>
       </td>
       <td class="td-priority">
@@ -3418,6 +3505,7 @@ function renderWbsPlanTable() {
   const allRows   = state.wbsPlanRows;
   const rowByCode = new Map(allRows.map((r) => [r.code, r]));
   const childMap  = buildChildMap(allRows);
+  state._wbsRollup = computeWbsRollupMap(allRows);
   const filtered  = wbsProFilteredRows();
 
   const countEl = document.querySelector("#wbsBoardCount");
@@ -3519,8 +3607,12 @@ function openWbsRowDialog(mode, row = null) {
   if (statusEl)   statusEl.value   = meta.status   || "대기";
   if (priorityEl) priorityEl.value = meta.priority  || "보통";
   if (progressEl) {
-    progressEl.value = meta.progress ?? 0;
-    if (progressLbl) progressLbl.textContent = `${meta.progress ?? 0}%`;
+    const _dlgParent = mode === "edit" && row?.code && wbsRowIsParent(row.code);
+    const _dlgNode   = _dlgParent ? computeWbsRollupMap(state.wbsPlanRows).get(row.code) : null;
+    progressEl.disabled = !!_dlgParent;
+    progressEl.title = _dlgParent ? "상위 항목 진척률은 하위 작업에서 자동 계산됩니다" : "";
+    progressEl.value = _dlgNode ? _dlgNode.progress : (meta.progress ?? 0);
+    if (progressLbl) progressLbl.textContent = _dlgNode ? `${_dlgNode.progress}% (자동)` : `${meta.progress ?? 0}%`;
     progressEl.oninput = () => { if (progressLbl) progressLbl.textContent = `${progressEl.value}%`; };
   }
   if (effortEl) effortEl.value = meta.effort || "";
@@ -3556,7 +3648,8 @@ function applyWbsRowForm() {
   // 새 필드
   const status     = document.querySelector("#wbsRowStatus")?.value   || "대기";
   const priority   = document.querySelector("#wbsRowPriority")?.value || "보통";
-  const progress   = Number(document.querySelector("#wbsRowProgress")?.value ?? 0);
+  const _progEl    = document.querySelector("#wbsRowProgress");
+  const progressIn = _progEl?.disabled ? null : Number(_progEl?.value ?? 0);
   const effort     = document.querySelector("#wbsRowEffort")?.value.trim() || null;
 
   if (!name) {
@@ -3572,6 +3665,7 @@ function applyWbsRowForm() {
   const reviewer   = document.querySelector("#wbsRowReviewer")?.value.trim() || null;
   const approver   = document.querySelector("#wbsRowApprover")?.value.trim() || null;
   const team       = document.querySelector("#wbsRowTeam")?.value.trim()     || null;
+  const progress = progressIn ?? existingMeta.progress ?? 0;  // 상위 항목은 자동 계산(입력값 무시)
   const metadata = { ...existingMeta, status, priority, progress, effort, reviewer, approver, team };
 
   const newRow = { code, parent_code: parentCode, name, item_type: itemType, owner, weight, start_date: startDate, finish_date: finishDate, metadata };
@@ -3768,6 +3862,10 @@ async function loadData() {
     state.projects = projects;
     state.approvals = approvals;
     state.pmPreflight = pmPreflight;
+    // 프로젝트 목록 로드 후 회의·Action 화면이 열려 있으면 프로젝트 선택지를 갱신
+    if (document.body.dataset.portalView === "meetings" && typeof renderMeetingsPanel === "function") {
+      setTimeout(() => renderMeetingsPanel(), 0);
+    }
     state.operationsHealth = operationsHealth;
     state.importJobs = importJobs;
     state.risks = risks;
@@ -5143,6 +5241,8 @@ function applyPortalView(hash = "", options = {}) {
   if (viewId === "settings" && state.settingsTab === "auth") renderAuthSettingsTab();
   if (viewId === "settings" && state.settingsTab === "smtp") renderSmtpTab();
   if (viewId === "notes") { attachNoteEvents(); renderNotes(); }
+  if (viewId === "meetings" && typeof renderMeetingsPanel === "function") renderMeetingsPanel();
+  if (viewId === "workboard" && typeof renderWorkboardMyActions === "function") renderWorkboardMyActions();
 }
 
 function clearSession(message = "") {
@@ -5515,6 +5615,9 @@ function openWbsDetailPanel(code) {
   state.wbsSelectedCode = code;
   const meta = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
   const canMutate = canMutateWork();
+  const _rollNode = computeWbsRollupMap(state.wbsPlanRows).get(row.code);
+  const _isParent = !!(_rollNode && !_rollNode.isLeaf);
+  const _progVal  = _isParent ? _rollNode.progress : (meta.progress ?? 0);
 
   document.querySelector("#wbsDetailCode").textContent  = row.code || "-";
   document.querySelector("#wbsDetailTitle").textContent = row.name || "작업 상세";
@@ -5554,8 +5657,8 @@ function openWbsDetailPanel(code) {
       </div>
     </div>
     <div class="wbs-detail-field">
-      <label class="wbs-detail-label">진행률 (${meta.progress??0}%)</label>
-      <input id="detailProgress" type="range" min="0" max="100" value="${meta.progress??0}" ${canMutate?"":"disabled"} style="width:100%;accent-color:var(--blue)" />
+      <label class="wbs-detail-label">진행률 (${_progVal}%)${_isParent ? ' · <span class="wbs-rollup-hint">하위 작업 가중 합산 — 자동 계산</span>' : ""}</label>
+      <input id="detailProgress" type="range" min="0" max="100" value="${_progVal}" ${canMutate && !_isParent?"":"disabled"} style="width:100%;accent-color:var(--blue)" />
     </div>
     <div class="wbs-detail-row2">
       <div class="wbs-detail-field">
@@ -5832,6 +5935,9 @@ function openWbsDetailPanel(code) {
 
   const meta = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
   const canMutate = canMutateWork();
+  const _rollNode = computeWbsRollupMap(state.wbsPlanRows).get(row.code);
+  const _isParent = !!(_rollNode && !_rollNode.isLeaf);
+  const _progVal  = _isParent ? _rollNode.progress : (meta.progress ?? 0);
 
   document.querySelector("#wbsDetailCode").textContent  = row.code || "-";
   document.querySelector("#wbsDetailTitle").textContent = row.name || "작업 상세";
@@ -5907,8 +6013,8 @@ function renderWbsDictPanel(row, meta, canMutate) {
         <div class="wbs-detail-field"><label class="wbs-detail-label">상태</label><select id="detailStatus" ${canMutate?"":"disabled"}>${statusOpts}</select></div>
       </div>
       <div class="wbs-detail-field">
-        <label class="wbs-detail-label">진행률 (${meta.progress??0}%)</label>
-        <input id="detailProgress" type="range" min="0" max="100" value="${meta.progress??0}" ${canMutate?"":"disabled"} style="width:100%;accent-color:var(--blue)" />
+        <label class="wbs-detail-label">진행률 (${_progVal}%)${_isParent ? ' · <span class="wbs-rollup-hint">하위 작업 가중 합산 — 자동 계산</span>' : ""}</label>
+        <input id="detailProgress" type="range" min="0" max="100" value="${_progVal}" ${canMutate && !_isParent?"":"disabled"} style="width:100%;accent-color:var(--blue)" />
       </div>
       <div class="wbs-detail-row2">
         <div class="wbs-detail-field"><label class="wbs-detail-label">시작일</label><input id="detailStart" type="date" value="${escapeHtml(row.start_date||"")}" ${canMutate?"":"disabled"} /></div>
@@ -6193,7 +6299,9 @@ function saveWbsDictPartial() {
     meta.approver = document.querySelector("#detailApprover")?.value.trim() || meta.approver;
     meta.status   = document.querySelector("#detailStatus")?.value   || meta.status;
     meta.priority = document.querySelector("#detailPriority")?.value || meta.priority;
-    meta.progress = Number(document.querySelector("#detailProgress")?.value ?? meta.progress ?? 0);
+    if (!document.querySelector("#detailProgress")?.disabled || !wbsRowIsParent(row.code)) {
+      meta.progress = Number(document.querySelector("#detailProgress")?.value ?? meta.progress ?? 0);
+    }
     const start   = document.querySelector("#detailStart")?.value;
     const end     = document.querySelector("#detailEnd")?.value;
     if (start !== undefined) row.start_date  = start || null;
@@ -7736,17 +7844,17 @@ function renderProjectDetailBody() {
       <div class="pd-overview-grid">
         <div class="pd-kpi-row">
           <div class="pd-kpi-card">
-            <span class="pd-kpi-label">전체 진행률</span>
+            <span class="pd-kpi-label">전체 진행률 <span class="kpi-sub" title="${escapeHtml(s.formula || "")}">계획 ${s.planned_pct ?? 0}%</span></span>
             <span class="pd-kpi-value">${s.progress_pct}%</span>
             <div class="kpi-progress-bar"><div class="kpi-progress-fill" style="width:${Math.min(s.progress_pct,100)}%"></div></div>
           </div>
           <div class="pd-kpi-card">
-            <span class="pd-kpi-label">SPI</span>
-            <span class="pd-kpi-value ${s.spi !== null ? (s.spi >= 1 ? 'kpi-green' : 'kpi-red') : ''}">${s.spi !== null ? s.spi : '—'}</span>
+            <span class="pd-kpi-label" title="SPI = 실적(EV) ÷ 계획(PV), 계획 일정 기준">SPI</span>
+            <span class="pd-kpi-value ${s.spi != null ? (s.spi >= 1 ? 'kpi-green' : s.spi >= 0.8 ? 'kpi-warn' : 'kpi-red') : ''}">${s.spi != null ? s.spi.toFixed(2) : '—'}</span>
           </div>
           <div class="pd-kpi-card">
-            <span class="pd-kpi-label">WBS 항목</span>
-            <span class="pd-kpi-value">${s.done_items}/${s.total_items}</span>
+            <span class="pd-kpi-label">완료 작업 <span class="kpi-sub">지연 ${s.delayed_items ?? 0}</span></span>
+            <span class="pd-kpi-value">${s.done_items}/${s.leaf_items ?? s.total_items}</span>
           </div>
           <div class="pd-kpi-card">
             <span class="pd-kpi-label">미결 리스크</span>
@@ -7800,6 +7908,10 @@ function renderProjectDetailBody() {
           <td>${(a.created_at||'').substring(0,10)}</td>
         </tr>`).join("");
     body.innerHTML = `<table class="ri-table"><thead><tr><th>버전</th><th>상태</th><th>검토자</th><th>요청일</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } else if (state.pdTab === "meetings") {
+    if (typeof renderPdMeetingsTab === "function") renderPdMeetingsTab(body, d);
+  } else if (state.pdTab === "members") {
+    if (typeof renderPdMembersTab === "function") renderPdMembersTab(body, d);
   } else if (state.pdTab === "cr") {
     renderPdCrTab();
   } else if (state.pdTab === "diff") {

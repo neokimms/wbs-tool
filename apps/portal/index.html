@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>KT AX WBS</title>
-    <link rel="stylesheet" href="./styles.css?v=20260820-wbs-reload" />
+    <link rel="stylesheet" href="./styles.css?v=20261002-pm-core" />
   </head>
   <body data-auth="pending">
 
@@ -70,6 +70,7 @@
           <a href="#op-view"                   data-min-role="viewer" data-tooltip="WBS 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4V5Zm0 6h10v4H4v-4Zm12 0h4v10h-4V11ZM4 17h10v4H4v-4Z"/></svg></span><span class="nav-label">WBS 현황</span></a>
           <a href="#wbs-plan"                  data-min-role="viewer" data-tooltip="WBS 관리"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h5v5H5V4Zm0 11h5v5H5v-5Zm9-6h5v5h-5V9Zm-4-2h2v2h-2V7Zm2 5h2v2h-2v-2Zm-2 5h4v2h-4v-2Z"/></svg></span><span class="nav-label">WBS 관리</span></a>
           <a href="#workboard"                 data-min-role="viewer" data-tooltip="작업 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h5v14H4V5Zm7 0h4v14h-4V5Zm6 0h3v14h-3V5Z"/></svg></span><span class="nav-label">작업 현황</span></a>
+          <a href="#meetings"                  data-min-role="viewer" data-tooltip="회의·Action Item"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v11H8l-4 4V4Zm2 2v8.2L7.2 13H18V6H6Zm2 2h8v2H8V8Zm0 3h5v1.5H8V11Zm9.3 6.6 1.4-1.4 1.8 1.8 3.1-3.1 1.4 1.4-4.5 4.5-3.2-3.2Z"/></svg></span><span class="nav-label">회의·Action Item</span></a>
           <a href="#templates"                 data-min-role="viewer" data-tooltip="표준/일반 WBS 관리"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z"/></svg></span><span class="nav-label">표준/일반 WBS 관리</span></a>
           <a href="#risks"                     data-min-role="viewer" data-tooltip="리스크·이슈"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm1 13h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg></span><span class="nav-label">리스크·이슈</span></a>
           <a href="#resource"                  data-min-role="pmo" data-tooltip="자원 배분"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c0-4 3-7 6-7s6 3 6 7H2Zm12.5 0c-.2-2.2-1-4-2.3-5.4 1-.6 2.2-.9 3.8-.9 3 0 5 2.5 5 6.3h-6.5Z"/></svg></span><span class="nav-label">자원 배분</span></a>
@@ -345,6 +346,7 @@
               <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-metrics">번다운·Velocity</button>
             </nav>
 
+            <section class="mt-my-actions" id="workboardMyActions" aria-label="내 Action Item"></section>
             <div class="workboard-alert-row" id="workboardAlertRow" aria-live="polite"></div>
             <div class="workboard-body" id="workboardBody">
               <p class="empty-state">프로젝트를 선택하면 내부 WBS 작업 현황이 표시됩니다.</p>
@@ -578,6 +580,109 @@
           </dialog>
 
           <!-- ── P2-02: 리스크 · 이슈 트래킹 ─────────── -->
+          <!-- ── 회의·Action Item ── -->
+          <article class="panel" id="meetings">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">협업 관리</p>
+                <h2>회의·Action Item</h2>
+                <p class="workboard-lead">회의록에서 나온 Action Item을 담당자·기한·상태로 추적하고 WBS 작업·이슈와 연결합니다.</p>
+              </div>
+              <div class="panel-header-actions mt-actions">
+                <select id="mtProjectSelect" class="wbs-project-select" aria-label="프로젝트 선택"><option value="">프로젝트 선택…</option></select>
+                <button class="secondary-button" id="mtNewActionBtn" type="button">＋ Action Item</button>
+                <button class="primary-button" id="mtNewMeetingBtn" type="button">＋ 회의 등록</button>
+              </div>
+            </div>
+            <nav class="ri-tab-bar mt-tab-bar" id="mtTabBar" role="tablist">
+              <button class="ri-tab active" data-mt-tab="meetings" role="tab">회의록</button>
+              <button class="ri-tab" data-mt-tab="actions" role="tab">Action Item</button>
+              <button class="ri-tab" data-mt-tab="mine" role="tab">내 Action Item</button>
+            </nav>
+            <div class="mt-summary" id="mtSummary"></div>
+            <div class="ri-filter-bar mt-filter-bar" id="mtFilterBar">
+              <select id="mtStatusFilter" aria-label="상태 필터">
+                <option value="open">미결(완료·취소 제외)</option>
+                <option value="">전체</option>
+                <option value="대기">대기</option><option value="진행중">진행중</option>
+                <option value="완료">완료</option><option value="보류">보류</option><option value="취소">취소</option>
+              </select>
+              <label class="mt-check"><input type="checkbox" id="mtOverdueOnly" /> 기한 경과만</label>
+              <span id="mtCount" class="wbs-row-count"></span>
+            </div>
+            <div id="mtBody" class="mt-body"></div>
+          </article>
+
+          <!-- 회의 등록/수정 다이얼로그 -->
+          <dialog class="dialog dialog-wide" id="meetingDialog" aria-labelledby="meetingDialogTitle">
+            <form class="dialog-panel" id="meetingForm" method="dialog">
+              <div class="dialog-header">
+                <h3 id="meetingDialogTitle">회의 등록</h3>
+                <button class="icon-button" type="button" id="meetingDialogClose">×</button>
+              </div>
+              <div class="form-grid">
+                <label style="grid-column:1/-1"><span>회의명 *</span><input id="mtTitle" required maxlength="200" placeholder="예: 주간 진척 점검 회의" /></label>
+                <label><span>유형</span>
+                  <select id="mtType"><option>정기</option><option>착수</option><option>검토</option><option>이슈</option><option>고객</option><option>기타</option></select>
+                </label>
+                <label><span>일자</span><input id="mtDate" type="date" /></label>
+                <label><span>시간</span><input id="mtTime" maxlength="20" placeholder="14:00" /></label>
+                <label><span>장소</span><input id="mtLocation" maxlength="200" placeholder="회의실 / Teams" /></label>
+                <label><span>진행자</span><input id="mtFacilitator" maxlength="80" list="mtMemberList" /></label>
+                <label><span>상태</span><select id="mtStatus"><option value="Draft">작성중</option><option value="Final">확정</option></select></label>
+                <label style="grid-column:1/-1"><span>참석자 (쉼표로 구분)</span><input id="mtAttendees" maxlength="2000" placeholder="홍길동, 김PM, 이개발" /></label>
+                <label style="grid-column:1/-1"><span>안건</span><textarea id="mtAgenda" rows="2" maxlength="20000"></textarea></label>
+                <label style="grid-column:1/-1"><span>회의 내용</span><textarea id="mtMinutes" rows="5" maxlength="50000"></textarea></label>
+                <label style="grid-column:1/-1"><span>결정 사항</span><textarea id="mtDecisions" rows="2" maxlength="20000"></textarea></label>
+              </div>
+              <div class="mt-ai-editor">
+                <div class="mt-ai-editor-head">
+                  <strong>Action Item</strong>
+                  <span class="mt-hint">담당자·기한을 지정하면 '내 Action Item'과 알림으로 전달됩니다.</span>
+                  <button class="secondary-button mt-small" type="button" id="mtAddAiRow">＋ 행 추가</button>
+                </div>
+                <div id="mtAiRows" class="mt-ai-rows"></div>
+              </div>
+              <p class="form-status" id="meetingFormStatus"></p>
+              <div class="dialog-footer">
+                <button class="secondary-button mt-danger" type="button" id="meetingDeleteBtn" hidden>삭제</button>
+                <span style="flex:1"></span>
+                <button class="secondary-button" type="button" id="meetingDialogCancel">취소</button>
+                <button class="primary-button" type="submit" id="meetingDialogSubmit">저장</button>
+              </div>
+            </form>
+          </dialog>
+
+          <!-- Action Item 다이얼로그 -->
+          <dialog class="dialog" id="actionItemDialog" aria-labelledby="actionItemDialogTitle">
+            <form class="dialog-panel" id="actionItemForm" method="dialog">
+              <div class="dialog-header">
+                <h3 id="actionItemDialogTitle">Action Item</h3>
+                <button class="icon-button" type="button" id="actionItemDialogClose">×</button>
+              </div>
+              <div class="form-grid">
+                <label style="grid-column:1/-1"><span>내용 *</span><input id="aiTitle" required maxlength="200" /></label>
+                <label><span>담당자</span><input id="aiAssignee" maxlength="80" list="mtMemberList" /></label>
+                <label><span>기한</span><input id="aiDueDate" type="date" /></label>
+                <label><span>상태</span><select id="aiStatus"><option>대기</option><option>진행중</option><option>완료</option><option>보류</option><option>취소</option></select></label>
+                <label><span>우선순위</span><select id="aiPriority"><option>높음</option><option selected>보통</option><option>낮음</option></select></label>
+                <label><span>연결 WBS 작업</span><select id="aiWbsCode"><option value="">— 없음 —</option></select></label>
+                <label><span>연결 이슈</span><select id="aiIssueId"><option value="">— 없음 —</option></select></label>
+                <label style="grid-column:1/-1"><span>상세</span><textarea id="aiDescription" rows="2" maxlength="4000"></textarea></label>
+                <label style="grid-column:1/-1"><span>코멘트 추가</span><input id="aiComment" maxlength="1000" placeholder="진행 상황 메모" /></label>
+              </div>
+              <div id="aiMetaInfo" class="mt-ai-meta"></div>
+              <p class="form-status" id="actionItemFormStatus"></p>
+              <div class="dialog-footer">
+                <button class="secondary-button mt-danger" type="button" id="actionItemDeleteBtn" hidden>삭제</button>
+                <span style="flex:1"></span>
+                <button class="secondary-button" type="button" id="actionItemDialogCancel">취소</button>
+                <button class="primary-button" type="submit" id="actionItemDialogSubmit">저장</button>
+              </div>
+            </form>
+          </dialog>
+          <datalist id="mtMemberList"></datalist>
+
           <article class="panel" id="risks">
             <div class="panel-header">
               <div>
@@ -730,7 +835,8 @@
               <button class="pd-tab"        data-pd-tab="cr"        role="tab">변경요청</button>
               <button class="pd-tab"        data-pd-tab="approvals" role="tab">승인 이력</button>
               <button class="pd-tab"        data-pd-tab="diff"      role="tab">버전 비교</button>
-              <button class="pd-tab"        data-pd-tab="members"   role="tab">멤버</button>
+              <button class="pd-tab"        data-pd-tab="meetings"  role="tab">회의·Action</button>
+              <button class="pd-tab"        data-pd-tab="members"   role="tab">멤버·역할</button>
             </nav>
             <div id="pdBody" class="pd-body"></div>
 
@@ -1713,6 +1819,7 @@
     </dialog>
 
     <script src="./config.js"></script>
-    <script src="./app.js?v=20260820-wbs-reload"></script>
+    <script src="./app.js?v=20261002-pm-core"></script>
+    <script src="./meetings.js?v=20261002-pm-core"></script>
   </body>
 </html>

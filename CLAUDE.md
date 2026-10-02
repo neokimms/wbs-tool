@@ -74,6 +74,8 @@ PostgreSQL  ← 단일 데이터베이스 (wbs_platform + openproject DB)
 프로젝트 현황
 WBS 현황      ← OpenProject 동기화 뷰 (작업패키지 + 간트)
 WBS 관리      ← WBS CRUD (Professional Table, Phase 1 기능 포함)
+작업 현황      ← 내 작업 + 내 Action Item
+회의·Action Item ← 회의록 + Action Item(담당자·기한·상태, WBS/이슈 연결)
 표준/일반 WBS 관리
 설정          ← 6개 탭: 플랫폼설정·승인이력·운영점검·사용자·감사로그·OpenProject
 사용자 가이드
@@ -127,6 +129,18 @@ docker restart wbstoolagent-wbs-api-1
 | 코멘트 스레드 | ✅ |
 
 ---
+
+## PM 핵심 규칙 (2026-10 적용)
+
+| 규칙 | 위치 | 내용 |
+|------|------|------|
+| 진척률 공통 산식 | `services/wbs-api/app/wbs_rules.py` `compute_wbs_rollup()` | 최하위 작업만 입력, 상위는 leaf 가중 롤업. 모든 화면(대시보드·상세·히트맵·주간보고·번다운)은 이 함수만 사용 |
+| SPI | 同 | EV ÷ PV, 계획 일정(시작~종료) 선형 기준. PV=0이면 None |
+| 계층 규칙 | `validate_hierarchy()` | 최대 깊이 `WBS_MAX_DEPTH`(기본 5), 부모-자식 유형 규칙. `WBS_HIERARCHY_MODE=strict/warn/off` |
+| 프로젝트 역할 | `main.py` `PROJECT_ROLES` | admin(관리자)·pm·pmo=편집 / member·reviewer=협업 / viewer=열람. 멤버 관리=admin·pm |
+| 회의·Action Item | migration `016_meetings_action_items.sql` | `/api/projects/{id}/meetings`, `/api/projects/{id}/action-items`, `/api/me/action-items` |
+
+포털 JS는 `app.js` + `meetings.js`(회의·Action·멤버 탭). 진척 롤업은 `computeWbsRollupMap()`이 서버 산식과 동일하게 계산.
 
 ## 디자인 시스템 요약
 
