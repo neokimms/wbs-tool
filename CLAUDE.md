@@ -85,6 +85,26 @@ WBS 관리      ← WBS CRUD (Professional Table, Phase 1 기능 포함)
 
 ## 개발 워크플로우
 
+### 백엔드 코드 구조 (2026-10 리팩토링)
+```
+services/wbs-api/app/
+├─ main.py        앱 생성·미들웨어·lifespan·라우터 등록만
+├─ core/          config(환경변수·상수) · db · security(인증·RBAC·테넌트) · audit · notify
+├─ schemas.py     Pydantic 요청 모델
+├─ domain/        wbs_rules.py (진척 롤업·SPI·계층 규칙 — 순수 함수)
+├─ services/      projects · wbs · meetings · approvals · excel · reports · pm_engine · agile
+├─ routers/       auth · users · settings · system · reports · templates · imports · projects
+│                 wbs · pm_engine · approvals · agile · risks · notifications · notes · meetings
+└─ migrate.py     Helm migration Job (migrations/*.sql 전체 적용)
+```
+의존 방향: routers → services → core (역방향 import 금지). 새 엔드포인트는 해당 routers/*.py 에 `@router.<method>` 로 추가.
+
+### 검증 (변경 후 필수)
+```bash
+./scripts/dev-verify.sh          # 재빌드 + 격리 DB(wbs_test) API 동작 테스트 + 정적 계약 테스트 → outputs/verify.log
+SKIP_BUILD=1 ./scripts/dev-verify.sh
+```
+
 ### 코드 변경 후 배포
 ```bash
 # 포털 파일 배포
@@ -94,7 +114,8 @@ docker cp apps/portal/styles.css wbstoolagent-wbs-portal-1:/usr/share/nginx/html
 docker exec wbstoolagent-wbs-portal-1 nginx -s reload
 
 # API 변경 배포
-docker cp services/wbs-api/app/main.py wbstoolagent-wbs-api-1:/app/app/main.py
+# (권장) ./scripts/dev-verify.sh 로 재빌드·검증. 수동 반영 시:
+docker cp services/wbs-api/app/. wbstoolagent-wbs-api-1:/app/app/
 docker restart wbstoolagent-wbs-api-1
 ```
 

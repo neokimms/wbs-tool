@@ -4,7 +4,7 @@ import sys
 import unittest
 from datetime import date
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app", "domain"))
 from wbs_rules import compute_wbs_rollup, planned_progress, validate_hierarchy  # noqa: E402
 
 ROWS = [
