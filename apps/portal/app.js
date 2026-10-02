@@ -906,13 +906,6 @@ function auditSummaryLabel(value) {
     .replace("WBS codes resequenced:", "WBS 코드 정렬:");
 }
 
-function approvalCommentLabel(value) {
-  if (!value) return "";
-  return String(value)
-    .replace("Auto-approved internal PMO baseline", "내부 PMO 기준선 자동 승인")
-    .replace("Approved from PMO portal", "PMO 포털에서 승인")
-    .replace("Returned for WBS revision", "WBS 수정 요청");
-}
 
 function importIssueMessageLabel(value) {
   if (!value) return "-";
@@ -994,12 +987,6 @@ function canViewSettings() {
   return ["admin", "pmo"].includes(state.currentUser?.role);
 }
 
-function toggleNavAndPanel(hash, allowed) {
-  const link = document.querySelector(`.nav-list a[href="${hash}"]`);
-  const panel = document.querySelector(hash);
-  if (link) link.hidden = !allowed;
-  if (panel) panel.hidden = !allowed;
-}
 
 function canAccessView(viewId) {
   // settings: pmo 이상 접근 가능 (sync 메뉴도 settings로 통합)
@@ -1299,24 +1286,7 @@ function renderCustomWbsList() {
 }
 
 /* 일반 WBS 목록에서 빠른 업로드 (선택 프로젝트 → Excel 업로드 탭 이동) */
-function navigateToProjectWbs(projectId) {
-  // templateDrawer 닫기
-  const drawer = document.querySelector("#templateDrawer");
-  if (drawer) drawer.hidden = true;
-  // #importApplyNotice 초기화
-  const noticeEl = document.querySelector("#importApplyNotice");
-  if (noticeEl) noticeEl.hidden = true;
-  // WBS 관리 섹션으로 이동 후 프로젝트 로드
-  window.location.hash = "wbs-plan";
-  // hash 변경 후 프로젝트 선택 드롭다운에 반영
-  requestAnimationFrame(() => {
-    const sel = document.querySelector("#wbsPlanProjectSelect");
-    if (sel && projectId) {
-      sel.value = projectId;
-      sel.dispatchEvent(new Event("change"));
-    }
-  });
-}
+
 
 function openCustomWbsUploadTab(projectId) {
   // Excel 업로드 탭 활성화
@@ -1548,83 +1518,6 @@ function statusClass(status) {
   return "attention";
 }
 
-function projectPlanRows() {
-  return state.projectPlan?.rows || [];
-}
-
-function baselineText(baseline) {
-  if (!baseline?.locked) return "잠금 전";
-  const version = baseline.version ? `v${baseline.version}` : "잠김";
-  const rows = baseline.item_count !== undefined ? ` · ${baseline.item_count}행` : "";
-  return `${version}${rows}`;
-}
-
-function projectRowMap(rows) {
-  return new Map(rows.map((row) => [row.code, row]));
-}
-
-function projectRootCode(rows) {
-  return rows.find((row) => !row.parent_code)?.code || rows[0]?.code || "";
-}
-
-function rowDepth(row, rowByCode) {
-  let depth = 1;
-  let parentCode = row.parent_code;
-  const seen = new Set([row.code]);
-
-  while (parentCode && !seen.has(parentCode)) {
-    seen.add(parentCode);
-    depth += 1;
-    parentCode = rowByCode.get(parentCode)?.parent_code;
-  }
-
-  return depth;
-}
-
-function phaseCodeForRow(row, rowByCode, rootCode) {
-  if (!rootCode || row.code === rootCode) return "";
-  let current = row;
-  const seen = new Set([row.code]);
-
-  while (current?.parent_code && !seen.has(current.parent_code)) {
-    if (current.parent_code === rootCode) return current.code;
-    seen.add(current.parent_code);
-    current = rowByCode.get(current.parent_code);
-  }
-
-  return "";
-}
-
-function rowSearchText(row) {
-  return [
-    row.code,
-    row.parent_code,
-    row.name,
-    row.subject,
-    row.item_type,
-    row.owner,
-    row.weight,
-  ]
-    .filter((value) => value !== undefined && value !== null)
-    .join(" ")
-    .toLowerCase();
-}
-
-function filteredProjectPlanRows() {
-  const rows = projectPlanRows();
-  const rowByCode = projectRowMap(rows);
-  const rootCode = projectRootCode(rows);
-  const query = state.projectWbsSearch.trim().toLowerCase();
-
-  return rows.filter((row) => {
-    const matchesSearch = !query || rowSearchText(row).includes(query);
-    const matchesType = !state.projectTypeFilter || row.item_type === state.projectTypeFilter;
-    const matchesPhase = !state.projectPhaseFilter
-      || row.code === state.projectPhaseFilter
-      || phaseCodeForRow(row, rowByCode, rootCode) === state.projectPhaseFilter;
-    return matchesSearch && matchesType && matchesPhase;
-  });
-}
 
 function resetProjectPlanFilters() {
   state.projectWbsSearch = "";
@@ -1632,9 +1525,6 @@ function resetProjectPlanFilters() {
   state.projectTypeFilter = "";
 }
 
-function renderProjectPlanFilters() {
-  // #projectWbsSearchInput 등 DOM이 제거됨 — 무시
-}
 
 const PORTFOLIO_FILTER_STATUSES = {
   all:      null,
@@ -1645,19 +1535,6 @@ const PORTFOLIO_FILTER_STATUSES = {
 
 const PHASE_COLORS = ["#0071e3", "#1f9d55", "#b7791f", "#7356bf", "#d92d20", "#0891b2", "#9333ea"];
 
-function renderPhaseBar(plan) {
-  const bar = document.querySelector("#projectPhaseBar");
-  if (!bar) return;
-  const phases = plan?.template?.phases || [];
-  if (!phases.length) { bar.hidden = true; return; }
-  const total = phases.reduce((s, p) => s + (p.weight || 0), 0) || 100;
-  bar.innerHTML = phases.map((phase, i) => {
-    const pct = ((phase.weight || 0) / total * 100).toFixed(1);
-    const col = PHASE_COLORS[i % PHASE_COLORS.length];
-    return `<div class="phase-bar-segment" style="flex:${pct};background:${col}" title="${escapeHtml(phase.name)} ${pct}%">${pct > 8 ? escapeHtml(phase.name) : ""}</div>`;
-  }).join("");
-  bar.hidden = false;
-}
 
 function renderProjects() {
   const all = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
@@ -3024,18 +2901,6 @@ function renderGuidePanel() {
    WBS 계획 — CRUD
 ══════════════════════════════════════════════════════ */
 
-function wbsPlanFilteredRows() {
-  const rows = state.wbsPlanRows;
-  const q = state.wbsPlanSearch.trim().toLowerCase();
-  return rows.filter((row) => {
-    const matchSearch = !q || [row.code, row.parent_code, row.name, row.item_type, row.owner]
-      .filter(Boolean).join(" ").toLowerCase().includes(q);
-    const matchPhase = !state.wbsPlanPhaseFilter || row.code === state.wbsPlanPhaseFilter
-      || (row.parent_code && row.parent_code.startsWith(state.wbsPlanPhaseFilter));
-    const matchType = !state.wbsPlanTypeFilter || row.item_type === state.wbsPlanTypeFilter;
-    return matchSearch && matchPhase && matchType;
-  });
-}
 
 /* ── WBS 가중치 현황 요약 ────────────────────────── */
 function renderWbsWeightSummary() {
@@ -3208,65 +3073,7 @@ function isWbsExpanded(code) {
 }
 
 /* WBS 보드 단일 행 HTML */
-function renderWbsBoardItem(row, depth, hasChildren, canMutate) {
-  const type     = row.item_type || "작업";
-  const typeLabel = itemTypeLabel(type);
-  const isPhase   = type === "단계" || type === "프로젝트";
-  const isMile    = type === "마일스톤";
-  const expanded  = hasChildren ? isWbsExpanded(row.code) : true;
-  const syncedCls = row.already_synced ? "synced" : "";
-  const meta      = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
 
-  const dateStr = (row.start_date || row.finish_date)
-    ? `${row.start_date || ""} ~ ${row.finish_date || ""}`.trim().replace(/^~ |~ $/, "")
-    : "";
-
-  return `
-    <div class="wbs-item ${isPhase ? "wbs-phase" : ""} ${isMile ? "wbs-milestone" : ""}"
-         role="listitem"
-         data-code="${escapeHtml(row.code || "")}"
-         data-type="${escapeHtml(type)}"
-         style="--depth:${depth}">
-      <div class="wbs-item-gutter">
-        ${hasChildren
-          ? `<button class="wbs-expand-btn" type="button"
-               data-wbs-toggle="${escapeHtml(row.code)}"
-               aria-label="${expanded ? "접기" : "펼치기"}"
-               aria-expanded="${expanded}">${expanded ? "▼" : "▶"}</button>`
-          : `<span class="wbs-leaf"></span>`}
-      </div>
-      <div class="wbs-item-body">
-        <div class="wbs-item-main">
-          ${row.code ? `<code class="wbs-code">${escapeHtml(row.code)}</code>` : ""}
-          <span class="wbs-name">${escapeHtml(row.name || "")}</span>
-        </div>
-        <div class="wbs-item-meta">
-          <span class="wbs-type-badge" data-type="${escapeHtml(type)}">${escapeHtml(typeLabel)}</span>
-          ${row.owner   ? `<span class="wbs-owner">👤 ${escapeHtml(row.owner)}</span>` : ""}
-          ${row.weight != null ? `<span class="wbs-weight">${row.weight}%</span>` : ""}
-          ${dateStr     ? `<span class="wbs-dates">📅 ${escapeHtml(dateStr)}</span>` : ""}
-          <span class="wbs-sync-badge ${syncedCls}">${row.already_synced ? "✓ 동기화" : "대기"}</span>
-          ${meta.op_status ? `<span class="wbs-op-status-badge ${meta.op_status === "완료" || meta.op_progress >= 100 ? "done" : ""}">OP: ${escapeHtml(meta.op_status)}</span>` : ""}
-          ${meta.op_progress != null ? `<span class="wbs-op-progress-text">${meta.op_progress}%</span>` : ""}
-        </div>
-      </div>
-      ${meta.op_progress != null && row.already_synced ? `
-        <div class="wbs-item-progress" title="OpenProject 진척률: ${meta.op_progress}%">
-          <div class="wbs-item-progress-fill" style="width:${Math.min(100, meta.op_progress)}%"></div>
-        </div>` : ""}
-      <div class="wbs-item-actions">
-        <button type="button" class="add-child-btn"
-          data-wbs-add-child="${escapeHtml(row.code || "")}"
-          ${canMutate && row.code ? "" : "disabled"}>＋ 하위</button>
-        <button type="button"
-          data-wbs-edit="${escapeHtml(row.code || "")}"
-          ${canMutate ? "" : "disabled"}>수정</button>
-        <button type="button" class="delete-btn"
-          data-wbs-delete="${escapeHtml(row.code || "")}"
-          ${canMutate ? "" : "disabled"}>삭제</button>
-      </div>
-    </div>`;
-}
 
 /* ── 상태·우선순위 설정 ───────────────────────────── */
 const WBS_STATUSES  = ["대기", "진행중", "완료", "지연", "보류"];
@@ -4247,37 +4054,35 @@ function renderImportResult(result) {
   renderImportHistory();
 }
 
-/* ── 인증 포함 Excel 다운로드 헬퍼 ──────────────── */
+/* ── 인증 포함 파일 다운로드 공통 헬퍼 ───────────────
+   모든 바이너리 다운로드(Excel·Word·CSV·백업)는 이 함수만 사용한다. */
+async function downloadFile(pathOrUrl, filename) {
+  const url = /^https?:/.test(pathOrUrl) ? pathOrUrl : `${API_BASE}${pathOrUrl}`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${state.authToken}` } });
+  if (!resp.ok) {
+    if (resp.status === 401) clearSession("세션이 만료되었습니다. 다시 로그인해 주세요.");
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(typeof err.detail === "string" ? err.detail : `다운로드 실패 (${resp.status})`);
+  }
+  const blob = await resp.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
+}
+
 async function authenticatedDownload(url, filename) {
   try {
-    const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${state.authToken}` },
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-      throw new Error(typeof err.detail === "string" ? err.detail : `다운로드 실패 (${resp.status})`);
-    }
-    const blob = await resp.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(objectUrl);
+    await downloadFile(url, filename);
   } catch (error) {
     alert(`Excel 다운로드 실패: ${error.message}`);
   }
 }
 
-function downloadTemplateExcel() {
-  const template = selectedTemplate();
-  authenticatedDownload(
-    `${API_BASE}/api/templates/${encodeURIComponent(template.key)}/excel`,
-    `${template.name}.xlsx`,
-  );
-}
 
 /* WBS 계획 패널용: 선택 프로젝트의 템플릿 Excel 다운로드 */
 function downloadWbsPlanExcel() {
@@ -5609,123 +5414,7 @@ document.querySelector("#wbsPlanProjectSelect").addEventListener("change", (even
 /* ── WBS 테이블 이벤트 ───────────────────────────── */
 
 /* 상세 패널 열기 */
-function openWbsDetailPanel(code) {
-  const row = state.wbsPlanRows.find((r) => r.code === code);
-  if (!row) return;
-  state.wbsSelectedCode = code;
-  const meta = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
-  const canMutate = canMutateWork();
-  const _rollNode = computeWbsRollupMap(state.wbsPlanRows).get(row.code);
-  const _isParent = !!(_rollNode && !_rollNode.isLeaf);
-  const _progVal  = _isParent ? _rollNode.progress : (meta.progress ?? 0);
 
-  document.querySelector("#wbsDetailCode").textContent  = row.code || "-";
-  document.querySelector("#wbsDetailTitle").textContent = row.name || "작업 상세";
-  document.querySelector("#wbsDetailPanel").hidden = false;
-
-  const statusOpts = WBS_STATUSES.map((s) => `<option value="${s}" ${(meta.status||"대기")===s?"selected":""}>${s}</option>`).join("");
-  const prioOpts   = WBS_PRIORITIES.map((p) => `<option value="${p}" ${(meta.priority||"보통")===p?"selected":""}>${p}</option>`).join("");
-  const typeOpts   = ["작업","단계","산출물","마일스톤","리스크","이슈","변경요청"].map((t) => `<option value="${t}" ${(row.item_type||"작업")===t?"selected":""}>${t}</option>`).join("");
-  const comments   = Array.isArray(meta.comments) ? meta.comments : [];
-  const commentHtml = comments.length
-    ? comments.map((c) => `<div class="wbs-comment-item"><div class="wbs-comment-meta"><span class="wbs-comment-author">${escapeHtml(c.author||"익명")}</span><span class="wbs-comment-time">${escapeHtml(c.ts||"")}</span></div><p class="wbs-comment-text">${escapeHtml(c.text||"")}</p></div>`).join("")
-    : `<p style="color:var(--text-muted);font-size:0.8rem">코멘트 없음</p>`;
-
-  document.querySelector("#wbsDetailBody").innerHTML = `
-    <div class="wbs-detail-field">
-      <label class="wbs-detail-label">작업명</label>
-      <input id="detailName" value="${escapeHtml(row.name||"")}" ${canMutate?"":"disabled"} />
-    </div>
-    <div class="wbs-detail-row2">
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">유형</label>
-        <select id="detailType" ${canMutate?"":"disabled"}>${typeOpts}</select>
-      </div>
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">담당자</label>
-        <input id="detailOwner" value="${escapeHtml(row.owner||"")}" ${canMutate?"":"disabled"} />
-      </div>
-    </div>
-    <div class="wbs-detail-row2">
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">상태</label>
-        <select id="detailStatus" ${canMutate?"":"disabled"}>${statusOpts}</select>
-      </div>
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">우선순위</label>
-        <select id="detailPriority" ${canMutate?"":"disabled"}>${prioOpts}</select>
-      </div>
-    </div>
-    <div class="wbs-detail-field">
-      <label class="wbs-detail-label">진행률 (${_progVal}%)${_isParent ? ' · <span class="wbs-rollup-hint">하위 작업 가중 합산 — 자동 계산</span>' : ""}</label>
-      <input id="detailProgress" type="range" min="0" max="100" value="${_progVal}" ${canMutate && !_isParent?"":"disabled"} style="width:100%;accent-color:var(--blue)" />
-    </div>
-    <div class="wbs-detail-row2">
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">시작일</label>
-        <input id="detailStart" type="date" value="${escapeHtml(row.start_date||"")}" ${canMutate?"":"disabled"} />
-      </div>
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">종료일</label>
-        <input id="detailEnd" type="date" value="${escapeHtml(row.finish_date||"")}" ${canMutate?"":"disabled"} />
-      </div>
-    </div>
-    <div class="wbs-detail-row2">
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">가중치 (%)</label>
-        <input id="detailWeight" type="number" min="0" max="100" value="${row.weight??""}" ${canMutate?"":"disabled"} />
-      </div>
-      <div class="wbs-detail-field">
-        <label class="wbs-detail-label">공수 (시간)</label>
-        <input id="detailEffort" value="${escapeHtml(meta.effort||"")}" placeholder="예) 8h" ${canMutate?"":"disabled"} />
-      </div>
-    </div>
-    <div class="wbs-detail-field">
-      <label class="wbs-detail-label">설명</label>
-      <textarea id="detailDesc" ${canMutate?"":"disabled"}>${escapeHtml(meta.description||"")}</textarea>
-    </div>
-    <div class="wbs-detail-field">
-      <label class="wbs-detail-label">코멘트 (${comments.length})</label>
-      <div class="wbs-comment-list">${commentHtml}</div>
-      ${canMutate ? `
-        <div class="wbs-comment-input-row">
-          <textarea id="detailCommentInput" placeholder="코멘트를 입력하세요…" rows="2"></textarea>
-          <button type="button" id="detailCommentSubmit">등록</button>
-        </div>` : ""}
-    </div>`;
-
-  /* 진행률 실시간 레이블 */
-  const progressEl = document.querySelector("#detailProgress");
-  if (progressEl) {
-    progressEl.addEventListener("input", () => {
-      progressEl.previousElementSibling.textContent = `진행률 (${progressEl.value}%)`;
-    });
-  }
-
-  /* 코멘트 등록 */
-  const submitBtn = document.querySelector("#detailCommentSubmit");
-  if (submitBtn) {
-    submitBtn.addEventListener("click", () => {
-      const input = document.querySelector("#detailCommentInput");
-      const text  = input?.value.trim();
-      if (!text) return;
-      const row = state.wbsPlanRows.find((r) => r.code === state.wbsSelectedCode);
-      if (!row) return;
-      const meta = (row.metadata && typeof row.metadata === "object") ? { ...row.metadata } : {};
-      const comments = Array.isArray(meta.comments) ? [...meta.comments] : [];
-      comments.push({
-        author: state.currentUser?.display_name || "PMO",
-        text,
-        ts: new Date().toLocaleString("ko-KR", { month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit" }),
-      });
-      meta.comments = comments;
-      row.metadata  = meta;
-      state.wbsPlanDirty = true;
-      input.value = "";
-      openWbsDetailPanel(state.wbsSelectedCode);
-    });
-  }
-}
 
 function saveWbsDetailPanel() {
   saveWbsDictPartial();  // 새 함수로 위임
@@ -5935,9 +5624,6 @@ function openWbsDetailPanel(code) {
 
   const meta = (row.metadata && typeof row.metadata === "object") ? row.metadata : {};
   const canMutate = canMutateWork();
-  const _rollNode = computeWbsRollupMap(state.wbsPlanRows).get(row.code);
-  const _isParent = !!(_rollNode && !_rollNode.isLeaf);
-  const _progVal  = _isParent ? _rollNode.progress : (meta.progress ?? 0);
 
   document.querySelector("#wbsDetailCode").textContent  = row.code || "-";
   document.querySelector("#wbsDetailTitle").textContent = row.name || "작업 상세";
@@ -5967,6 +5653,10 @@ function openWbsDetailPanel(code) {
 }
 
 function renderWbsDictPanel(row, meta, canMutate) {
+  // 상위 항목은 하위 작업 가중 합산(자동 계산) — 진척률 입력 비활성화
+  const _rollNode = computeWbsRollupMap(state.wbsPlanRows).get(row.code);
+  const _isParent = !!(_rollNode && !_rollNode.isLeaf);
+  const _progVal  = _rollNode ? _rollNode.progress : (meta.progress ?? 0);
   const tab     = state.wbsDictTab;
   const code    = row.code || "";
   const version = meta.wbs_version ? `v${meta.wbs_version}` : "v1.0";
@@ -6399,8 +6089,14 @@ function applyWbsCrForm() {
   showAutoSyncToast(`CR 등록 완료 — ${escapeHtml(title)} (버전 v${newVer})`, "success");
 }
 
-document.querySelector("#wbsDetailClose").addEventListener("click",  () => { saveWbsDictPartial(); document.querySelector("#wbsDetailPanel").hidden = true; state.wbsSelectedCode = null; });
-document.querySelector("#wbsDetailCancelBtn").addEventListener("click", () => { document.querySelector("#wbsDetailPanel").hidden = true; state.wbsSelectedCode = null; });
+function closeWbsDetailPanel({ save = false } = {}) {
+  if (save) saveWbsDictPartial();
+  if (state.wbsSelectedCode) releaseEditLock(state.wbsSelectedCode);
+  document.querySelector("#wbsDetailPanel").hidden = true;
+  state.wbsSelectedCode = null;
+}
+document.querySelector("#wbsDetailClose").addEventListener("click", () => closeWbsDetailPanel({ save: true }));
+document.querySelector("#wbsDetailCancelBtn").addEventListener("click", () => closeWbsDetailPanel());
 document.querySelector("#wbsDetailSaveBtn").addEventListener("click", saveWbsDetailPanel);
 
 /* 테이블 본체 이벤트 위임 */
@@ -6691,7 +6387,7 @@ document.querySelector("#wbsTableBody").addEventListener("change", (event) => {
 ══════════════════════════════════════════════════════ */
 
 /* ── 3. Depth 설정 ──────────────────────────────── */
-function getWbsMaxDepth() { return Number(state.wbsMaxDepth ?? 10); }
+
 
 /* ── 4. Rich Text 편집기 헬퍼 ───────────────────── */
 function createRichTextEditor(id, initialHtml, { placeholder = "내용을 입력하세요…" } = {}) {
@@ -6848,10 +6544,6 @@ function renderApprovalTimeline(container) {
 /* ── 9. 멀티레벨 승인 (PM → PMO) ─────────────────── */
 const APPROVAL_LEVELS = { 1: "PMO 단일 승인", 2: "PM → PMO 2단계 승인" };
 
-function renderApprovalLevelBadge(project) {
-  const level = project?.metadata?.approval_level ?? 1;
-  return `<span class="approval-level-badge">L${level}: ${escapeHtml(APPROVAL_LEVELS[level]||"단일")}</span>`;
-}
 
 /* ── 10. PDF 보고서 (CSS 인쇄) ────────────────────── */
 function printWbsReport() {
@@ -6869,18 +6561,11 @@ async function exportWbsDocx() {
   const statusEl = document.querySelector("#wbsPlanStatus");
   if (statusEl) statusEl.textContent = "Word 문서 생성 중…";
   try {
-    const result = await fetch(`${API_BASE}/api/projects/${encodeURIComponent(state.wbsPlanProjectId)}/wbs-docx`, {
-      headers: { Authorization: `Bearer ${state.authToken}` },
-    });
-    if (!result.ok) throw new Error(`${result.status} ${result.statusText}`);
-    const blob     = await result.blob();
-    const url      = URL.createObjectURL(blob);
-    const a        = document.createElement("a");
-    const project  = state.projects.find((p) => p.id === state.wbsPlanProjectId);
-    a.href         = url;
-    a.download     = `${project?.name || "WBS"}_사전.docx`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const project = state.projects.find((p) => p.id === state.wbsPlanProjectId);
+    await downloadFile(
+      `/api/projects/${encodeURIComponent(state.wbsPlanProjectId)}/wbs-docx`,
+      `${project?.name || "WBS"}_사전.docx`,
+    );
     if (statusEl) statusEl.textContent = "Word 문서 다운로드 완료";
   } catch (e) {
     if (statusEl) statusEl.textContent = `Word 출력 실패: ${e.message}`;
@@ -8108,20 +7793,8 @@ async function renderResourcePanel() {
     if (!e.target.matches("#auditExportCsvBtn")) return;
     const token = state.authToken;
     if (!token) return;
-    const a = document.createElement("a");
-    a.href = `${API_BASE}/api/audit-events/export.csv`;
-    a.setAttribute("download", "");
-    // fetch with auth header and blob download
-    fetch(a.href, { headers: { Authorization: `Bearer ${token}` }})
-      .then(r => r.blob())
-      .then(blob => {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `audit-${new Date().toISOString().substring(0,10)}.csv`;
-        link.click();
-        URL.revokeObjectURL(url);
-      }).catch(() => alert("CSV 내보내기에 실패했습니다."));
+    downloadFile("/api/audit-events/export.csv", `audit-${new Date().toISOString().substring(0, 10)}.csv`)
+      .catch(() => alert("CSV 내보내기에 실패했습니다."));
   });
 })();
 
@@ -8292,15 +7965,8 @@ async function loadBackupList() {
 
     if (dlBtn) {
       const filename = dlBtn.dataset.backupDownload;
-      const token = state.authToken;
-      fetch(`${API_BASE}/api/operations/backups/${encodeURIComponent(filename)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }).then(r => r.blob()).then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
-      }).catch(() => alert("다운로드에 실패했습니다."));
+      downloadFile(`/api/operations/backups/${encodeURIComponent(filename)}`, filename)
+        .catch(() => alert("다운로드에 실패했습니다."));
     }
 
     if (delBtn) {
@@ -8599,14 +8265,7 @@ document.querySelector("#settingsTabBar")?.addEventListener("click", (e) => {
         setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
       }
 
-      // API에 스케줄 설정 동기화 (서버 지원 여부 무관하게 fire-and-forget)
-      if (state?.authToken) {
-        fetch(`${API_BASE}/api/settings/schedule`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${state.authToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify(prefs),
-        }).catch(() => {}); // 미구현이면 무시
-      }
+      // 참고: 서버에 /api/settings/schedule 엔드포인트가 없어 브라우저 저장만 사용한다.
     }
   });
 })();
@@ -8617,9 +8276,6 @@ document.querySelector("#settingsTabBar")?.addEventListener("click", (e) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /* ── 유틸 ── */
-function noteAuthHdr() {
-  return { Authorization: `Bearer ${state.authToken}`, "Content-Type": "application/json" };
-}
 function noteToday() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -8628,12 +8284,11 @@ function noteFmt(dateStr) {
   return dateStr.slice(0, 10).replace(/-/g, ".");
 }
 
-/* ── API 호출 ── */
+/* ── API 호출 (공통 request() 사용 — 인증·401·오류 메시지 처리 일원화) ── */
 async function loadNoteFolders() {
   try {
-    const res = await fetch(`${API_BASE}/api/notes/folders`, { headers: noteAuthHdr() });
-    if (res.ok) state.noteFolders = await res.json();
-  } catch(e) { /* offline */ }
+    state.noteFolders = await request("/api/notes/folders");
+  } catch (e) { /* 오프라인 — 기존 목록 유지 */ }
 }
 
 async function loadNotes(folderId = null, q = "") {
@@ -8641,55 +8296,36 @@ async function loadNotes(folderId = null, q = "") {
     const params = new URLSearchParams();
     if (folderId) params.set("folder_id", folderId);
     if (q)        params.set("q", q);
-    const res = await fetch(`${API_BASE}/api/notes?${params}`, { headers: noteAuthHdr() });
-    if (res.ok) state.notes = await res.json();
-  } catch(e) { state.notes = []; }
+    state.notes = await request(`/api/notes?${params}`);
+  } catch (e) { state.notes = []; }
 }
 
 async function loadNoteContent(noteId) {
-  const res = await fetch(`${API_BASE}/api/notes/${noteId}`, { headers: noteAuthHdr() });
-  if (!res.ok) throw new Error("Note not found");
-  return res.json();
+  return request(`/api/notes/${noteId}`);
 }
 
 async function apiCreateFolder(name) {
-  const res = await fetch(`${API_BASE}/api/notes/folders`, {
-    method: "POST", headers: noteAuthHdr(), body: JSON.stringify({ name }),
-  });
-  if (!res.ok) throw new Error("Failed to create folder");
-  return res.json();
+  return request("/api/notes/folders", { method: "POST", body: JSON.stringify({ name }) });
 }
 
 async function apiRenameFolder(id, name) {
-  const res = await fetch(`${API_BASE}/api/notes/folders/${id}`, {
-    method: "PATCH", headers: noteAuthHdr(), body: JSON.stringify({ name }),
-  });
-  if (!res.ok) throw new Error("Failed to rename folder");
-  return res.json();
+  return request(`/api/notes/folders/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
 }
 
 async function apiDeleteFolder(id) {
-  await fetch(`${API_BASE}/api/notes/folders/${id}`, { method: "DELETE", headers: noteAuthHdr() });
+  await request(`/api/notes/folders/${id}`, { method: "DELETE" }).catch(() => null);
 }
 
 async function apiCreateNote(payload) {
-  const res = await fetch(`${API_BASE}/api/notes`, {
-    method: "POST", headers: noteAuthHdr(), body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to create note");
-  return res.json();
+  return request("/api/notes", { method: "POST", body: JSON.stringify(payload) });
 }
 
 async function apiSaveNote(id, payload) {
-  const res = await fetch(`${API_BASE}/api/notes/${id}`, {
-    method: "PATCH", headers: noteAuthHdr(), body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to save note");
-  return res.json();
+  return request(`/api/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 }
 
 async function apiDeleteNote(id) {
-  await fetch(`${API_BASE}/api/notes/${id}`, { method: "DELETE", headers: noteAuthHdr() });
+  await request(`/api/notes/${id}`, { method: "DELETE" }).catch(() => null);
 }
 
 /* ── 보고서 템플릿 ── */

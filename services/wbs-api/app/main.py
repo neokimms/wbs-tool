@@ -7,6 +7,7 @@ from io import BytesIO
 import base64
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -25,6 +26,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Side, Border
 from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("wbs_api")
 
 try:  # uvicorn app.main:app (패키지) / 스크립트 실행 모두 지원
     from app.wbs_rules import (
@@ -62,24 +65,8 @@ ALLOW_FILE_ORIGIN = os.getenv("WBS_ALLOW_FILE_ORIGIN", "true").lower() in {"1", 
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/tmp/wbs-backups"))
 REPORT_OUTPUT_DIR = Path(os.getenv("WBS_REPORT_OUTPUT_DIR", "/app/outputs/reports"))
 MIGRATION_PATH = Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql"
-MIGRATION_PATHS = [
-    Path(__file__).resolve().parent.parent / "migrations" / "001_init.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "002_risks_issues.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "003_notifications.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "004_multitenancy.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "005_change_requests.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "006_wbs_tenant_recovery.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "007_user_groups.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "008_agile_wbs.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "009_agile_hybrid_samples.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "010_project_operation_policy.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "011_agile_wbs_sync.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "012_project_members.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "013_announcements.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "014_notes.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "015_notes_softdelete.sql",
-    Path(__file__).resolve().parent.parent / "migrations" / "016_meetings_action_items.sql",
-]
+# migrations/NNN_*.sql 전체를 파일명 순서로 적용 (migrate.py 와 동일 규칙 — 목록 수동 관리 불필요)
+MIGRATION_PATHS = sorted((Path(__file__).resolve().parent.parent / "migrations").glob("[0-9][0-9][0-9]_*.sql"))
 RUN_MIGRATIONS_ON_STARTUP = os.getenv("WBS_RUN_MIGRATIONS_ON_STARTUP", "true").lower() in {"1", "true", "yes", "on"}
 SESSION_TTL_HOURS = int(os.getenv("WBS_SESSION_TTL_HOURS", "12"))
 LOGIN_FAILURE_LIMIT = int(os.getenv("WBS_LOGIN_FAILURE_LIMIT", "5"))
@@ -1309,7 +1296,7 @@ def _run_ldap_diagnostics(email: str | None = None, password: str | None = None)
             if bind_conn:
                 bind_conn.unbind()
         except Exception:
-            pass
+            logger.warning("LDAP unbind 실패", exc_info=True)
 
 
 async def send_notification(
@@ -1326,16 +1313,18 @@ async def send_notification(
 ) -> None:
     """인앱 알림 DB 저장 + SMTP 이메일 발송 (실패해도 메인 플로우 차단 안 함)."""
     try:
-        await connection.execute(
-            """
-            INSERT INTO wbs_notifications
-              (user_id, event_type, title, body, entity_type, entity_id, metadata)
-            VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
-            """,
-            user_id, event_type, title, body, entity_type, entity_id, metadata or {},
-        )
+        # 바깥 트랜잭션이 있으면 SAVEPOINT 로 감싸, 알림 실패가 본 작업 트랜잭션을 깨뜨리지 않게 한다
+        async with connection.transaction():
+            await connection.execute(
+                """
+                INSERT INTO wbs_notifications
+                  (user_id, event_type, title, body, entity_type, entity_id, metadata)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
+                """,
+                user_id, event_type, title, body, entity_type, entity_id, metadata or {},
+            )
     except Exception:
-        pass
+        logger.warning("인앱 알림 저장 실패", exc_info=True)
 
     if SMTP_HOST and email_to:
         def _send() -> None:
@@ -1352,7 +1341,7 @@ async def send_notification(
                         s.login(SMTP_USER, SMTP_PASSWORD)
                     s.sendmail(msg["From"], [email_to], msg.as_string())
             except Exception:
-                pass
+                logger.warning("알림 메일 발송 실패", exc_info=True)
         asyncio.get_event_loop().run_in_executor(None, _send)
 
 
@@ -6831,7 +6820,7 @@ async def approve_approval(approval_id: str, payload: ApprovalDecision, request:
                     email_to=proj_row["email"],
                 )
     except Exception:
-        pass
+        logger.warning("승인 알림 발송 실패", exc_info=True)
 
     return updated
 
@@ -6977,7 +6966,7 @@ async def dashboard(request: Request) -> dict[str, Any]:
                 "SELECT count(*) FROM wbs_issues WHERE status != 'Closed' AND tenant_id = $1", tid
             ) or 0
         except Exception:
-            pass
+            logger.warning("대시보드 리스크/이슈 집계 실패", exc_info=True)
 
     # SPI(EV/PV)·진척률 — 공통 산식
     project_kpis = []
@@ -11061,12 +11050,13 @@ async def wbs_diff(project_id: str, request: Request, baseline_id: str | None = 
         if baseline_id:
             bl_parsed = safe_uuid(baseline_id)
             bl_row = await connection.fetchrow(
-                "SELECT snapshot FROM wbs_project_baselines WHERE id = $1 AND project_id = $2",
+                "SELECT snapshot_rows AS snapshot FROM wbs_project_baselines WHERE id = $1 AND project_id = $2",
                 bl_parsed, parsed_id,
             ) if bl_parsed else None
         else:
             bl_row = await connection.fetchrow(
-                "SELECT snapshot FROM wbs_project_baselines WHERE project_id = $1 ORDER BY created_at DESC LIMIT 1",
+                "SELECT snapshot_rows AS snapshot FROM wbs_project_baselines WHERE project_id = $1 "
+                "ORDER BY created_at DESC LIMIT 1",
                 parsed_id,
             )
 

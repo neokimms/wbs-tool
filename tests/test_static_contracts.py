@@ -3,10 +3,16 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-API = (ROOT / "services/wbs-api/app/main.py").read_text(encoding="utf-8")
+# 모듈 분리 이후에도 동작하도록 app/ 하위 전체 파이썬 소스를 대상으로 검사
+API = "\n".join(
+    p.read_text(encoding="utf-8")
+    for p in sorted((ROOT / "services/wbs-api/app").rglob("*.py"))
+)
 MIGRATION = (ROOT / "services/wbs-api/migrations/001_init.sql").read_text(encoding="utf-8")
 PORTAL_HTML = (ROOT / "apps/portal/index.html").read_text(encoding="utf-8")
-PORTAL_JS = (ROOT / "apps/portal/app.js").read_text(encoding="utf-8")
+PORTAL_JS = "\n".join(
+    p.read_text(encoding="utf-8") for p in sorted((ROOT / "apps/portal").rglob("*.js"))
+)
 DEMO_E2E = (ROOT / "scripts/demo-e2e.sh").read_text(encoding="utf-8")
 
 
@@ -14,8 +20,8 @@ class WbsPlatformContracts(unittest.TestCase):
     def test_rbac_and_security_endpoints_exist(self):
         for snippet in (
             "def require_mutating_role",
-            '@app.post("/api/auth/password")',
-            '@app.post("/api/users/{user_id}/sessions/revoke")',
+            '.post("/api/auth/password")',
+            '.post("/api/users/{user_id}/sessions/revoke")',
             "LOGIN_FAILURE_LIMIT",
             "must_change_password",
             "resolve_login_alias",
@@ -26,7 +32,7 @@ class WbsPlatformContracts(unittest.TestCase):
     def test_project_workflow_and_pm_adapter_are_enforced(self):
         for snippet in (
             "PROJECT_WORKFLOW_TRANSITIONS",
-            '@app.patch("/api/projects/{project_id}/status")',
+            '.patch("/api/projects/{project_id}/status")',
             "Actual sync requires a locked WBS baseline",
             'PM_ENGINE_ADAPTER == "mock"',
         ):
@@ -35,9 +41,9 @@ class WbsPlatformContracts(unittest.TestCase):
     def test_excel_import_contracts_exist(self):
         for snippet in (
             "build_wbs_diff_rows",
-            '@app.get("/api/imports/{job_id}/errors.xlsx")',
-            '@app.get("/api/templates/{template_key}/versions")',
-            '@app.post("/api/projects/{project_id}/imports/{job_id}/apply")',
+            '.get("/api/imports/{job_id}/errors.xlsx")',
+            '.get("/api/templates/{template_key}/versions")',
+            '.post("/api/projects/{project_id}/imports/{job_id}/apply")',
             "wbs_project_wbs_items",
             "baseline_source",
         ):
