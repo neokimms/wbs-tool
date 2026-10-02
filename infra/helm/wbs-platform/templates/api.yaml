@@ -23,7 +23,14 @@ metadata:
     {{- include "wbs-platform.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
+  {{- if not .Values.api.hpa.enabled }}
   replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "wbs-platform.selectorLabels" . | nindent 6 }}

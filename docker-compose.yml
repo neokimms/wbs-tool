@@ -74,7 +74,7 @@ services:
       WBS_RUN_MIGRATIONS_ON_STARTUP: ${WBS_RUN_MIGRATIONS_ON_STARTUP:-true}
       BACKUP_DIR: /app/backups/postgres
     volumes:
-      - ./backups/postgres:/app/backups/postgres:ro
+      - wbs_backups:/app/backups/postgres
     ports:
       - "${WBS_API_PORT:-8000}:8000"
 
@@ -83,6 +83,31 @@ services:
       context: ./apps/portal
     ports:
       - "${WBS_PORTAL_PORT:-3010}:80"
+
+  # ── Legalize.ki ──────────────────────────────────────────
+  legalize-api:
+    build:
+      context: ./services/legalize
+    profiles: ["legalize"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/${POSTGRES_DB:-wbs_platform}
+      CASES_DIR: /app/cases
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${LEGALIZE_API_PORT:-8030}:8030"
+    volumes:
+      - ./services/legalize/cases:/app/cases:ro
+      - ./okf-repo:/app/okf-repo:rw          # Tier 1 (Git 추적)
+      - ./okf-full:/app/okf-full:rw          # Tier 2 (전량 sharded · gitignore)
+
+  legalize-portal:
+    build:
+      context: ./apps/legalize
+    profiles: ["legalize"]
+    ports:
+      - "${LEGALIZE_PORTAL_PORT:-3030}:80"
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
@@ -117,3 +142,4 @@ volumes:
   postgres17_data:
   openproject_assets:
   prometheus_data:
+  wbs_backups:

@@ -15,3 +15,20 @@ backups/*
 backups/postgres/*
 !backups/postgres/.gitkeep
 services/legalize/.env
+
+# OKF Tier 2 (전량 sharded · Git 미추적)
+okf-full/
+okf-full-*.tar.zst
+
+
+# 로컬 작업 산출물 (Playwright 캡처·스크린샷·개인 설정)
+.playwright-mcp/
+tmp/
+/*.png
+.claude/settings.local.json
+*.bak
+
+# Legalize 업스트림 클론 (별도 Git 저장소)
+services/legalize/pipeline/
+services/legalize/cases-upstream/
+services/legalize/precedents-upstream/
