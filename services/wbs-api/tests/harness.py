@@ -54,8 +54,9 @@ class TestEnv:
         os.environ["WBS_REPORT_SCHEDULER_ENABLED"] = "false"
         os.environ["WBS_RUN_MIGRATIONS_ON_STARTUP"] = "true"
         os.environ["WBS_LOGIN_FAILURE_LIMIT"] = "1000"
-        os.environ.setdefault("OPENPROJECT_SYNC_ENABLED", "false")
-        os.environ.setdefault("PM_ENGINE_ADAPTER", "mock")
+        # 테스트는 실제 OpenProject 를 호출하지 않는다 (mock 어댑터 강제)
+        os.environ["OPENPROJECT_SYNC_ENABLED"] = "false"
+        os.environ["PM_ENGINE_ADAPTER"] = "mock"
 
         import httpx
         from app import main  # 환경변수 설정 이후 import

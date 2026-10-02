@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import asyncio
 from pathlib import Path
 from typing import Any
+import asyncpg
 from fastapi import HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi import APIRouter
@@ -264,233 +265,157 @@ async def metrics(request: Request) -> PlainTextResponse:
     )
 
 
-@router.get("/api/operations/health")
-async def operations_health(request: Request) -> dict[str, Any]:
-    require_roles(request, {"admin", "pmo"})
+# ── 운영 점검 ─────────────────────────────────────────────────────────────
+# 집계(_collect_operation_counts) → 점검 항목 구성(_build_operation_checks) → 요약(operations_health) 으로 분리.
 
-    async with get_pool(request).acquire() as connection:
-        database_version = await connection.fetchval("SHOW server_version")
-        project_count = await connection.fetchval("SELECT count(*) FROM wbs_projects")
-        template_count = await connection.fetchval("SELECT count(*) FROM wbs_templates")
-        template_item_count = await connection.fetchval("SELECT count(*) FROM wbs_template_items")
-        pending_approval_count = await connection.fetchval(
-            "SELECT count(*) FROM wbs_approval_requests WHERE status = 'Pending'"
-        )
-        preview_import_count = await connection.fetchval(
-            "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'"
-        )
-        sync_run_count = await connection.fetchval("SELECT count(*) FROM wbs_sync_runs")
-        baseline_count = await connection.fetchval("SELECT count(*) FROM wbs_project_baselines")
-        user_count = await connection.fetchval("SELECT count(*) FROM wbs_users")
-        locked_user_count = await connection.fetchval("SELECT count(*) FROM wbs_users WHERE locked_until > now()")
-        audit_count = await connection.fetchval("SELECT count(*) FROM wbs_audit_events")
-        setting_count = await connection.fetchval("SELECT count(*) FROM wbs_system_settings")
-        project_wbs_count = await connection.fetchval("SELECT count(*) FROM wbs_project_wbs_items")
-        template_version_count = await connection.fetchval("SELECT count(*) FROM wbs_template_versions")
-        report_schedule_count = await connection.fetchval("SELECT count(*) FROM wbs_report_schedules")
-        report_enabled_count = await connection.fetchval("SELECT count(*) FROM wbs_report_schedules WHERE enabled = true")
-        report_run_count = await connection.fetchval("SELECT count(*) FROM wbs_report_runs")
-        report_failed_count = await connection.fetchval(
-            "SELECT count(*) FROM wbs_report_runs WHERE status = 'Failed' AND started_at >= now() - interval '7 days'"
-        )
-        existing_tables = await connection.fetch(
+REQUIRED_TABLES = (
+    "wbs_templates", "wbs_template_items", "wbs_projects", "wbs_import_jobs", "wbs_approval_requests",
+    "wbs_sync_runs", "wbs_project_baselines", "wbs_users", "wbs_user_sessions", "wbs_system_settings",
+    "wbs_audit_events", "wbs_template_versions", "wbs_project_wbs_items", "wbs_report_schedules",
+    "wbs_report_runs",
+)
+
+OPERATION_COUNT_QUERIES = {
+    "project_count": "SELECT count(*) FROM wbs_projects",
+    "template_count": "SELECT count(*) FROM wbs_templates",
+    "template_item_count": "SELECT count(*) FROM wbs_template_items",
+    "pending_approval_count": "SELECT count(*) FROM wbs_approval_requests WHERE status = 'Pending'",
+    "preview_import_count": "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'",
+    "sync_run_count": "SELECT count(*) FROM wbs_sync_runs",
+    "baseline_count": "SELECT count(*) FROM wbs_project_baselines",
+    "user_count": "SELECT count(*) FROM wbs_users",
+    "locked_user_count": "SELECT count(*) FROM wbs_users WHERE locked_until > now()",
+    "audit_count": "SELECT count(*) FROM wbs_audit_events",
+    "setting_count": "SELECT count(*) FROM wbs_system_settings",
+    "project_wbs_count": "SELECT count(*) FROM wbs_project_wbs_items",
+    "template_version_count": "SELECT count(*) FROM wbs_template_versions",
+    "report_schedule_count": "SELECT count(*) FROM wbs_report_schedules",
+    "report_enabled_count": "SELECT count(*) FROM wbs_report_schedules WHERE enabled = true",
+    "report_run_count": "SELECT count(*) FROM wbs_report_runs",
+    "report_failed_count": (
+        "SELECT count(*) FROM wbs_report_runs WHERE status = 'Failed' AND started_at >= now() - interval '7 days'"
+    ),
+}
+
+
+async def _collect_operation_counts(connection: asyncpg.Connection) -> tuple[str, dict[str, int], list[str]]:
+    """(DB 버전, 집계값, 누락 테이블) — 누락 테이블이 있으면 해당 집계는 건너뛴다."""
+    database_version = await connection.fetchval("SHOW server_version")
+    existing = {
+        row["table_name"]
+        for row in await connection.fetch(
             """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-              AND table_name = ANY($1::text[])
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = ANY($1::text[])
             """,
-            [
-                "wbs_templates",
-                "wbs_template_items",
-                "wbs_projects",
-                "wbs_import_jobs",
-                "wbs_approval_requests",
-                "wbs_sync_runs",
-                "wbs_project_baselines",
-                "wbs_users",
-                "wbs_user_sessions",
-                "wbs_system_settings",
-                "wbs_audit_events",
-                "wbs_template_versions",
-                "wbs_project_wbs_items",
-                "wbs_report_schedules",
-                "wbs_report_runs",
-            ],
+            list(REQUIRED_TABLES),
         )
-
-    table_names = {row["table_name"] for row in existing_tables}
-    required_tables = {
-        "wbs_templates",
-        "wbs_template_items",
-        "wbs_projects",
-        "wbs_import_jobs",
-        "wbs_approval_requests",
-        "wbs_sync_runs",
-        "wbs_project_baselines",
-        "wbs_users",
-        "wbs_user_sessions",
-        "wbs_system_settings",
-        "wbs_audit_events",
-        "wbs_template_versions",
-        "wbs_project_wbs_items",
-        "wbs_report_schedules",
-        "wbs_report_runs",
     }
-    missing_tables = sorted(required_tables - table_names)
-    preflight = await run_openproject_preflight()
-    openproject_status = "pass" if preflight["state"] == "ready" else "warn"
-    if preflight["state"] in {"offline", "auth_failed", "blocked"}:
-        openproject_status = "fail"
+    missing_tables = sorted(set(REQUIRED_TABLES) - existing)
+    counts: dict[str, int] = {}
+    for key, sql in OPERATION_COUNT_QUERIES.items():
+        table = sql.split(" FROM ", 1)[1].split()[0]
+        counts[key] = int(await connection.fetchval(sql) or 0) if table in existing else 0
+    return database_version, counts, missing_tables
 
-    checks = [
+
+def _openproject_check_status(preflight: dict[str, Any]) -> str:
+    if preflight["state"] in {"offline", "auth_failed", "blocked"}:
+        return "fail"
+    return "pass" if preflight["state"] == "ready" else "warn"
+
+
+def _build_operation_checks(
+    database_version: str,
+    c: dict[str, int],
+    missing_tables: list[str],
+    preflight: dict[str, Any],
+    scheduler_state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        operation_check("postgresql", "PostgreSQL", "pass",
+                        f"PostgreSQL {database_version} is reachable", {"version": database_version}),
+        operation_check("schema", "Schema migration", "fail" if missing_tables else "pass",
+                        "Required WBS tables are present" if not missing_tables else "Missing required WBS tables",
+                        {"missing_tables": missing_tables}),
+        operation_check("template_baseline", "WBS template baseline",
+                        "pass" if c["template_count"] and c["template_item_count"] else "fail",
+                        f"{c['template_count']} templates, {c['template_item_count']} template items",
+                        {"templates": c["template_count"], "template_items": c["template_item_count"]}),
+        operation_check("portfolio_seed", "Project portfolio", "pass" if c["project_count"] else "warn",
+                        f"{c['project_count']} projects registered", {"projects": c["project_count"]}),
+        operation_check("approval_queue", "PMO approval queue", "warn" if c["pending_approval_count"] else "pass",
+                        f"{c['pending_approval_count']} pending approvals",
+                        {"pending_approvals": c["pending_approval_count"]}),
+        operation_check("excel_preview_queue", "Excel preview queue",
+                        "warn" if c["preview_import_count"] else "pass",
+                        f"{c['preview_import_count']} imports waiting for apply",
+                        {"preview_imports": c["preview_import_count"]}),
+        operation_check("openproject_preflight", "OpenProject preflight", _openproject_check_status(preflight),
+                        f"Engine state: {preflight['state']}",
+                        {"state": preflight["state"], "ready_for_actual_sync": preflight["ready_for_actual_sync"]}),
+        operation_check("sync_audit", "Sync audit trail", "pass",
+                        f"{c['sync_run_count']} sync runs recorded", {"sync_runs": c["sync_run_count"]}),
+        operation_check("baseline_lock", "Baseline lock", "pass",
+                        f"{c['baseline_count']} locked WBS baselines", {"baselines": c["baseline_count"]}),
+        operation_check("access_control", "Access control", "pass" if c["user_count"] else "fail",
+                        f"{c['user_count']} portal users configured", {"users": c["user_count"]}),
+        operation_check("settings_registry", "Settings registry", "pass" if c["setting_count"] >= 3 else "warn",
+                        f"{c['setting_count']} settings registered", {"settings": c["setting_count"]}),
+        operation_check("audit_log", "Audit log", "pass", f"{c['audit_count']} audit events recorded",
+                        {"audit_events": c["audit_count"], "retention_days": AUDIT_RETENTION_DAYS}),
+        operation_check("account_lockout", "Account lockout", "warn" if c["locked_user_count"] else "pass",
+                        f"{c['locked_user_count']} users currently locked",
+                        {"locked_users": c["locked_user_count"], "failure_limit": LOGIN_FAILURE_LIMIT}),
+        operation_check("template_versions", "Template versions",
+                        "pass" if c["template_version_count"] else "warn",
+                        f"{c['template_version_count']} template versions stored",
+                        {"template_versions": c["template_version_count"]}),
+        operation_check("project_wbs_storage", "Project WBS storage", "pass",
+                        f"{c['project_wbs_count']} project WBS rows stored",
+                        {"project_wbs_rows": c["project_wbs_count"]}),
         operation_check(
-            "postgresql",
-            "PostgreSQL",
-            "pass",
-            f"PostgreSQL {database_version} is reachable",
-            {"version": database_version},
-        ),
-        operation_check(
-            "schema",
-            "Schema migration",
-            "fail" if missing_tables else "pass",
-            "Required WBS tables are present" if not missing_tables else "Missing required WBS tables",
-            {"missing_tables": missing_tables},
-        ),
-        operation_check(
-            "template_baseline",
-            "WBS template baseline",
-            "pass" if template_count and template_item_count else "fail",
-            f"{template_count} templates, {template_item_count} template items",
-            {"templates": template_count, "template_items": template_item_count},
-        ),
-        operation_check(
-            "portfolio_seed",
-            "Project portfolio",
-            "pass" if project_count else "warn",
-            f"{project_count} projects registered",
-            {"projects": project_count},
-        ),
-        operation_check(
-            "approval_queue",
-            "PMO approval queue",
-            "warn" if pending_approval_count else "pass",
-            f"{pending_approval_count} pending approvals",
-            {"pending_approvals": pending_approval_count},
-        ),
-        operation_check(
-            "excel_preview_queue",
-            "Excel preview queue",
-            "warn" if preview_import_count else "pass",
-            f"{preview_import_count} imports waiting for apply",
-            {"preview_imports": preview_import_count},
-        ),
-        operation_check(
-            "openproject_preflight",
-            "OpenProject preflight",
-            openproject_status,
-            f"Engine state: {preflight['state']}",
-            {"state": preflight["state"], "ready_for_actual_sync": preflight["ready_for_actual_sync"]},
-        ),
-        operation_check(
-            "sync_audit",
-            "Sync audit trail",
-            "pass",
-            f"{sync_run_count} sync runs recorded",
-            {"sync_runs": sync_run_count},
-        ),
-        operation_check(
-            "baseline_lock",
-            "Baseline lock",
-            "pass",
-            f"{baseline_count} locked WBS baselines",
-            {"baselines": baseline_count},
-        ),
-        operation_check(
-            "access_control",
-            "Access control",
-            "pass" if user_count else "fail",
-            f"{user_count} portal users configured",
-            {"users": user_count},
-        ),
-        operation_check(
-            "settings_registry",
-            "Settings registry",
-            "pass" if setting_count >= 3 else "warn",
-            f"{setting_count} settings registered",
-            {"settings": setting_count},
-        ),
-        operation_check(
-            "audit_log",
-            "Audit log",
-            "pass",
-            f"{audit_count} audit events recorded",
-            {"audit_events": audit_count, "retention_days": AUDIT_RETENTION_DAYS},
-        ),
-        operation_check(
-            "account_lockout",
-            "Account lockout",
-            "warn" if locked_user_count else "pass",
-            f"{locked_user_count} users currently locked",
-            {"locked_users": locked_user_count, "failure_limit": LOGIN_FAILURE_LIMIT},
-        ),
-        operation_check(
-            "template_versions",
-            "Template versions",
-            "pass" if template_version_count else "warn",
-            f"{template_version_count} template versions stored",
-            {"template_versions": template_version_count},
-        ),
-        operation_check(
-            "project_wbs_storage",
-            "Project WBS storage",
-            "pass",
-            f"{project_wbs_count} project WBS rows stored",
-            {"project_wbs_rows": project_wbs_count},
-        ),
-        operation_check(
-            "weekly_report_scheduler",
-            "Weekly report scheduler",
-            "fail" if REPORT_SCHEDULER_ENABLED and AsyncIOScheduler is None else "warn" if report_failed_count else "pass",
-            f"{report_enabled_count} enabled schedules, {report_run_count} report runs",
+            "weekly_report_scheduler", "Weekly report scheduler",
+            "fail" if REPORT_SCHEDULER_ENABLED and AsyncIOScheduler is None
+            else "warn" if c["report_failed_count"] else "pass",
+            f"{c['report_enabled_count']} enabled schedules, {c['report_run_count']} report runs",
             {
-                "schedules": report_schedule_count,
-                "enabled_schedules": report_enabled_count,
-                "report_runs": report_run_count,
-                "failed_last_7_days": report_failed_count,
-                **scheduler_runtime_state(request.app),
+                "schedules": c["report_schedule_count"],
+                "enabled_schedules": c["report_enabled_count"],
+                "report_runs": c["report_run_count"],
+                "failed_last_7_days": c["report_failed_count"],
+                **scheduler_state,
                 "smtp_configured": bool(REPORT_SMTP_HOST),
             },
         ),
-        operation_check(
-            "cors_policy",
-            "CORS policy",
-            "warn" if ALLOW_FILE_ORIGIN else "pass",
-            "file:// origin is allowed for local development" if ALLOW_FILE_ORIGIN else "file:// origin is disabled",
-            {"allow_file_origin": ALLOW_FILE_ORIGIN, "portal_origin": PORTAL_ORIGIN},
-        ),
+        operation_check("cors_policy", "CORS policy", "warn" if ALLOW_FILE_ORIGIN else "pass",
+                        "file:// origin is allowed for local development" if ALLOW_FILE_ORIGIN
+                        else "file:// origin is disabled",
+                        {"allow_file_origin": ALLOW_FILE_ORIGIN, "portal_origin": PORTAL_ORIGIN}),
         backup_health_check(),
-        operation_check(
-            "metrics",
-            "Metrics endpoint",
-            "pass",
-            "Prometheus metrics are exposed at /metrics",
-            {"path": "/metrics"},
-        ),
+        operation_check("metrics", "Metrics endpoint", "pass",
+                        "Prometheus metrics are exposed at /metrics", {"path": "/metrics"}),
     ]
-    failures = len([check for check in checks if check["status"] == "fail"])
-    warnings = len([check for check in checks if check["status"] == "warn"])
-    status = "critical" if failures else "watch" if warnings else "stable"
 
+
+@router.get("/api/operations/health")
+async def operations_health(request: Request) -> dict[str, Any]:
+    require_roles(request, {"admin", "pmo"})
+    async with get_pool(request).acquire() as connection:
+        database_version, counts, missing_tables = await _collect_operation_counts(connection)
+    preflight = await run_openproject_preflight()
+    checks = _build_operation_checks(
+        database_version, counts, missing_tables, preflight, scheduler_runtime_state(request.app)
+    )
+    tally = {status: sum(1 for check in checks if check["status"] == status) for status in ("fail", "warn", "pass")}
     return {
-        "status": status,
+        "status": "critical" if tally["fail"] else "watch" if tally["warn"] else "stable",
         "generated_at": utc_now_iso(),
         "summary": {
             "checks": len(checks),
-            "failures": failures,
-            "warnings": warnings,
-            "passes": len([check for check in checks if check["status"] == "pass"]),
+            "failures": tally["fail"],
+            "warnings": tally["warn"],
+            "passes": tally["pass"],
         },
         "checks": checks,
     }

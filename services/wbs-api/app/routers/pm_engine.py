@@ -389,17 +389,18 @@ async def project_sync_preflight(project_id: str, request: Request) -> dict[str,
     }
 
 
-@router.post("/api/projects/{project_id}/sync")
-async def sync_project_to_engine(
-    project_id: str,
-    request: Request,
-    payload: ProjectSyncRequest = ProjectSyncRequest(),
-) -> dict[str, Any]:
-    try:
-        parsed_id = UUID(project_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+# ── PM 엔진 동기화 ────────────────────────────────────────────────────────
+# 입력 수집 → (Dry-run) → 실동기화 전제 조건 검사 → 어댑터별 실행(mock / OpenProject) → 결과 저장·응답
+# 순서로 분리. 응답 형식은 분리 전과 동일하다.
 
+PROJECT_RETURNING = """
+    RETURNING id, name, template_key, owner, status, start_date, delivery_mode,
+              openproject_project_id, metadata, tenant_id, created_at, updated_at
+"""
+
+
+async def _load_sync_inputs(request: Request, parsed_id: UUID) -> tuple[dict[str, Any], list[dict[str, Any]], Any, dict[str, Any]]:
+    """(project, rows, baseline, plan)"""
     project, template, rows = await fetch_project_sync_context(request, parsed_id)
     ensure_project_mutate_role(project)
     async with get_pool(request).acquire() as connection:
@@ -416,164 +417,152 @@ async def sync_project_to_engine(
             project["tenant_id"],
         )
     plan = build_openproject_sync_plan(project, template, rows, baseline, policy, sprints)
-    if payload.dry_run:
-        audit_run = await record_project_sync_run(
-            request,
-            project_id=parsed_id,
-            plan=plan,
-            payload=payload,
-            mode="dry_run",
-            status="DryRun",
-            metadata={
-                "source": "api",
-                "ready_for_actual_sync": OPENPROJECT_SYNC_ENABLED and bool(OPENPROJECT_API_TOKEN),
-            },
-        )
-        return {"status": "DryRun", **plan, "audit": audit_run}
+    return project, rows, baseline, plan
 
+
+async def _block_sync(
+    request: Request, parsed_id: UUID, plan: dict[str, Any], payload: ProjectSyncRequest,
+    *, status_code: int, detail: str, reason: str,
+) -> None:
+    """실동기화 차단 — 실행 이력(Blocked)을 남기고 HTTPException 을 던진다."""
+    error = HTTPException(status_code=status_code, detail=detail)
+    await record_project_sync_run(
+        request,
+        project_id=parsed_id,
+        plan=plan,
+        payload=payload,
+        mode="actual",
+        status="Blocked",
+        metadata={"source": "api", "blocked_reason": reason},
+        error=sync_error_payload(error),
+    )
+    raise error
+
+
+async def _ensure_actual_sync_allowed(
+    request: Request, parsed_id: UUID, project: dict[str, Any], baseline: Any,
+    plan: dict[str, Any], payload: ProjectSyncRequest,
+) -> None:
     ensure_project_status_allowed(project, {ACTUAL_SYNC_REQUIRED_STATUS}, "Actual sync")
     if not baseline_summary(baseline).get("locked"):
-        error = HTTPException(status_code=409, detail="Actual sync requires a locked WBS baseline")
-        await record_project_sync_run(
-            request,
-            project_id=parsed_id,
-            plan=plan,
-            payload=payload,
-            mode="actual",
-            status="Blocked",
-            metadata={"source": "api", "blocked_reason": "baseline_unlocked"},
-            error=sync_error_payload(error),
-        )
-        raise error
-
+        await _block_sync(request, parsed_id, plan, payload, status_code=409,
+                          detail="Actual sync requires a locked WBS baseline", reason="baseline_unlocked")
     if PM_ENGINE_ADAPTER == "mock":
-        metadata = normalize_metadata(project.get("metadata"))
-        engine_metadata = normalize_metadata(metadata.get("pm_engine"))
-        mock_project_id = engine_metadata.get("project_id") or f"mock-{str(parsed_id)[:8]}"
-        work_packages = {
-            row["code"]: {
-                "id": f"mock-wp-{index}",
-                "href": f"/mock/work_packages/{index}",
-                "subject": row["subject"],
-                "synced_at": utc_now_iso(),
-            }
-            for index, row in enumerate(plan["rows"], start=1)
-        }
-        versions = {
-            row["name"]: {
-                "id": f"mock-version-{index}",
-                "href": f"/mock/versions/{index}",
-                "sprint_id": row["sprint_id"],
-                "start_date": row.get("start_date"),
-                "end_date": row.get("end_date"),
-                "synced_at": utc_now_iso(),
-            }
-            for index, row in enumerate(plan.get("sprint_versions") or [], start=1)
-            if row.get("name")
-        }
-        engine_metadata.update(
-            {
-                "adapter": "mock",
-                "project_id": mock_project_id,
-                "project_identifier": plan["openproject"]["project_identifier"],
-                "work_packages": work_packages,
-                "versions": versions,
-                "last_sync_at": utc_now_iso(),
-            }
-        )
-        metadata["pm_engine"] = engine_metadata
-        async with get_pool(request).acquire() as connection:
-            record = await connection.fetchrow(
-                """
-                UPDATE wbs_projects
-                SET status = 'Synced',
-                    openproject_project_id = $2,
-                    metadata = $3::jsonb,
-                    updated_at = now()
-                WHERE id = $1
-                RETURNING id, name, template_key, owner, status, start_date, delivery_mode,
-                          openproject_project_id, metadata, tenant_id, created_at, updated_at
-                """,
-                parsed_id,
-                mock_project_id,
-                metadata,
-            )
-        audit_run = await record_project_sync_run(
-            request,
-            project_id=parsed_id,
-            plan=plan,
-            payload=payload,
-            mode="actual",
-            status="Synced",
-            created_work_packages=len(work_packages),
-            openproject_project_id=mock_project_id,
-            metadata={
-                "source": "mock_adapter",
-                "known_work_packages": len(work_packages),
-                "known_versions": len(versions),
-            },
-        )
-        return {
-            "status": "Synced",
-            "engine": pm_engine_status({"adapter": "mock", "display_name": "Mock PM Engine"}),
-            "project": normalize_record(record),
-            "openproject": {
-                "project_id": mock_project_id,
-                "project_identifier": engine_metadata.get("project_identifier"),
-                "project_href": None,
-            },
-            "summary": {
-                "created_work_packages": len(work_packages),
-                "created_versions": len(versions),
-                "known_work_packages": len(work_packages),
-                "known_versions": len(versions),
-                "total_rows": len(rows),
-                "payload_validation": False,
-            },
-            "created_work_packages": list(work_packages.values()),
-            "created_versions": list(versions.values()),
-            "audit": audit_run,
-        }
-
+        return
     if not OPENPROJECT_SYNC_ENABLED:
-        error = HTTPException(
-            status_code=400,
-            detail="OpenProject sync is disabled. Set OPENPROJECT_SYNC_ENABLED=true to execute.",
-        )
-        await record_project_sync_run(
-            request,
-            project_id=parsed_id,
-            plan=plan,
-            payload=payload,
-            mode="actual",
-            status="Blocked",
-            metadata={"source": "api", "blocked_reason": "sync_disabled"},
-            error=sync_error_payload(error),
-        )
-        raise error
+        await _block_sync(request, parsed_id, plan, payload, status_code=400,
+                          detail="OpenProject sync is disabled. Set OPENPROJECT_SYNC_ENABLED=true to execute.",
+                          reason="sync_disabled")
     if not OPENPROJECT_API_TOKEN:
-        error = HTTPException(status_code=400, detail="OPENPROJECT_API_TOKEN is required for OpenProject sync.")
-        await record_project_sync_run(
-            request,
-            project_id=parsed_id,
-            plan=plan,
-            payload=payload,
-            mode="actual",
-            status="Blocked",
-            metadata={"source": "api", "blocked_reason": "missing_token"},
-            error=sync_error_payload(error),
-        )
-        raise error
+        await _block_sync(request, parsed_id, plan, payload, status_code=400,
+                          detail="OPENPROJECT_API_TOKEN is required for OpenProject sync.", reason="missing_token")
 
-    client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
+
+async def _mark_project_synced(
+    request: Request, parsed_id: UUID, engine_project_id: str, metadata: dict[str, Any]
+) -> dict[str, Any]:
+    async with get_pool(request).acquire() as connection:
+        record = await connection.fetchrow(
+            f"""
+            UPDATE wbs_projects
+            SET status = 'Synced',
+                openproject_project_id = $2,
+                metadata = $3::jsonb,
+                updated_at = now()
+            WHERE id = $1
+            {PROJECT_RETURNING}
+            """,
+            parsed_id,
+            engine_project_id,
+            metadata,
+        )
+    return normalize_record(record)
+
+
+async def _sync_with_mock_adapter(
+    request: Request, parsed_id: UUID, project: dict[str, Any], rows: list[dict[str, Any]],
+    plan: dict[str, Any], payload: ProjectSyncRequest,
+) -> dict[str, Any]:
     metadata = normalize_metadata(project.get("metadata"))
     engine_metadata = normalize_metadata(metadata.get("pm_engine"))
-    work_packages = normalize_metadata(engine_metadata.get("work_packages"))
-    versions = normalize_metadata(engine_metadata.get("versions"))
-    openproject_project_id = project.get("openproject_project_id") or engine_metadata.get("project_id")
-    project_identifier = engine_metadata.get("project_identifier") or plan["openproject"]["project_identifier"]
+    mock_project_id = engine_metadata.get("project_id") or f"mock-{str(parsed_id)[:8]}"
+    work_packages = {
+        row["code"]: {
+            "id": f"mock-wp-{index}",
+            "href": f"/mock/work_packages/{index}",
+            "subject": row["subject"],
+            "synced_at": utc_now_iso(),
+        }
+        for index, row in enumerate(plan["rows"], start=1)
+    }
+    versions = {
+        row["name"]: {
+            "id": f"mock-version-{index}",
+            "href": f"/mock/versions/{index}",
+            "sprint_id": row["sprint_id"],
+            "start_date": row.get("start_date"),
+            "end_date": row.get("end_date"),
+            "synced_at": utc_now_iso(),
+        }
+        for index, row in enumerate(plan.get("sprint_versions") or [], start=1)
+        if row.get("name")
+    }
+    engine_metadata.update(
+        {
+            "adapter": "mock",
+            "project_id": mock_project_id,
+            "project_identifier": plan["openproject"]["project_identifier"],
+            "work_packages": work_packages,
+            "versions": versions,
+            "last_sync_at": utc_now_iso(),
+        }
+    )
+    metadata["pm_engine"] = engine_metadata
+    updated_project = await _mark_project_synced(request, parsed_id, mock_project_id, metadata)
+    audit_run = await record_project_sync_run(
+        request,
+        project_id=parsed_id,
+        plan=plan,
+        payload=payload,
+        mode="actual",
+        status="Synced",
+        created_work_packages=len(work_packages),
+        openproject_project_id=mock_project_id,
+        metadata={
+            "source": "mock_adapter",
+            "known_work_packages": len(work_packages),
+            "known_versions": len(versions),
+        },
+    )
+    return {
+        "status": "Synced",
+        "engine": pm_engine_status({"adapter": "mock", "display_name": "Mock PM Engine"}),
+        "project": updated_project,
+        "openproject": {
+            "project_id": mock_project_id,
+            "project_identifier": engine_metadata.get("project_identifier"),
+            "project_href": None,
+        },
+        "summary": {
+            "created_work_packages": len(work_packages),
+            "created_versions": len(versions),
+            "known_work_packages": len(work_packages),
+            "known_versions": len(versions),
+            "total_rows": len(rows),
+            "payload_validation": False,
+        },
+        "created_work_packages": list(work_packages.values()),
+        "created_versions": list(versions.values()),
+        "audit": audit_run,
+    }
 
-    if payload.force_project_create or not openproject_project_id:
+
+async def _ensure_openproject_project(
+    client: OpenProjectClient, project: dict[str, Any], engine_metadata: dict[str, Any],
+    project_identifier: str, force_create: bool,
+) -> str:
+    openproject_project_id = project.get("openproject_project_id") or engine_metadata.get("project_id")
+    if force_create or not openproject_project_id:
         created_project = await client.create_project(project, project_identifier)
         openproject_project_id = str(created_project.get("id") or "").strip()
         if not openproject_project_id:
@@ -582,101 +571,105 @@ async def sync_project_to_engine(
         engine_metadata["project_identifier"] = created_project.get("identifier") or project_identifier
         engine_metadata["project_href"] = normalize_metadata(created_project.get("_links")).get("self", {}).get("href")
         engine_metadata["project_created_at"] = utc_now_iso()
+    return openproject_project_id
 
+
+async def _sync_sprint_versions(
+    client: OpenProjectClient, openproject_project_id: str, plan: dict[str, Any], versions: dict[str, Any],
+) -> list[dict[str, Any]]:
     created_versions: list[dict[str, Any]] = []
-    if plan["operation_policy"].get("openproject_sprint_version_sync"):
-        for sprint in plan.get("sprint_versions") or []:
-            version_name = str(sprint.get("name") or "").strip()
-            if not version_name or version_name in versions:
-                continue
-            version_payload = client.build_version_payload(
-                openproject_project_id=openproject_project_id,
-                sprint=sprint,
-            )
-            created_version = await client.create_version_from_payload(version_payload)
-            version_id = str(created_version.get("id") or "").strip()
-            version_href = normalize_metadata(created_version.get("_links")).get("self", {}).get("href")
-            versions[version_name] = {
-                "id": version_id,
-                "href": version_href,
-                "sprint_id": sprint.get("sprint_id"),
-                "start_date": sprint.get("start_date"),
-                "end_date": sprint.get("end_date"),
-                "synced_at": utc_now_iso(),
-            }
-            created_versions.append(
-                {
-                    "name": version_name,
-                    "id": version_id,
-                    "href": version_href,
-                    "sprint_id": sprint.get("sprint_id"),
-                }
-            )
-
-    created_work_packages: list[dict[str, Any]] = []
-    if payload.create_work_packages:
-        href_by_code = {
-            code: item.get("href")
-            for code, item in work_packages.items()
-            if isinstance(item, dict) and item.get("href")
+    if not plan["operation_policy"].get("openproject_sprint_version_sync"):
+        return created_versions
+    for sprint in plan.get("sprint_versions") or []:
+        version_name = str(sprint.get("name") or "").strip()
+        if not version_name or version_name in versions:
+            continue
+        version_payload = client.build_version_payload(openproject_project_id=openproject_project_id, sprint=sprint)
+        created_version = await client.create_version_from_payload(version_payload)
+        version_id = str(created_version.get("id") or "").strip()
+        version_href = normalize_metadata(created_version.get("_links")).get("self", {}).get("href")
+        versions[version_name] = {
+            "id": version_id,
+            "href": version_href,
+            "sprint_id": sprint.get("sprint_id"),
+            "start_date": sprint.get("start_date"),
+            "end_date": sprint.get("end_date"),
+            "synced_at": utc_now_iso(),
         }
-        for row in rows:
-            code = row["code"]
-            if code in work_packages:
-                continue
-            parent_href = href_by_code.get(row.get("parent_code"))
-            work_package_payload = client.build_work_package_payload(
-                openproject_project_id=openproject_project_id,
-                row=row,
-                parent_href=parent_href,
-            )
-            if payload.validate_payloads:
-                await client.validate_work_package_payload(work_package_payload)
-            created_work_package = await client.create_work_package_from_payload(work_package_payload)
-            work_package_id = str(created_work_package.get("id") or "").strip()
-            work_package_href = normalize_metadata(created_work_package.get("_links")).get("self", {}).get("href")
-            work_packages[code] = {
-                "id": work_package_id,
-                "href": work_package_href,
-                "subject": created_work_package.get("subject") or f"{code} {row['name']}",
-                "synced_at": utc_now_iso(),
-            }
-            if work_package_href:
-                href_by_code[code] = work_package_href
-            created_work_packages.append(
-                {
-                    "code": code,
-                    "id": work_package_id,
-                    "href": work_package_href,
-                    "subject": work_packages[code]["subject"],
-                }
-            )
-
-    engine_metadata["adapter"] = "openproject"
-    engine_metadata["base_url"] = OPENPROJECT_BASE_URL
-    engine_metadata["work_packages"] = work_packages
-    engine_metadata["versions"] = versions
-    engine_metadata["last_sync_at"] = utc_now_iso()
-    metadata["pm_engine"] = engine_metadata
-
-    async with get_pool(request).acquire() as connection:
-        record = await connection.fetchrow(
-            """
-            UPDATE wbs_projects
-            SET status = 'Synced',
-                openproject_project_id = $2,
-                metadata = $3::jsonb,
-                updated_at = now()
-            WHERE id = $1
-            RETURNING id, name, template_key, owner, status, start_date, delivery_mode,
-                      openproject_project_id, metadata, tenant_id, created_at, updated_at
-            """,
-            parsed_id,
-            openproject_project_id,
-            metadata,
+        created_versions.append(
+            {"name": version_name, "id": version_id, "href": version_href, "sprint_id": sprint.get("sprint_id")}
         )
+    return created_versions
 
-    updated_project = normalize_record(record)
+
+async def _sync_work_packages(
+    client: OpenProjectClient, openproject_project_id: str, rows: list[dict[str, Any]],
+    work_packages: dict[str, Any], payload: ProjectSyncRequest,
+) -> list[dict[str, Any]]:
+    created_work_packages: list[dict[str, Any]] = []
+    if not payload.create_work_packages:
+        return created_work_packages
+    href_by_code = {
+        code: item.get("href")
+        for code, item in work_packages.items()
+        if isinstance(item, dict) and item.get("href")
+    }
+    for row in rows:
+        code = row["code"]
+        if code in work_packages:
+            continue
+        work_package_payload = client.build_work_package_payload(
+            openproject_project_id=openproject_project_id,
+            row=row,
+            parent_href=href_by_code.get(row.get("parent_code")),
+        )
+        if payload.validate_payloads:
+            await client.validate_work_package_payload(work_package_payload)
+        created_work_package = await client.create_work_package_from_payload(work_package_payload)
+        work_package_id = str(created_work_package.get("id") or "").strip()
+        work_package_href = normalize_metadata(created_work_package.get("_links")).get("self", {}).get("href")
+        work_packages[code] = {
+            "id": work_package_id,
+            "href": work_package_href,
+            "subject": created_work_package.get("subject") or f"{code} {row['name']}",
+            "synced_at": utc_now_iso(),
+        }
+        if work_package_href:
+            href_by_code[code] = work_package_href
+        created_work_packages.append(
+            {"code": code, "id": work_package_id, "href": work_package_href, "subject": work_packages[code]["subject"]}
+        )
+    return created_work_packages
+
+
+async def _sync_with_openproject(
+    request: Request, parsed_id: UUID, project: dict[str, Any], rows: list[dict[str, Any]],
+    plan: dict[str, Any], payload: ProjectSyncRequest,
+) -> dict[str, Any]:
+    client = OpenProjectClient(OPENPROJECT_BASE_URL, OPENPROJECT_API_TOKEN, OPENPROJECT_AUTH_MODE)
+    metadata = normalize_metadata(project.get("metadata"))
+    engine_metadata = normalize_metadata(metadata.get("pm_engine"))
+    work_packages = normalize_metadata(engine_metadata.get("work_packages"))
+    versions = normalize_metadata(engine_metadata.get("versions"))
+    project_identifier = engine_metadata.get("project_identifier") or plan["openproject"]["project_identifier"]
+
+    openproject_project_id = await _ensure_openproject_project(
+        client, project, engine_metadata, project_identifier, payload.force_project_create
+    )
+    created_versions = await _sync_sprint_versions(client, openproject_project_id, plan, versions)
+    created_work_packages = await _sync_work_packages(client, openproject_project_id, rows, work_packages, payload)
+
+    engine_metadata.update(
+        {
+            "adapter": "openproject",
+            "base_url": OPENPROJECT_BASE_URL,
+            "work_packages": work_packages,
+            "versions": versions,
+            "last_sync_at": utc_now_iso(),
+        }
+    )
+    metadata["pm_engine"] = engine_metadata
+    updated_project = await _mark_project_synced(request, parsed_id, openproject_project_id, metadata)
     audit_run = await record_project_sync_run(
         request,
         project_id=parsed_id,
@@ -718,6 +711,39 @@ async def sync_project_to_engine(
         "created_versions": created_versions,
         "audit": audit_run,
     }
+
+
+@router.post("/api/projects/{project_id}/sync")
+async def sync_project_to_engine(
+    project_id: str,
+    request: Request,
+    payload: ProjectSyncRequest = ProjectSyncRequest(),
+) -> dict[str, Any]:
+    try:
+        parsed_id = UUID(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project id") from exc
+
+    project, rows, baseline, plan = await _load_sync_inputs(request, parsed_id)
+    if payload.dry_run:
+        audit_run = await record_project_sync_run(
+            request,
+            project_id=parsed_id,
+            plan=plan,
+            payload=payload,
+            mode="dry_run",
+            status="DryRun",
+            metadata={
+                "source": "api",
+                "ready_for_actual_sync": OPENPROJECT_SYNC_ENABLED and bool(OPENPROJECT_API_TOKEN),
+            },
+        )
+        return {"status": "DryRun", **plan, "audit": audit_run}
+
+    await _ensure_actual_sync_allowed(request, parsed_id, project, baseline, plan, payload)
+    if PM_ENGINE_ADAPTER == "mock":
+        return await _sync_with_mock_adapter(request, parsed_id, project, rows, plan, payload)
+    return await _sync_with_openproject(request, parsed_id, project, rows, plan, payload)
 
 
 @router.get("/api/openproject")

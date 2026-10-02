@@ -49,30 +49,30 @@ def autosize_worksheet(worksheet) -> None:
         worksheet.column_dimensions[column].width = min(max(length + 2, 12), 42)
 
 
-async def build_weekly_report_workbook(
-    pool: asyncpg.Pool,
-    period_start: datetime,
-    period_end: datetime,
-) -> tuple[bytes, dict[str, Any]]:
+# ── 주간 프로젝트 보고서 ─────────────────────────────────────────────────
+# 데이터 수집(_fetch_weekly_report_data) → 시트 정의(_weekly_report_sheets) → 작성(build_weekly_report_workbook)
+# 로 분리. 진척 수치는 공통 산식(compute_wbs_rollup) 결과만 사용한다.
+
+async def _fetch_weekly_report_data(
+    pool: asyncpg.Pool, period_start: datetime, period_end: datetime
+) -> dict[str, Any]:
     async with pool.acquire() as connection:
-        project_count = await connection.fetchval("SELECT count(*) FROM wbs_projects")
-        template_count = await connection.fetchval("SELECT count(*) FROM wbs_templates")
-        pending_approvals = await connection.fetchval(
-            "SELECT count(*) FROM wbs_approval_requests WHERE status = 'Pending'"
-        )
-        preview_imports = await connection.fetchval("SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'")
-        locked_baselines = await connection.fetchval("SELECT count(*) FROM wbs_project_baselines WHERE status = 'Locked'")
+        counts = {
+            key: await connection.fetchval(sql)
+            for key, sql in (
+                ("project_count", "SELECT count(*) FROM wbs_projects"),
+                ("template_count", "SELECT count(*) FROM wbs_templates"),
+                ("pending_approvals", "SELECT count(*) FROM wbs_approval_requests WHERE status = 'Pending'"),
+                ("preview_imports", "SELECT count(*) FROM wbs_import_jobs WHERE status = 'Preview'"),
+                ("locked_baselines", "SELECT count(*) FROM wbs_project_baselines WHERE status = 'Locked'"),
+            )
+        }
         status_rows = await connection.fetch(
-            """
-            SELECT status, count(*) AS count
-            FROM wbs_projects
-            GROUP BY status
-            ORDER BY status
-            """
+            "SELECT status, count(*) AS count FROM wbs_projects GROUP BY status ORDER BY status"
         )
         projects = await connection.fetch(
             """
-            SELECT name, owner, status, template_key, start_date,
+            SELECT id, name, owner, status, template_key, start_date,
                    openproject_project_id, created_at, updated_at
             FROM wbs_projects
             ORDER BY updated_at DESC
@@ -112,190 +112,114 @@ async def build_weekly_report_workbook(
             """,
             period_start,
         )
-        wbs_progress = await connection.fetch(
-            """
-            SELECT
-                p.id AS project_id,
-                p.name AS project_name,
-                p.owner,
-                p.status AS project_status,
-                count(i.code)::integer AS total_items,
-                count(i.code) FILTER (
-                    WHERE COALESCE(i.metadata->>'status', '') = '완료'
-                       OR CASE
-                            WHEN COALESCE(i.metadata->>'progress', '') ~ '^[0-9]+(\\.[0-9]+)?$'
-                            THEN (i.metadata->>'progress')::numeric
-                            ELSE 0
-                          END >= 100
-                )::integer AS done_items,
-                count(i.code) FILTER (
-                    WHERE i.finish_date < CURRENT_DATE
-                      AND COALESCE(i.metadata->>'status', '') <> '완료'
-                      AND CASE
-                            WHEN COALESCE(i.metadata->>'progress', '') ~ '^[0-9]+(\\.[0-9]+)?$'
-                            THEN (i.metadata->>'progress')::numeric
-                            ELSE 0
-                          END < 100
-                )::integer AS overdue_items,
-                round(avg(
-                    CASE
-                        WHEN COALESCE(i.metadata->>'progress', '') ~ '^[0-9]+(\\.[0-9]+)?$'
-                        THEN (i.metadata->>'progress')::numeric
-                        ELSE 0
-                    END
-                ), 1) AS avg_progress
-            FROM wbs_projects p
-            LEFT JOIN wbs_project_wbs_items i
-              ON i.project_id = p.id AND COALESCE(i.item_type, '작업') <> '프로젝트'
-            GROUP BY p.id
-            ORDER BY p.updated_at DESC
-            LIMIT 100
-            """
+        rollups = await fetch_rollups_for_projects(
+            connection,
+            [row["id"] for row in projects],
+            period_end.date() if isinstance(period_end, datetime) else None,
         )
-        weekly_rollups = await fetch_rollups_for_projects(
-            connection, [row["project_id"] for row in wbs_progress], period_end.date() if isinstance(period_end, datetime) else None
-        )
+    return {
+        **counts,
+        "status_rows": status_rows,
+        "projects": projects,
+        "approvals": approvals,
+        "imports": imports,
+        "sync_runs": sync_runs,
+        "rollups": rollups,
+    }
 
+
+def _progress_row(project: Any, rollup: dict[str, Any]) -> list[Any]:
+    """WBS 진행 현황 행 — 작업/완료/지연 건수도 공통 산식의 최하위 작업(leaf) 기준."""
+    sm = rollup.get("summary", {})
+    return [
+        project["name"],
+        project["owner"],
+        project["status"],
+        sm.get("leaf_count", 0),
+        sm.get("done_leaf_count", 0),
+        sm.get("delayed_leaf_count", 0),
+        f"{sm.get('progress_pct', 0)}%",
+        f"{sm.get('planned_pct', 0)}%",
+        sm.get("spi") or "—",
+    ]
+
+
+def _weekly_report_sheets(
+    data: dict[str, Any], period_start: datetime, period_end: datetime
+) -> list[tuple[str, list[tuple[str, list[str], list[list[Any]]]]]]:
+    """[(시트명, [(표 제목, 헤더, 행들), ...]), ...]"""
+    return [
+        ("Summary", [
+            ("WBS 주간 프로젝트 보고서", ["항목", "값"], [
+                ["보고 기간", f"{period_start.date().isoformat()} ~ {period_end.date().isoformat()}"],
+                ["생성 시각", period_end],
+                ["프로젝트", data["project_count"]],
+                ["템플릿", data["template_count"]],
+                ["승인 대기", data["pending_approvals"]],
+                ["Excel 미반영 Preview", data["preview_imports"]],
+                ["Locked Baseline", data["locked_baselines"]],
+            ]),
+            ("프로젝트 상태 분포", ["상태", "건수"], [[r["status"], r["count"]] for r in data["status_rows"]]),
+        ]),
+        ("Projects", [
+            ("프로젝트 현황", ["프로젝트", "담당", "상태", "템플릿", "시작일", "외부 프로젝트 ID", "생성", "수정"], [
+                [r["name"], r["owner"], r["status"], r["template_key"], r["start_date"],
+                 r["openproject_project_id"], r["created_at"], r["updated_at"]]
+                for r in data["projects"]
+            ]),
+        ]),
+        ("WBS Progress", [
+            ("내부 WBS 진행 현황",
+             ["프로젝트", "담당", "상태", "작업 항목", "완료", "지연", "진척률(가중)", "계획 진척률", "SPI"],
+             [_progress_row(r, data["rollups"].get(str(r["id"]), {})) for r in data["projects"]]),
+        ]),
+        ("Approvals", [
+            ("최근 승인 이력", ["프로젝트", "제목", "상태", "요청자", "검토자", "생성", "결정"], [
+                [r["project_name"], r["title"], r["status"], r["requester"], r["reviewer"], r["created_at"], r["decided_at"]]
+                for r in data["approvals"]
+            ]),
+        ]),
+        ("Excel Imports", [
+            ("최근 Excel 반영", ["파일", "템플릿", "상태", "전체", "정상", "오류", "생성", "반영"], [
+                [r["source_file"], r["template_name"] or r["template_key"], r["status"], r["total_rows"],
+                 r["accepted_rows"], r["rejected_rows"], r["created_at"], r["applied_at"]]
+                for r in data["imports"]
+            ]),
+        ]),
+        ("Baseline Runs", [
+            ("최근 기준선 반영 실행", ["프로젝트", "모드", "상태", "전체", "생성", "외부 프로젝트 ID", "시작", "완료"], [
+                [r["project_name"], r["mode"], r["status"], r["total_rows"], r["created_work_packages"],
+                 r["openproject_project_id"], r["started_at"], r["completed_at"]]
+                for r in data["sync_runs"]
+            ]),
+        ]),
+    ]
+
+
+async def build_weekly_report_workbook(
+    pool: asyncpg.Pool,
+    period_start: datetime,
+    period_end: datetime,
+) -> tuple[bytes, dict[str, Any]]:
+    data = await _fetch_weekly_report_data(pool, period_start, period_end)
     wb = Workbook()
-    summary = wb.active
-    summary.title = "Summary"
-    append_report_table(
-        summary,
-        "WBS 주간 프로젝트 보고서",
-        ["항목", "값"],
-        [
-            ["보고 기간", f"{period_start.date().isoformat()} ~ {period_end.date().isoformat()}"],
-            ["생성 시각", period_end],
-            ["프로젝트", project_count],
-            ["템플릿", template_count],
-            ["승인 대기", pending_approvals],
-            ["Excel 미반영 Preview", preview_imports],
-            ["Locked Baseline", locked_baselines],
-        ],
-    )
-    append_report_table(
-        summary,
-        "프로젝트 상태 분포",
-        ["상태", "건수"],
-        [[row["status"], row["count"]] for row in status_rows],
-    )
-    autosize_worksheet(summary)
-
-    project_sheet = wb.create_sheet("Projects")
-    append_report_table(
-        project_sheet,
-        "프로젝트 현황",
-        ["프로젝트", "담당", "상태", "템플릿", "시작일", "외부 프로젝트 ID", "생성", "수정"],
-        [
-            [
-                row["name"],
-                row["owner"],
-                row["status"],
-                row["template_key"],
-                row["start_date"],
-                row["openproject_project_id"],
-                row["created_at"],
-                row["updated_at"],
-            ]
-            for row in projects
-        ],
-    )
-    autosize_worksheet(project_sheet)
-
-    progress_sheet = wb.create_sheet("WBS Progress")
-    append_report_table(
-        progress_sheet,
-        "내부 WBS 진행 현황",
-        ["프로젝트", "담당", "상태", "작업 항목", "완료", "지연", "진척률(가중)", "계획 진척률", "SPI"],
-        [
-            [
-                row["project_name"],
-                row["owner"],
-                row["project_status"],
-                row["total_items"],
-                row["done_items"],
-                row["overdue_items"],
-                f"{weekly_rollups.get(str(row['project_id']), {}).get('summary', {}).get('progress_pct', 0)}%",
-                f"{weekly_rollups.get(str(row['project_id']), {}).get('summary', {}).get('planned_pct', 0)}%",
-                weekly_rollups.get(str(row['project_id']), {}).get('summary', {}).get('spi') or "—",
-            ]
-            for row in wbs_progress
-        ],
-    )
-    autosize_worksheet(progress_sheet)
-
-    approval_sheet = wb.create_sheet("Approvals")
-    append_report_table(
-        approval_sheet,
-        "최근 승인 이력",
-        ["프로젝트", "제목", "상태", "요청자", "검토자", "생성", "결정"],
-        [
-            [
-                row["project_name"],
-                row["title"],
-                row["status"],
-                row["requester"],
-                row["reviewer"],
-                row["created_at"],
-                row["decided_at"],
-            ]
-            for row in approvals
-        ],
-    )
-    autosize_worksheet(approval_sheet)
-
-    import_sheet = wb.create_sheet("Excel Imports")
-    append_report_table(
-        import_sheet,
-        "최근 Excel 반영",
-        ["파일", "템플릿", "상태", "전체", "정상", "오류", "생성", "반영"],
-        [
-            [
-                row["source_file"],
-                row["template_name"] or row["template_key"],
-                row["status"],
-                row["total_rows"],
-                row["accepted_rows"],
-                row["rejected_rows"],
-                row["created_at"],
-                row["applied_at"],
-            ]
-            for row in imports
-        ],
-    )
-    autosize_worksheet(import_sheet)
-
-    sync_sheet = wb.create_sheet("Baseline Runs")
-    append_report_table(
-        sync_sheet,
-        "최근 기준선 반영 실행",
-        ["프로젝트", "모드", "상태", "전체", "생성", "외부 프로젝트 ID", "시작", "완료"],
-        [
-            [
-                row["project_name"],
-                row["mode"],
-                row["status"],
-                row["total_rows"],
-                row["created_work_packages"],
-                row["openproject_project_id"],
-                row["started_at"],
-                row["completed_at"],
-            ]
-            for row in sync_runs
-        ],
-    )
-    autosize_worksheet(sync_sheet)
+    for index, (sheet_name, tables) in enumerate(_weekly_report_sheets(data, period_start, period_end)):
+        worksheet = wb.active if index == 0 else wb.create_sheet(sheet_name)
+        worksheet.title = sheet_name
+        for title, headers, rows in tables:
+            append_report_table(worksheet, title, headers, rows)
+        autosize_worksheet(worksheet)
 
     buffer = BytesIO()
     wb.save(buffer)
     metadata = {
-        "project_count": project_count,
-        "pending_approvals": pending_approvals,
-        "preview_imports": preview_imports,
-        "sync_runs": len(sync_runs),
-        "wbs_progress_projects": len(wbs_progress),
-        "approvals": len(approvals),
-        "imports": len(imports),
+        "project_count": data["project_count"],
+        "pending_approvals": data["pending_approvals"],
+        "preview_imports": data["preview_imports"],
+        "sync_runs": len(data["sync_runs"]),
+        "wbs_progress_projects": len(data["projects"]),
+        "approvals": len(data["approvals"]),
+        "imports": len(data["imports"]),
         "data_source": "internal_wbs",
     }
     return buffer.getvalue(), metadata
