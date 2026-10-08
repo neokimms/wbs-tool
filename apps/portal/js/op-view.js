@@ -397,13 +397,30 @@ function renderOpGantt() {
     return;
   }
 
-  // 전체 기간 계산
-  const allDates = rows.flatMap((r) => [r.start_date, r.finish_date].filter(Boolean)).map((d) => new Date(d));
-  const minDate  = new Date(Math.min(...allDates));
-  const maxDate  = new Date(Math.max(...allDates));
+  // 표시 기간 = 사용자가 등록한 프로젝트 기간(시작일~종료일)
+  //  · 프로젝트 기간이 없으면 WBS 항목 일정의 최소~최대로 대체
+  //  · 기간 밖 일정은 막대를 잘라 표시하고 안내 문구로 알림 ('전체 일정 보기'로 확장 가능)
+  const toDate = (d) => { const v = new Date(`${String(d).slice(0, 10)}T00:00:00`); return Number.isNaN(v.getTime()) ? null : v; };
+  const project   = (state.projects || []).find((p) => String(p.id) === String(state.opViewProjectId));
+  const pStart    = project?.start_date ? toDate(project.start_date) : null;
+  const pEnd      = project?.metadata?.end_date ? toDate(project.metadata.end_date) : null;
+  const itemDates = rows.flatMap((r) => [r.start_date, r.finish_date].filter(Boolean)).map(toDate).filter(Boolean);
+  const itemMin   = new Date(Math.min(...itemDates));
+  const itemMax   = new Date(Math.max(...itemDates));
+  const fullRange = !!state.opGanttFullRange;
+  const rangeStart = fullRange || !pStart ? (pStart && pStart < itemMin ? pStart : itemMin) : pStart;
+  const rangeEnd   = fullRange || !pEnd ? (pEnd && pEnd > itemMax ? pEnd : itemMax) : pEnd;
+  const outOfRange = (pStart || pEnd) ? rows.filter((r) => {
+    const s = r.start_date ? toDate(r.start_date) : null;
+    const e = r.finish_date ? toDate(r.finish_date) : null;
+    return (pStart && ((s && s < pStart) || (e && e < pStart))) || (pEnd && ((e && e > pEnd) || (s && s > pEnd)));
+  }) : [];
+  const minDate  = new Date(rangeStart);
+  const maxDate  = new Date(rangeEnd);
   minDate.setDate(1);
   maxDate.setMonth(maxDate.getMonth() + 1, 0);
-  const totalDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
+  const totalDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000) + 1);
+  const fmt = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "?";
 
   // 월 헤더 생성
   const months = [];
@@ -458,10 +475,14 @@ function renderOpGantt() {
 
     let barHtml = "";
     if (r.start_date || r.finish_date) {
-      const sDate = r.start_date ? new Date(r.start_date) : new Date(r.finish_date);
-      const eDate = r.finish_date ? new Date(r.finish_date) : sDate;
+      const sRaw  = r.start_date ? toDate(r.start_date) : toDate(r.finish_date);
+      const eRaw  = r.finish_date ? toDate(r.finish_date) : sRaw;
+      // 표시 기간 밖은 잘라서 그림
+      const sDate = sRaw < minDate ? minDate : sRaw > maxDate ? maxDate : sRaw;
+      const eDate = eRaw > maxDate ? maxDate : eRaw < minDate ? minDate : eRaw;
+      const clipL = sRaw < minDate, clipR = eRaw > maxDate;
       const left  = Math.max(0, ((sDate - minDate) / 86400000 / totalDays * 100));
-      const width = Math.max(0.3, ((eDate - sDate) / 86400000 + 1) / totalDays * 100);
+      const width = Math.min(100 - left, Math.max(0.3, ((eDate - sDate) / 86400000 + 1) / totalDays * 100));
       const progress = r.op_progress ?? null;
 
       if (isMile) {
@@ -472,10 +493,11 @@ function renderOpGantt() {
           ? ` (${r.start_date || "?"}~${r.finish_date || "?"})`
           : "";
         const barLabel = `<span class="op-gantt-bar-label">${escapeHtml(r.name || "")}${escapeHtml(dateRange)}</span>`;
+        const clipCls = `${clipL ? " op-gantt-bar-clip-left" : ""}${clipR ? " op-gantt-bar-clip-right" : ""}`;
         barHtml = `
-          <div class="op-gantt-bar" data-type="${escapeHtml(type)}"
+          <div class="op-gantt-bar${clipCls}" data-type="${escapeHtml(type)}"
             style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%"
-            title="${escapeHtml(r.name || "")} (${r.start_date || "?"}~${r.finish_date || "?"})">
+            title="${escapeHtml(r.name || "")} (${r.start_date || "?"}~${r.finish_date || "?"})${clipL || clipR ? " — 표시 기간 밖 일정 포함" : ""}">
             ${progressBar}${barLabel}
           </div>`;
       }
@@ -488,7 +510,17 @@ function renderOpGantt() {
       </div>`;
   }).join("");
 
-  wrap.innerHTML = `
+  const rangeLabel = (pStart || pEnd) && !fullRange
+    ? `프로젝트 기간 ${fmt(pStart || itemMin)} ~ ${fmt(pEnd || itemMax)} 기준`
+    : `전체 일정 ${fmt(rangeStart)} ~ ${fmt(rangeEnd)} 기준`;
+  const noticeHtml = (pStart || pEnd) ? `
+    <div class="op-gantt-range-bar${outOfRange.length ? " has-warning" : ""}">
+      <span>${rangeLabel}</span>
+      ${outOfRange.length ? `<span class="op-gantt-range-warn" title="${escapeHtml(outOfRange.map((r) => `${r.code} ${r.start_date || "?"}~${r.finish_date || "?"}`).join("\n"))}">⚠ 프로젝트 기간 밖 일정 ${outOfRange.length}건 (${escapeHtml(outOfRange.slice(0, 3).map((r) => r.code).join(", "))}${outOfRange.length > 3 ? " 외" : ""}) — WBS 일정 확인 필요</span>` : ""}
+      ${outOfRange.length ? `<button type="button" class="secondary-button mt-small" data-op-gantt-range>${fullRange ? "프로젝트 기간으로 보기" : "전체 일정 보기"}</button>` : ""}
+    </div>` : "";
+
+  wrap.innerHTML = `${noticeHtml}
     <div class="op-gantt" style="min-width:${ganttMinWidth}px">
       <div class="op-gantt-header">
         <div class="op-gantt-header-label">작업명</div>
@@ -496,4 +528,8 @@ function renderOpGantt() {
       </div>
       ${rowsHtml}
     </div>`;
+  wrap.querySelector("[data-op-gantt-range]")?.addEventListener("click", () => {
+    state.opGanttFullRange = !state.opGanttFullRange;
+    renderOpGantt();
+  });
 }

@@ -8663,3 +8663,9 @@ body.dark-mode .template-picker { background: var(--c-gray-900); }
 .u-text-muted { color: var(--text-muted) !important; }
 .u-table-full { width: 100% !important; border-collapse: collapse !important; }
 .u-btn-xs { font-size: 0.76rem !important; padding: 0 10px !important; min-height: 26px !important; }
+
+/* ── WBS 현황 간트: 프로젝트 기간 기준 표시 ── */
+.op-gantt-range-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 4px 10px; font-size: 0.8rem; color: var(--text-muted); }
+.op-gantt-range-warn { color: var(--amber); font-weight: 600; }
+.op-gantt-bar-clip-left  { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 2px dashed var(--amber) !important; }
+.op-gantt-bar-clip-right { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; border-right: 2px dashed var(--amber) !important; }
