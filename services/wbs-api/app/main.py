@@ -90,15 +90,6 @@ if ALLOW_FILE_ORIGIN:
     allowed_origins.append("null")
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 @app.middleware("http")
 async def authenticate_api_requests(request: Request, call_next):
     path = request.url.path
@@ -139,6 +130,18 @@ async def authenticate_api_requests(request: Request, call_next):
 
     request.state.user = user
     return apply_security_headers(await call_next(request))
+
+
+# CORS 는 반드시 마지막에 등록한다 (= 가장 바깥 미들웨어).
+# 인증 미들웨어가 직접 돌려주는 401/403 에도 CORS 헤더가 붙어야 브라우저가 응답을 읽고
+# 세션 만료를 감지(자동 로그아웃)할 수 있다. 순서가 바뀌면 만료 탭이 CORS 오류로 무한 재시도한다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # 라우터 등록 — 원본 main.py 의 경로 등록 순서를 보존한다 (경로 매칭 우선순위 유지)

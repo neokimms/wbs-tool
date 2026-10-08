@@ -62,5 +62,34 @@ class MigrationIdempotencyTests(unittest.TestCase):
         self.assertEqual([dict(d) for d in dupes], [])
 
 
+class CorsOnAuthErrorTests(unittest.TestCase):
+    """세션 만료(401) 응답에 CORS 헤더가 없어 포털이 만료를 감지하지 못하고
+    알림 폴링을 무한 반복하던 결함 (인증 미들웨어가 CORS 바깥에 있었음)."""
+
+    ORIGIN = "http://localhost:3010"
+
+    def _raw(self, method, path, token=None):
+        e = env()
+        headers = {"Origin": self.ORIGIN}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return e.loop.run_until_complete(e.client.request(method, path, headers=headers))
+
+    def test_missing_token_401_has_cors_header(self):
+        r = self._raw("GET", "/api/notifications?limit=30")
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r.headers.get("access-control-allow-origin"), self.ORIGIN)
+
+    def test_expired_token_401_has_cors_header(self):
+        r = self._raw("GET", "/api/notifications?limit=30", token="expired-or-invalid-token")
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r.headers.get("access-control-allow-origin"), self.ORIGIN)
+
+    def test_success_response_still_has_cors_header(self):
+        r = self._raw("GET", "/api/notifications?limit=30", token=env().tokens["admin"])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers.get("access-control-allow-origin"), self.ORIGIN)
+
+
 if __name__ == "__main__":
     unittest.main()
