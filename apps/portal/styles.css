@@ -5082,7 +5082,7 @@ button.setting-card:hover,
 
 .op-gantt-header {
   display: grid;
-  grid-template-columns: 220px minmax(0,1fr);
+  grid-template-columns: var(--op-gantt-label-w, 340px) minmax(0,1fr);
   gap: 0;
   position: sticky;
   top: 0;
@@ -5118,7 +5118,7 @@ button.setting-card:hover,
 
 .op-gantt-row {
   display: grid;
-  grid-template-columns: 220px minmax(0,1fr);
+  grid-template-columns: var(--op-gantt-label-w, 340px) minmax(0,1fr);
   gap: 0;
   min-height: 30px;
   align-items: center;
@@ -8669,3 +8669,14 @@ body.dark-mode .template-picker { background: var(--c-gray-900); }
 .op-gantt-range-warn { color: var(--amber); font-weight: 600; }
 .op-gantt-bar-clip-left  { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 2px dashed var(--amber) !important; }
 .op-gantt-bar-clip-right { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; border-right: 2px dashed var(--amber) !important; }
+
+/* 간트 작업명 시인성 (20261009) — 넓힌 컬럼, 말줄임+툴팁, 가로 스크롤 시 고정, 드래그 리사이즈 */
+.op-gantt-label { position: sticky; left: 0; z-index: 3; background: var(--surface); font-size: 0.82rem; color: var(--text); }
+.op-gantt-label-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-gantt-label-code { font-size: 0.68rem; }
+.op-gantt-header-label { position: sticky; left: 0; z-index: 4; background: var(--surface); border-right: 1px solid var(--line); display: flex; align-items: center; }
+.op-gantt-resizer { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 5; touch-action: none; }
+.op-gantt-resizer::after { content: ""; position: absolute; left: 3px; top: 20%; height: 60%; width: 2px; border-radius: 1px; background: var(--line); transition: background .15s; }
+.op-gantt-resizer:hover::after, body.op-gantt-resizing .op-gantt-resizer::after { background: var(--c-ms-blue, #0071e3); }
+body.op-gantt-resizing { cursor: col-resize; user-select: none; }
+body.dark-mode .op-gantt-row[data-type="단계"] .op-gantt-label { background: linear-gradient(rgba(0,113,227,.1), rgba(0,113,227,.1)), var(--surface) !important; }

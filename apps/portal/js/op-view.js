@@ -440,12 +440,18 @@ function renderOpGantt() {
 
   // 7개월 이상: 월당 최소 120px 고정 → 가로 스크롤 발생
   // 6개월 이하: 기존 방식 (% 비율로 컨테이너 너비에 맞게 표시)
-  const LABEL_WIDTH   = 220;
+  // 작업명 컬럼 너비: 사용자가 드래그로 조절, 브라우저에 기억 (기본 340px)
+  if (!state.opGanttLabelW) {
+    let saved = 0;
+    try { saved = Number(localStorage.getItem("opGanttLabelW")) || 0; } catch (_) { /* storage unavailable */ }
+    state.opGanttLabelW = saved >= 200 && saved <= 720 ? saved : 340;
+  }
+  const LABEL_WIDTH   = state.opGanttLabelW;
   const MIN_MONTH_PX  = 120;
   const SCROLL_THRESHOLD = 6;
   const useFixedWidth = months.length > SCROLL_THRESHOLD;
   const timelineMinPx = useFixedWidth ? months.length * MIN_MONTH_PX : 0;
-  const ganttMinWidth = useFixedWidth ? LABEL_WIDTH + timelineMinPx : 800;
+  const ganttMinWidth = useFixedWidth ? LABEL_WIDTH + timelineMinPx : LABEL_WIDTH + 580;
 
   const monthHeaderHtml = months.map((m) => {
     const style = useFixedWidth
@@ -468,9 +474,9 @@ function renderOpGantt() {
     depth = Math.min(depth, 5);
 
     const labelHtml = `
-      <div class="op-gantt-label" style="--depth:${depth}">
+      <div class="op-gantt-label" style="--depth:${depth}" title="${escapeHtml(`${r.code || ""} ${r.name || r.subject || ""}`.trim())}">
         <span class="op-gantt-label-code">${escapeHtml(r.code || "")}</span>
-        ${escapeHtml(r.name || r.subject || "")}
+        <span class="op-gantt-label-name">${escapeHtml(r.name || r.subject || "")}</span>
       </div>`;
 
     let barHtml = "";
@@ -521,13 +527,42 @@ function renderOpGantt() {
     </div>` : "";
 
   wrap.innerHTML = `${noticeHtml}
-    <div class="op-gantt" style="min-width:${ganttMinWidth}px">
+    <div class="op-gantt" style="min-width:${ganttMinWidth}px;--op-gantt-label-w:${LABEL_WIDTH}px">
       <div class="op-gantt-header">
-        <div class="op-gantt-header-label">작업명</div>
+        <div class="op-gantt-header-label">작업명<span class="op-gantt-resizer" data-op-gantt-resizer title="드래그하여 작업명 너비 조절 (더블클릭: 기본값)"></span></div>
         <div class="op-gantt-timeline-header">${monthHeaderHtml}</div>
       </div>
       ${rowsHtml}
     </div>`;
+  // 작업명 컬럼 너비 드래그 조절
+  const ganttEl = wrap.querySelector(".op-gantt");
+  const resizer = wrap.querySelector("[data-op-gantt-resizer]");
+  const applyLabelW = (w, persist) => {
+    const clamped = Math.max(200, Math.min(720, Math.round(w)));
+    state.opGanttLabelW = clamped;
+    ganttEl.style.setProperty("--op-gantt-label-w", `${clamped}px`);
+    ganttEl.style.minWidth = `${(useFixedWidth ? timelineMinPx : 580) + clamped}px`;
+    if (persist) { try { localStorage.setItem("opGanttLabelW", String(clamped)); } catch (_) { /* ignore */ } }
+  };
+  resizer?.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    const startX = ev.clientX, startW = state.opGanttLabelW;
+    resizer.setPointerCapture?.(ev.pointerId);
+    document.body.classList.add("op-gantt-resizing");
+    const move = (e) => applyLabelW(startW + (e.clientX - startX), false);
+    const up = () => {
+      resizer.removeEventListener("pointermove", move);
+      resizer.removeEventListener("pointerup", up);
+      resizer.removeEventListener("pointercancel", up);
+      document.body.classList.remove("op-gantt-resizing");
+      applyLabelW(state.opGanttLabelW, true);
+    };
+    resizer.addEventListener("pointermove", move);
+    resizer.addEventListener("pointerup", up);
+    resizer.addEventListener("pointercancel", up);
+  });
+  resizer?.addEventListener("dblclick", () => applyLabelW(340, true));
+
   wrap.querySelector("[data-op-gantt-range]")?.addEventListener("click", () => {
     state.opGanttFullRange = !state.opGanttFullRange;
     renderOpGantt();
