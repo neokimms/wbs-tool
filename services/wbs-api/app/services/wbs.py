@@ -150,7 +150,16 @@ def validate_wbs_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
         if not code:
             errors.append({"row": row_number, "field": "code", "message": "WBS code is required"})
         elif code in codes:
-            errors.append({"row": row_number, "field": "code", "message": "Duplicate WBS code"})
+            errors.append({
+                "row": row_number,
+                "field": "code",
+                "code": code,
+                "duplicate_of_row": codes[code],
+                "message": (
+                    f"WBS 코드 '{code}'가 {codes[code]}행과 중복됩니다 "
+                    "(코드를 고치거나 셀을 비워 두면 업로드 시 자동 부여됩니다)"
+                ),
+            })
         else:
             codes[code] = row_number
         if not name:

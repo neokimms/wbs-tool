@@ -91,5 +91,22 @@ class CorsOnAuthErrorTests(unittest.TestCase):
         self.assertEqual(r.headers.get("access-control-allow-origin"), self.ORIGIN)
 
 
+class DuplicateCodeMessageTests(unittest.TestCase):
+    """Excel 업로드 시 'Duplicate WBS code' 만 표시되어 어느 행과 겹치는지 알 수 없던 문제."""
+
+    def test_duplicate_code_message_names_code_and_first_row(self):
+        e = env()
+        pid = e.create_project("[TEST] 중복 코드")
+        rows = [dict(r) for r in SAMPLE_WBS]
+        rows.append({"code": "P.1.2", "parent_code": "P.1", "name": "끼워 넣은 작업", "item_type": "작업"})
+        r = e.save_wbs(pid, rows)
+        self.assertEqual(r.status, 422, r)
+        err = next(x for x in r.body["detail"]["errors"] if x["field"] == "code")
+        self.assertEqual(err["code"], "P.1.2")
+        self.assertEqual(err["duplicate_of_row"], 4)
+        self.assertIn("'P.1.2'", err["message"])
+        self.assertIn("4행", err["message"])
+
+
 if __name__ == "__main__":
     unittest.main()
