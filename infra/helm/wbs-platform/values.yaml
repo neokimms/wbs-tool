@@ -29,6 +29,19 @@ api:
   loginAliasesJson: ""
   auditRetentionDays: 365
   runMigrationsOnStartup: true
+  reportSchedulerEnabled: true
+  reportTimezone: "Asia/Seoul"
+  reportOutputDir: "/app/outputs/reports"
+  reportOutputVolume:
+    enabled: false
+    existingClaim: ""
+  reportSmtpHost: ""
+  reportSmtpPort: 587
+  reportSmtpUsername: ""
+  reportSmtpPassword: ""
+  reportSmtpFrom: ""
+  reportSmtpUseTls: true
+  reportSmtpUseSsl: false
   migrationJob:
     enabled: false
     backoffLimit: 3
@@ -112,6 +125,10 @@ externalSecret:
   secretStoreKind: ClusterSecretStore
   refreshInterval: 1h
   remoteKeyPrefix: wbs-platform
+  # remoteKeyPrefix와 키 이름 사이의 구분자.
+  # AWS Secrets Manager / Vault는 경로 구분자 "/"를 지원하지만,
+  # Azure Key Vault 시크릿 이름은 "/"를 허용하지 않으므로 "-"로 재정의해야 함.
+  keySeparator: "/"
   extraKeys: []
 
 postgresql:

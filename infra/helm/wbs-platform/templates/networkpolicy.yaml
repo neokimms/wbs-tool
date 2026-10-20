@@ -30,6 +30,7 @@ spec:
           port: 8000
   egress:
     # PostgreSQL
+    {{- if .Values.postgresql.enabled }}
     - to:
         - podSelector:
             matchLabels:
@@ -37,6 +38,15 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    {{- else }}
+    # 외부 관리형 PostgreSQL (예: Azure Database for PostgreSQL Flexible Server) - 클러스터 외부 아웃바운드
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: {{ include "wbs-platform.databasePort" . }}
+    {{- end }}
     # OpenProject (PM 엔진)
     - to:
         - podSelector:

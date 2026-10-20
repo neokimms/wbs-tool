@@ -1,0 +1,129 @@
+# Azure(AKS) 배포 오버레이
+#
+# 전제 조건:
+# - infra/azure/ Bicep 템플릿으로 AKS, ACR, Azure Database for PostgreSQL Flexible Server,
+#   Key Vault를 먼저 프로비저닝합니다 (infra/azure/README.md 참고).
+# - 클러스터에 External Secrets Operator(ESO)와 Azure Key Vault provider용
+#   ClusterSecretStore(`azure-keyvault-store`)가 설치되어 있어야 합니다. 이때 ESO의
+#   ServiceAccount는 infra/azure가 생성한 Workload Identity(클라이언트 ID)와
+#   federated credential로 연결되어 있어야 Key Vault 시크릿을 읽을 수 있습니다.
+# - 아래 <...> 플레이스홀더는 Bicep 출력값(acrLoginServer, postgresFqdn 등)으로 교체하거나
+#   --set으로 덮어씁니다.
+#
+# 사용법:
+#   helm upgrade --install wbs-platform infra/helm/wbs-platform \
+#     --namespace wbs --create-namespace \
+#     -f infra/helm/wbs-platform/values-azure.yaml \
+#     --set api.image.repository=<acrLoginServer>/wbs-api \
+#     --set portal.image.repository=<acrLoginServer>/wbs-portal \
+#     --set externalPostgresql.host=<postgresFqdn> \
+#     --set api.portalOrigin='https://wbs.<your-domain>' \
+#     --set portal.apiBaseUrl='https://wbs-api.<your-domain>'
+#
+# 보안 주의: OPENPROJECT_API_TOKEN, SMTP 비밀번호 등 민감 값은 이 파일에 커밋하지 말고
+# 별도의 미추적 values 파일(-f values-azure.secrets.yaml, .gitignore 처리) 또는
+# CI/CD 파이프라인의 --set-string 인자로 주입하세요.
+
+fullnameOverride: "wbs-platform"
+
+api:
+  replicaCount: 2
+  image:
+    repository: "<ACR_LOGIN_SERVER>/wbs-api"   # infra/azure 출력값: acrLoginServer
+    tag: "0.2.0"
+  portalOrigin: "https://wbs.<your-domain>"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+  authBackend: local   # Azure AD/LDAP 연동 시 ldap로 변경 후 ldap* 값 주입
+  multitenancyEnabled: true
+  defaultTenantId: default
+
+portal:
+  replicaCount: 2
+  image:
+    repository: "<ACR_LOGIN_SERVER>/wbs-portal"   # infra/azure 출력값: acrLoginServer
+    tag: "0.2.0"
+  apiBaseUrl: "https://wbs-api.<your-domain>"
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# Azure Database for PostgreSQL Flexible Server를 사용하므로 번들 PostgreSQL은 비활성화
+postgresql:
+  enabled: false
+
+externalPostgresql:
+  host: "<POSTGRES_FLEXIBLE_SERVER_FQDN>"   # infra/azure 출력값: postgresFqdn
+  port: 5432
+  database: wbs_platform
+  username: wbsadmin
+  # 아래 externalSecret이 Azure Key Vault에서 동기화하여 생성/관리하는 시크릿
+  existingSecret: "wbs-platform-secrets"
+
+# External Secrets Operator + Azure Key Vault provider로 DB 자격 증명/토큰을 동기화
+externalSecret:
+  enabled: true
+  secretStoreName: azure-keyvault-store   # 클러스터에 미리 구성된 ClusterSecretStore 이름
+  secretStoreKind: ClusterSecretStore
+  refreshInterval: 1h
+  remoteKeyPrefix: wbs-platform
+  # Azure Key Vault 시크릿 이름은 "/"를 허용하지 않으므로 "-" 구분자 사용
+  keySeparator: "-"
+  extraKeys:
+    - secretKey: username
+      remoteKey: wbs-platform-postgres-username
+    - secretKey: password
+      remoteKey: wbs-platform-postgres-password
+    - secretKey: database
+      remoteKey: wbs-platform-postgres-database
+
+ingress:
+  enabled: true
+  className: nginx   # AKS에 ingress-nginx 설치 후 사용 (대안: Application Gateway Ingress Controller)
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt   # cert-manager 사용 시
+  hosts:
+    - host: "wbs.<your-domain>"
+      paths:
+        - path: /
+          pathType: Prefix
+          service: portal
+    - host: "wbs-api.<your-domain>"
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api
+  tls:
+    - hosts:
+        - "wbs.<your-domain>"
+        - "wbs-api.<your-domain>"
+      secretName: wbs-platform-tls
+
+# AKS(Azure CNI)는 NetworkPolicy를 지원. 단, Postgres가 외부(Flexible Server)이므로
+# PostgreSQL 아웃바운드는 ipBlock(0.0.0.0/0:5432)으로 허용됨 (templates/networkpolicy.yaml 참고).
+# OpenProject 컴포넌트는 본 차트가 배포하지 않으므로, OpenProject를 같은 클러스터에 별도
+# 배포하지 않는 경우 해당 egress 규칙은 매칭되는 대상이 없습니다.
+networkPolicy:
+  enabled: true
+  allowIngressFromNamespaces: true
+  ingressNamespace: ingress-nginx
+
+monitoring:
+  prometheusAnnotations: true

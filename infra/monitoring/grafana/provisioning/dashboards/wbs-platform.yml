@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: WBS Platform
+    orgId: 1
+    folder: WBS
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

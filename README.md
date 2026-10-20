@@ -172,6 +172,40 @@ dry-run과 실제 sync 시도는 `wbs_sync_runs`에 감사 이력으로 저장�
 curl http://localhost:8000/api/projects/{project_id}/sync-runs
 ```
 
+## 주간 보고서 자동 발송
+
+API는 APScheduler로 주간 보고서 스케줄을 실행합니다. 기본 `weekly-pmo` 스케줄은 비활성 상태로 생성되며, 활성화하면 프로젝트/승인/Excel import/OpenProject sync 현황을 Excel로 생성합니다. SMTP가 설정되어 있으면 수신자에게 첨부 발송하고, SMTP가 없으면 `WBS_REPORT_OUTPUT_DIR`에 파일만 남긴 뒤 실행 이력을 저장합니다.
+
+```bash
+GET   /api/report-schedules
+PATCH /api/report-schedules/weekly-pmo
+POST  /api/report-schedules/weekly-pmo/run
+GET   /api/report-runs
+GET   /api/report-runs/{run_id}/artifact
+```
+
+실제 메일 발송에는 다음 환경변수를 사용합니다.
+
+```bash
+WBS_REPORT_SCHEDULER_ENABLED=true
+WBS_REPORT_TIMEZONE=Asia/Seoul
+WBS_SMTP_HOST=smtp.example.com
+WBS_SMTP_PORT=587
+WBS_SMTP_USERNAME=wbs@example.com
+WBS_SMTP_PASSWORD=replace-me
+WBS_SMTP_FROM=wbs@example.com
+WBS_SMTP_USE_TLS=true
+```
+
+스케줄 설정 예시:
+
+```bash
+curl -X PATCH http://localhost:8000/api/report-schedules/weekly-pmo \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"day_of_week":0,"hour":9,"minute":0,"recipients":["pmo@example.com"]}'
+```
+
 서비스 기본 주소:
 
 - 포털: http://localhost:3010
@@ -239,7 +273,7 @@ CONFIRM_RESTORE=YES bash scripts/restore-postgres.sh backups/postgres/openprojec
 
 ## 모니터링
 
-WBS API는 Prometheus text format의 `/metrics`를 제공합니다. `monitoring` 프로필을 켜면 Prometheus가 WBS API와 PostgreSQL exporter를 수집합니다.
+WBS API는 Prometheus text format의 `/metrics`를 제공합니다. `monitoring` 프로필을 켜면 Prometheus가 WBS API와 PostgreSQL exporter를 수집하고, Grafana가 Prometheus datasource와 WBS 운영 대시보드를 자동 로드합니다.
 
 ```bash
 curl http://localhost:8000/metrics
@@ -249,13 +283,38 @@ docker compose --profile api --profile monitoring up -d --build
 모니터링 기본 주소:
 
 - Prometheus: http://localhost:9090
+- Grafana: http://localhost:3001 (`admin` / `admin`, 운영에서는 `GRAFANA_ADMIN_PASSWORD` 변경)
 - PostgreSQL exporter: http://localhost:9187/metrics
 - WBS API metrics: http://localhost:8000/metrics
+
+Grafana provisioning 파일은 `infra/monitoring/grafana/provisioning`, 기본 대시보드는 `infra/monitoring/grafana/dashboards/wbs-platform.json`에 있습니다.
 
 상태 점검에서 모니터링 컨테이너까지 필수로 확인하려면 다음을 사용합니다.
 
 ```bash
 REQUIRE_MONITORING=1 bash scripts/status-check.sh
+```
+
+## 배포 옵션 (온프레미스/노트북 vs Azure)
+
+상용 배포 대상은 옵션으로 선택합니다. 두 옵션 모두 동일한 `services/wbs-api`,
+`apps/portal` 소스와 `infra/helm/wbs-platform` Helm chart를 공유하며,
+대상별 차이는 환경변수/Helm values 오버레이로만 분기됩니다(OpenProject 코어 무수정,
+PostgreSQL 단일 표준 원칙 유지).
+
+| 옵션 | 진입점 | 설명 |
+|---|---|---|
+| 온프레미스 / 노트북 | `docker-compose.yml` (+ `scripts/deploy.sh onprem`) | 단일 호스트에 Docker Compose 프로필(`api`, `openproject`, `monitoring`)로 실행 |
+| 온프레미스 K8s | `infra/helm/wbs-platform/values-onprem.yaml` | 고객사 Kubernetes 클러스터, 번들 PostgreSQL StatefulSet 사용 |
+| Azure (AKS) | `infra/azure/` (Bicep) + `infra/helm/wbs-platform/values-azure.yaml` (+ `scripts/deploy.sh azure`) | AKS/ACR/Azure Database for PostgreSQL Flexible Server/Key Vault 프로비저닝 후 Helm 배포 |
+
+```bash
+# 온프레미스/노트북: docker compose 실행
+scripts/deploy.sh onprem up [--monitoring]
+
+# Azure: 인프라 프로비저닝 -> 앱 배포 (infra/azure/README.md 참고)
+WBS_AZURE_POSTGRES_PASSWORD='<강력한-비밀번호>' scripts/deploy.sh azure infra
+scripts/deploy.sh azure app
 ```
 
 ## Kubernetes 배포
@@ -288,6 +347,33 @@ helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
   --set postgresql.enabled=false \
   --set externalPostgresql.host='postgres.internal' \
   --set externalPostgresql.password='replace-me'
+```
+
+### 온프레미스 K8s 오버레이
+
+단일/소수 노드 클러스터를 가정한 사전 정의 값입니다(번들 PostgreSQL, HPA/PDB 비활성화,
+nginx Ingress, externalSecret 비활성화).
+
+```bash
+helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
+  --namespace wbs --create-namespace \
+  -f infra/helm/wbs-platform/values-onprem.yaml \
+  --set postgresql.auth.password='replace-me'
+```
+
+### Azure(AKS) 오버레이
+
+`infra/azure/`의 Bicep으로 AKS/ACR/Azure Database for PostgreSQL Flexible Server/Key Vault를
+먼저 프로비저닝한 뒤, External Secrets Operator를 통해 Key Vault 시크릿을 동기화하고
+`values-azure.yaml`로 배포합니다. 전체 절차는 `infra/azure/README.md`를 참고하세요.
+
+```bash
+helm upgrade --install wbs-platform ./infra/helm/wbs-platform \
+  --namespace wbs --create-namespace \
+  -f infra/helm/wbs-platform/values-azure.yaml \
+  --set api.image.repository='<ACR_LOGIN_SERVER>/wbs-api' \
+  --set portal.image.repository='<ACR_LOGIN_SERVER>/wbs-portal' \
+  --set externalPostgresql.host='<POSTGRES_FLEXIBLE_SERVER_FQDN>'
 ```
 
 ## 개발 원칙
