@@ -15,6 +15,7 @@ from app.core.config import (
     AUDIT_RETENTION_DAYS,
     AsyncIOScheduler,
     BACKUP_DIR,
+    BACKUP_TIMEOUT_SECONDS,
     DATABASE_URL,
     LOGIN_FAILURE_LIMIT,
     OPENPROJECT_BASE_URL,
@@ -24,6 +25,7 @@ from app.core.config import (
 )
 from app.core.db import get_pool, utc_now_iso
 from app.core.security import require_admin_role, require_roles
+from app.services.backups import list_backup_files, run_pg_dump
 from app.services.pm_engine import run_openproject_preflight
 from app.services.reports import scheduler_runtime_state
 
@@ -47,7 +49,7 @@ def operation_check(
 
 
 def backup_health_check() -> dict[str, Any]:
-    backup_files = sorted(BACKUP_DIR.glob("*.dump"), key=lambda path: path.stat().st_mtime, reverse=True)
+    backup_files = list_backup_files(BACKUP_DIR)
     if not backup_files:
         return operation_check(
             "backup_rehearsal",
@@ -440,7 +442,7 @@ async def list_backups(request: Request) -> list[dict[str, Any]]:
     """백업 파일 목록 반환 (최신순 20개)."""
     require_admin_role(request)
     bd = _backup_dir()
-    files = sorted(bd.glob("*.sql.gz"), key=lambda f: f.stat().st_mtime, reverse=True)[:20]
+    files = list_backup_files(bd)[:20]
     result = []
     for f in files:
         st = f.stat()
@@ -463,59 +465,23 @@ def _human_size(n: int) -> str:
 
 @router.post("/api/operations/backup", status_code=202)
 async def trigger_backup(request: Request) -> dict[str, Any]:
-    """pg_dump을 비동기 실행해 .sql.gz 파일 생성."""
+    """pg_dump -Fc 백업 생성 (scripts/restore-postgres.sh 로 복원 가능)."""
     require_admin_role(request)
-    bd = _backup_dir()
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    filename = f"wbs-backup-{ts}.sql.gz"
-    filepath = bd / filename
-
-    # DATABASE_URL 파싱으로 pg_dump 인자 구성
-    import urllib.parse
-    parsed = urllib.parse.urlparse(DATABASE_URL)
-    env_vars = {
-        **dict(__import__("os").environ),
-        "PGPASSWORD": parsed.password or "",
-    }
-    cmd = [
-        "pg_dump",
-        "-h", parsed.hostname or "localhost",
-        "-p", str(parsed.port or 5432),
-        "-U", parsed.username or "wbs",
-        "-d", parsed.path.lstrip("/") or "wbs_platform",
-        "--no-password",
-        "--format=plain",
-        "--encoding=UTF8",
-    ]
-
-    async def _run_backup():
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env_vars,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(stderr.decode()[:500])
-        import gzip
-        with gzip.open(filepath, "wb") as gz:
-            gz.write(stdout)
-        return filepath.stat().st_size
-
     try:
-        size = await asyncio.wait_for(_run_backup(), timeout=120)
-        async with get_pool(request).acquire() as conn:
-            await insert_audit_event(
-                conn, request=request,
-                event_type="system.backup_created", entity_type="backup", entity_id=filename,
-                summary=f"DB 백업 생성: {filename} ({_human_size(size)})",
-            )
-        return {"status": "created", "filename": filename, "size_bytes": size, "size_human": _human_size(size)}
+        filepath = await run_pg_dump(DATABASE_URL, _backup_dir(), BACKUP_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Backup timed out (>120s)")
+        raise HTTPException(status_code=504, detail=f"Backup timed out (>{BACKUP_TIMEOUT_SECONDS}s)")
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Backup failed: {e}")
+    filename = filepath.name
+    size = filepath.stat().st_size
+    async with get_pool(request).acquire() as conn:
+        await insert_audit_event(
+            conn, request=request,
+            event_type="system.backup_created", entity_type="backup", entity_id=filename,
+            summary=f"DB 백업 생성: {filename} ({_human_size(size)})",
+        )
+    return {"status": "created", "filename": filename, "size_bytes": size, "size_human": _human_size(size)}
 
 
 @router.get("/api/operations/backups/{filename}")
@@ -536,7 +502,7 @@ async def download_backup(filename: str, request: Request) -> StreamingResponse:
 
     return StreamingResponse(
         _iter_file(),
-        media_type="application/gzip",
+        media_type="application/gzip" if filename.endswith(".gz") else "application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

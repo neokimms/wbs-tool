@@ -14,7 +14,7 @@ PostgreSQL을 데이터베이스 표준으로, 자체 확장 레이어(wbs-api +
 - 포털: http://localhost:3010 (Docker: `wbstoolagent-wbs-portal-1`)
 - API: http://localhost:8000 (Docker: `wbstoolagent-wbs-api-1`)
 - DB: PostgreSQL 17 (Docker: `wbstoolagent-postgres-1`)
-- OpenProject CE 17: http://localhost:8080 (Docker: `wbstoolbyclaude-openproject-1`)
+- OpenProject CE 17: http://localhost:8080 (Docker: `wbstoolagent-openproject-1`, `docker compose -p wbstoolagent --profile openproject up -d --no-deps memcached openproject`)
 
 **기본 계정**
 - 관리자 계정·비밀번호: `.env` 또는 팀 비밀 저장소 참조 (저장소에 평문 기재 금지)

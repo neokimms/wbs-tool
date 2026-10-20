@@ -74,7 +74,8 @@ services:
       WBS_RUN_MIGRATIONS_ON_STARTUP: ${WBS_RUN_MIGRATIONS_ON_STARTUP:-true}
       BACKUP_DIR: /app/backups/postgres
     volumes:
-      - wbs_backups:/app/backups/postgres
+      # 호스트 scripts/backup-postgres.sh 와 같은 디렉터리 — 운영 점검·포털 백업 목록이 양쪽 백업을 모두 인식
+      - ./backups/postgres:/app/backups/postgres
     ports:
       - "${WBS_API_PORT:-8000}:8000"
 
@@ -142,4 +143,3 @@ volumes:
   postgres17_data:
   openproject_assets:
   prometheus_data:
-  wbs_backups:

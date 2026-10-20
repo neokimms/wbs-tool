@@ -32,6 +32,7 @@ PM_ENGINE_ADAPTER = os.getenv("PM_ENGINE_ADAPTER", "openproject").strip().lower(
 PORTAL_ORIGIN = os.getenv("PORTAL_ORIGIN", "http://localhost:3010")
 ALLOW_FILE_ORIGIN = os.getenv("WBS_ALLOW_FILE_ORIGIN", "true").lower() in {"1", "true", "yes", "on"}
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR", "/tmp/wbs-backups"))
+BACKUP_TIMEOUT_SECONDS = int(os.getenv("WBS_BACKUP_TIMEOUT_SECONDS", "900"))
 REPORT_OUTPUT_DIR = Path(os.getenv("WBS_REPORT_OUTPUT_DIR", "/app/outputs/reports"))
 MIGRATION_PATH = Path(__file__).resolve().parents[2] / "migrations" / "001_init.sql"
 # migrations/NNN_*.sql 전체를 파일명 순서로 적용 (migrate.py 와 동일 규칙 — 목록 수동 관리 불필요)

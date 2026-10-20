@@ -30,6 +30,8 @@ fi
 BACKUP_FILE="$1"
 DB_NAME="${2:-${POSTGRES_DB:-wbs_platform}}"
 POSTGRES_USER="${POSTGRES_USER:-wbs}"
+# 실행 중 스택은 compose 프로젝트명 wbstoolagent (dev-verify.sh 와 동일) — 미지정 시 디렉터리명으로 잡혀 컨테이너를 못 찾음
+COMPOSE_PROJECT="${COMPOSE_PROJECT:-wbstoolagent}"
 
 if [[ "$BACKUP_FILE" != /* ]]; then
   BACKUP_FILE="$ROOT_DIR/$BACKUP_FILE"
@@ -40,24 +42,24 @@ if [[ ! -f "$BACKUP_FILE" ]]; then
   exit 1
 fi
 
-if ! docker compose --profile api ps --status running --services | grep -qx "postgres"; then
-  echo "PostgreSQL container is not running. Start it with: docker compose --profile api up -d postgres"
+if ! docker compose -p "$COMPOSE_PROJECT" --profile api ps --status running --services | grep -qx "postgres"; then
+  echo "PostgreSQL container is not running. Start it with: docker compose -p $COMPOSE_PROJECT --profile api up -d postgres"
   exit 1
 fi
 
-docker compose --profile api exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null
+docker compose -p "$COMPOSE_PROJECT" --profile api exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null
 
-docker compose --profile api exec -T postgres psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -v dbname="$DB_NAME" <<'SQL'
+docker compose -p "$COMPOSE_PROJECT" --profile api exec -T postgres psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -v dbname="$DB_NAME" <<'SQL'
 SELECT pg_terminate_backend(pid)
 FROM pg_stat_activity
 WHERE datname = :'dbname'
   AND pid <> pg_backend_pid();
 SQL
 
-docker compose --profile api exec -T postgres dropdb --if-exists -U "$POSTGRES_USER" "$DB_NAME"
-docker compose --profile api exec -T postgres createdb -U "$POSTGRES_USER" "$DB_NAME"
+docker compose -p "$COMPOSE_PROJECT" --profile api exec -T postgres dropdb --if-exists -U "$POSTGRES_USER" "$DB_NAME"
+docker compose -p "$COMPOSE_PROJECT" --profile api exec -T postgres createdb -U "$POSTGRES_USER" "$DB_NAME"
 
-docker compose --profile api exec -T postgres \
+docker compose -p "$COMPOSE_PROJECT" --profile api exec -T postgres \
   pg_restore -U "$POSTGRES_USER" -d "$DB_NAME" --no-owner --no-acl \
   < "$BACKUP_FILE"
 

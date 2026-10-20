@@ -216,11 +216,18 @@ OpenProject 실제 sync는 `OPENPROJECT_SYNC_ENABLED=true`, `OPENPROJECT_API_TOK
 관리자 매뉴얼은 [docs/admin-manual.md](docs/admin-manual.md)에 있습니다.
 
 PostgreSQL 백업은 `backups/postgres` 아래에 custom dump 형식으로 생성됩니다. 기본 대상은 `.env`의 `POSTGRES_DB`이며, 인자로 다른 DB를 지정할 수 있습니다.
-Docker Compose에서는 이 디렉터리가 API 컨테이너의 `/app/backups/postgres`에 읽기 전용으로 마운트되어 포털의 `제품화 체크`에서 최신 백업 상태를 확인할 수 있습니다.
+Docker Compose에서는 이 디렉터리가 API 컨테이너의 `/app/backups/postgres`에 마운트되어 포털의 `제품화 체크`에서 최신 백업 상태를 확인할 수 있고, 포털 `운영점검 > 백업 생성`도 같은 디렉터리에 같은 형식(`.dump`)으로 기록합니다.
 
 ```bash
 bash scripts/backup-postgres.sh
 bash scripts/backup-postgres.sh openproject
+```
+
+정기 백업은 API 이미지의 `python -m app.backup`으로 실행합니다(Helm CronJob에서도 같은 명령). `wbs_platform`·`openproject`를 `BACKUP_DIR`에 덤프한 뒤, 모두 성공했을 때만 `WBS_BACKUP_RETENTION_DAYS`(기본 14일)가 지난 백업을 정리합니다. 대상 DB는 `WBS_BACKUP_DATABASES`로 바꿀 수 있습니다.
+로컬 Docker에서는 cron이 `docker exec`만 호출하므로, 저장소가 macOS `~/Documents` 아래에 있어도 cron에 별도 디스크 접근 권한이 필요 없습니다.
+
+```bash
+0 3 * * * /usr/local/bin/docker exec wbstoolagent-wbs-api-1 python -m app.backup >> "$HOME/Library/Logs/wbs-backup.log" 2>&1
 ```
 
 복구는 대상 DB를 재생성하는 파괴적 작업이므로 명시 확인값이 필요합니다. 운영 복구 전에는 현재 볼륨과 최신 백업 파일을 별도로 보존해 두세요.
