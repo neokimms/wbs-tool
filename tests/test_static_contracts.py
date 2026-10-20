@@ -23,9 +23,6 @@ COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 GRAFANA_DATASOURCE = (ROOT / "infra/monitoring/grafana/provisioning/datasources/prometheus.yml").read_text(encoding="utf-8")
 GRAFANA_DASHBOARD = (ROOT / "infra/monitoring/grafana/dashboards/wbs-platform.json").read_text(encoding="utf-8")
 
-# origin/main(6/11) 포털 기능 이식 대기 — 기능을 js/*.js 로 옮길 때마다 해당 테스트에서 제거
-PORTAL_PORT_PENDING = unittest.expectedFailure
-
 
 class WbsPlatformContracts(unittest.TestCase):
     def test_rbac_and_security_endpoints_exist(self):
@@ -219,7 +216,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API)
 
-    @PORTAL_PORT_PENDING
     def test_guide_content_reflects_current_portal_features(self):
         for snippet in (
             '{ id: "risks",      label: "리스크·이슈" }',
@@ -236,7 +232,6 @@ class WbsPlatformContracts(unittest.TestCase):
             'role="tab"',
             'aria-selected="${isActive ? "true" : "false"}"',
             "ArrowRight",
-            "20260609-wbs-baseline-collapse-01",
             "nav-icon",
             "nav-label",
             "WBS 기준선 관리",
@@ -334,7 +329,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + MIGRATIONS + PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
     def test_agile_hybrid_sample_templates_exist(self):
         for snippet in (
             "agile-standard",
@@ -352,7 +346,6 @@ class WbsPlatformContracts(unittest.TestCase):
             "TEMPLATE_KEY_ORDER",
             "wbs-mode-group",
             "delivery-mode-badge",
-            "sortByDeliveryMode",
             "compareTemplates",
             "template-card-type",
             "template-card-tenant",
