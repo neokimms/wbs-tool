@@ -130,7 +130,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
     def test_multitenancy_switch_contract_exists(self):
         for snippet in (
             "validate_request_tenant",
@@ -179,7 +178,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, COMPOSE + GRAFANA_DATASOURCE + GRAFANA_DASHBOARD)
 
-    @PORTAL_PORT_PENDING
     def test_resource_allocation_views_exist(self):
         for snippet in (
             "RESOURCE_DEFAULT_TASK_HOURS",

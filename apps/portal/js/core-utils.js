@@ -1,6 +1,15 @@
 /* AX WBS 포털 — 공통 request()·escapeHtml·라벨 변환·권한 판정
    (app.js 에서 분리. 클래식 스크립트로 전역 스코프를 공유하므로 index.html 의 로드 순서를 지킬 것) */
 
+/* fetch 직접 호출(파일 다운로드 등)용 인증·테넌트 헤더 */
+function authHeaders(extra = {}) {
+  return {
+    ...(state.authToken ? { Authorization: `Bearer ${state.authToken}` } : {}),
+    ...(state.currentTenantId ? { "X-Tenant-ID": state.currentTenantId } : {}),
+    ...extra,
+  };
+}
+
 async function request(path, options = {}) {
   const headers = {
     ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),

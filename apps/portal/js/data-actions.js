@@ -508,7 +508,7 @@ function renderImportResult(result) {
    모든 바이너리 다운로드(Excel·Word·CSV·백업)는 이 함수만 사용한다. */
 async function downloadFile(pathOrUrl, filename) {
   const url = /^https?:/.test(pathOrUrl) ? pathOrUrl : `${API_BASE}${pathOrUrl}`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${state.authToken}` } });
+  const resp = await fetch(url, { headers: authHeaders() });
   if (!resp.ok) {
     if (resp.status === 401) clearSession("세션이 만료되었습니다. 다시 로그인해 주세요.");
     const err = await resp.json().catch(() => ({ detail: resp.statusText }));
