@@ -444,3 +444,113 @@ function currentWorkboardProject() {
 function projectDeliveryMode(project = currentWorkboardProject()) {
   return project?.delivery_mode || project?.metadata?.delivery_mode || "waterfall";
 }
+
+/* ── origin/main 이식: 프로젝트 현황 탭·변경요청·담당자 필터 ── */
+function crStatusGroup(status) {
+  if (status === "Approved" || status === "승인") return "approved";
+  if (status === "Rejected" || status === "Withdrawn" || status === "반려") return "rejected";
+  return "open"; // Open, 등록
+}
+function applyPortfolioTab() {
+  document.querySelectorAll("#portfolioTabBar .portfolio-tab").forEach((btn) => {
+    const active = btn.dataset.portfolioTab === state.portfolioTab;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  const isList = state.portfolioTab !== "cr";
+  const headerRight = document.querySelector("#portfolioHeaderRight");
+  const listView    = document.querySelector("#portfolioListView");
+  const crView      = document.querySelector("#portfolioCrView");
+  if (headerRight) headerRight.hidden = !isList;
+  if (listView)    listView.hidden    = !isList;
+  if (crView)      crView.hidden      = isList;
+  if (!isList) renderPortfolioCrTab();
+}
+async function renderPortfolioCrTab() {
+  const tbody   = document.querySelector("#portfolioCrRows");
+  const countEl = document.querySelector("#portfolioCrCount");
+  if (!tbody) return;
+
+  if (!state.portfolioCr) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">불러오는 중…</td></tr>`;
+    try {
+      state.portfolioCr = await request("/api/change-requests");
+    } catch {
+      state.portfolioCr = { project_change_requests: [], item_change_requests: [] };
+    }
+  }
+
+  document.querySelectorAll("#portfolioCrFilter .filter-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.crFilter === state.portfolioCrFilter);
+  });
+
+  const all = [
+    ...(state.portfolioCr.project_change_requests || []),
+    ...(state.portfolioCr.item_change_requests || []),
+  ];
+  const filter = state.portfolioCrFilter || "all";
+  const filtered = filter === "all" ? all : all.filter((cr) => crStatusGroup(cr.status) === filter);
+  filtered.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+
+  if (countEl) countEl.textContent = `${filtered.length}건`;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">등록된 변경요청이 없습니다.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((cr) => {
+    const sourceLabel = cr.source === "project" ? "프로젝트" : "작업";
+    const sourceCls   = cr.source === "project" ? "source-project" : "source-item";
+    const sg          = crStatusGroup(cr.status);
+    const dateStr     = String(cr.created_at || "").substring(0, 10);
+    return `<tr class="ri-click-row" tabindex="0" data-cr-project="${escapeHtml(cr.project_id || "")}" data-cr-source="${cr.source}">
+      <td><span class="cr-source-badge ${sourceCls}">${sourceLabel}</span></td>
+      <td>${escapeHtml(cr.project_name || "-")}</td>
+      <td>${escapeHtml(cr.wbs_code || "-")}</td>
+      <td>${escapeHtml(cr.title || "-")}</td>
+      <td>${escapeHtml(cr.priority || "-")}</td>
+      <td><span class="ri-status-pill cr-st-${sg}">${escapeHtml(cr.status || "-")}</span></td>
+      <td>${escapeHtml(cr.requested_by || "-")}</td>
+      <td>${dateStr || "-"}</td>
+    </tr>`;
+  }).join("");
+}
+async function openProjectDetailToTab(projectId, tab) {
+  await openProjectDetail(projectId);
+  state.pdTab = tab;
+  state.pdCrList = [];
+  state.pdDiffData = null;
+  state.pdMembersList = null;
+  state.pdMemberCandidates = null;
+  renderProjectDetailBody();
+}
+document.querySelector("#portfolioTabBar")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".portfolio-tab[data-portfolio-tab]");
+  if (!btn) return;
+  state.portfolioTab = btn.dataset.portfolioTab;
+  applyPortfolioTab();
+});
+document.querySelector("#portfolioCrFilter")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".filter-btn[data-cr-filter]");
+  if (!btn) return;
+  state.portfolioCrFilter = btn.dataset.crFilter;
+  renderPortfolioCrTab();
+});
+document.querySelector("#portfolioCrRows")?.addEventListener("click", (e) => {
+  const row = e.target.closest("[data-cr-project]");
+  const projectId = row?.dataset.crProject;
+  if (!projectId) return;
+  if (row.dataset.crSource === "project") {
+    openProjectDetailToTab(projectId, "cr");
+  } else {
+    applyPortalView("#wbs-plan", { behavior: "smooth" });
+    const select = document.querySelector("#wbsPlanProjectSelect");
+    if (select) select.value = projectId;
+    if (projectId !== state.wbsPlanProjectId) loadWbsPlanProject(projectId);
+  }
+});
+document.querySelector("#portfolioOwnerFilter")?.addEventListener("change", (event) => {
+  state.portfolioOwnerFilter = event.target.value;
+  renderProjects();
+});

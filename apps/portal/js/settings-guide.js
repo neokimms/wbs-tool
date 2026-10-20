@@ -2,7 +2,7 @@
    (app.js 에서 분리. 클래식 스크립트로 전역 스코프를 공유하므로 index.html 의 로드 순서를 지킬 것) */
 
 /* ── 설정 탭 전환 ──────────────────────────────── */
-const STG_TABS = ["platform", "approvals", "operations", "users", "audit", "openproject", "auth", "smtp", "tenants"];
+const STG_TABS = ["platform", "policy", "approvals", "operations", "users", "audit", "openproject", "auth", "smtp", "tenants"];
 
 function switchSettingsTab(tabId) {
   if (!STG_TABS.includes(tabId)) return;
@@ -432,3 +432,137 @@ function renderProjectPolicyPanel() {
     </div>
   `;
 }
+
+/* ── origin/main 이식: 프로젝트 운영 정책·외부 연동 토글·LDAP 진단·가이드 키보드 ── */
+async function saveProjectOperationPolicy() {
+  if (!canManageUsers()) return;
+  const points = String(document.querySelector("#policyFibonacciPoints")?.value || "")
+    .split(/[,\s]+/)
+    .map((value) => Number(value.trim()))
+    .filter((value, index, list) => Number.isFinite(value) && value > 0 && list.indexOf(value) === index)
+    .sort((a, b) => a - b);
+  if (!points.length) {
+    state.projectPolicyStatus = "피보나치 허용값을 1개 이상 입력하세요";
+    renderProjectPolicyPanel();
+    return;
+  }
+  const dodItems = String(document.querySelector("#policyDodItems")?.value || "")
+    .split("\n")
+    .map((value) => value.trim())
+    .filter((value, index, list) => value && list.indexOf(value) === index)
+    .slice(0, 20);
+  const payload = {
+    default_delivery_mode: document.querySelector("#policyDefaultDeliveryMode")?.value || "waterfall",
+    story_point_mode: document.querySelector("#policyStoryPointMode")?.value || "numeric",
+    fibonacci_points: points,
+    sprint_length_policy: document.querySelector("#policySprintLength")?.value || "custom",
+    dod_management: document.querySelector("#policyDodManagement")?.value || "team",
+    default_dod_items: dodItems,
+    openproject_sprint_version_sync: Boolean(document.querySelector("#policyOpenProjectVersionSync")?.checked),
+  };
+  const button = document.querySelector("#projectPolicySaveButton");
+  if (button) button.disabled = true;
+  state.projectPolicyStatus = "저장 중";
+  renderProjectPolicyPanel();
+  try {
+    state.projectOperationPolicy = await request("/api/project-operation-policy", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    state.projectPolicyStatus = "저장되었습니다";
+  } catch (error) {
+    state.projectPolicyStatus = error.message;
+  } finally {
+    renderProjectPolicyPanel();
+  }
+}
+async function saveExternalIntegrationPreference(enabled) {
+  if (!canManageUsers()) return;
+  const setting = (state.settings?.settings || []).find((item) => item.key === "pm_engine");
+  if (!setting) return;
+  const value = {
+    ...(setting.value || {}),
+    portal_enabled: Boolean(enabled),
+  };
+  state.settingsStatus = "";
+  try {
+    const result = await request("/api/settings/pm_engine", {
+      method: "PUT",
+      body: JSON.stringify({ value }),
+    });
+    state.settings = await request("/api/settings");
+    if (result.pm_engine) {
+      state.pmPreflight = {
+        ...state.pmPreflight,
+        engine: result.pm_engine,
+        ready_for_actual_sync: Boolean(enabled) && state.pmPreflight.ready_for_actual_sync,
+      };
+    }
+    state.settingsStatus = enabled ? "외부 연동을 사용합니다" : "외부 연동을 사용하지 않습니다";
+  } catch (error) {
+    state.settingsStatus = error.message;
+  } finally {
+    renderAll();
+  }
+}
+function renderLdapDiagnostics(diagnostics) {
+  const list = document.querySelector("#ldapDiagnosticList");
+  if (!list) return;
+  const steps = diagnostics?.steps || [];
+  list.innerHTML = steps.length
+    ? steps.map((step) => `
+      <div class="ldap-diagnostic-item">
+        <span class="ldap-diagnostic-badge ${escapeHtml(step.status || "warn")}">${escapeHtml(step.status || "warn")}</span>
+        <div>
+          <strong>${escapeHtml(step.label || step.key || "진단")}</strong>
+          <span>${escapeHtml(step.message || "")}</span>
+        </div>
+      </div>
+    `).join("")
+    : "";
+}
+document.querySelector("#projectTemplateSelect").addEventListener("change", syncProjectDeliveryModeWithTemplate);
+document.querySelector("#projectPolicyPanel")?.addEventListener("click", (event) => {
+  if (event.target.closest("#projectPolicySaveButton")) saveProjectOperationPolicy();
+});
+document.querySelector("#externalIntegrationToggle")?.addEventListener("change", (event) => {
+  saveExternalIntegrationPreference(event.target.checked);
+});
+document.querySelector("#ldapDiagnosticsBtn")?.addEventListener("click", async () => {
+  const email = document.querySelector("#ldapTestEmail")?.value.trim();
+  const pwd   = document.querySelector("#ldapTestPassword")?.value;
+  const status = document.querySelector("#ldapTestStatus");
+  if (status) {
+    status.textContent = "실 서버 검증 중…";
+    status.style.color = "";
+  }
+  try {
+    const res = await request("/api/settings/auth/ldap-diagnostics", {
+      method: "POST",
+      body: JSON.stringify({ email: email || null, password: pwd || null }),
+    });
+    renderLdapDiagnostics(res);
+    if (status) {
+      status.textContent = res.success ? "LDAP 실 서버 검증 통과" : "LDAP 실 서버 검증 실패";
+      status.style.color = res.success ? "var(--green)" : "var(--red)";
+    }
+  } catch (error) {
+    if (status) status.textContent = `검증 실패: ${error.message}`;
+  }
+});
+document.querySelector("#guideMenu").addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const tabs = Array.from(document.querySelectorAll("#guideMenu [role='tab']"));
+  const currentIndex = tabs.indexOf(document.activeElement);
+  if (!tabs.length || currentIndex < 0) return;
+  event.preventDefault();
+  let nextIndex = currentIndex;
+  if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = tabs.length - 1;
+  const nextTab = tabs[nextIndex];
+  state.guideSelectedView = nextTab.dataset.guideView;
+  renderGuidePanel();
+  document.querySelector(`#guideMenu [data-guide-view="${CSS.escape(state.guideSelectedView)}"]`)?.focus();
+});

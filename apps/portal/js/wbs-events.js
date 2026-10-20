@@ -998,3 +998,112 @@ document.querySelector("#wbsTableBody").addEventListener("change", (event) => {
     if (row) { row.finish_date = endInput.value || null; state.wbsPlanDirty = true; renderWbsPlanTable(); }
   }
 });
+
+/* ── origin/main 이식: WBS 유형 칩·담당자 일괄 매핑 ── */
+async function openOwnerMapModal() {
+  const projectId = state.wbsPlanProjectId;
+  if (!projectId) return;
+  const dialog  = document.querySelector("#ownerMapDialog");
+  const body    = document.querySelector("#ownerMapBody");
+  const statusEl = document.querySelector("#ownerMapStatus");
+  statusEl.textContent = "";
+  body.innerHTML = `<p style="color:var(--text-muted);font-size:0.82rem;padding:16px 0">불러오는 중…</p>`;
+  dialog.showModal();
+
+  let data;
+  try {
+    data = await request(`/api/projects/${encodeURIComponent(projectId)}/owner-map`);
+  } catch (err) {
+    body.innerHTML = `<p style="color:var(--red);font-size:0.82rem">불러오기 실패: ${escapeHtml(String(err))}</p>`;
+    return;
+  }
+
+  const { assignees = [], users = [] } = data;
+  if (!assignees.length) {
+    body.innerHTML = `<p style="color:var(--text-muted);font-size:0.82rem;padding:16px 0">담당자 항목이 없습니다.</p>`;
+    return;
+  }
+
+  const userOptions = [
+    `<option value="">— 변경 없음 —</option>`,
+    ...users.map((u) => `<option value="${escapeHtml(u.display_name)}">${escapeHtml(u.display_name)} (${escapeHtml(u.email || "")})</option>`),
+  ].join("");
+
+  const unmatched = assignees.filter((a) => !a.matched_user);
+  const matched   = assignees.filter((a) =>  a.matched_user);
+
+  const renderSection = (title, items, isUnmatched) => {
+    if (!items.length) return "";
+    const rows = items.map((a) => {
+      const count = a.usages.length;
+      const fields = [...new Set(a.usages.map((u) => u.field === "owner" ? "담당자" : u.field === "reviewer" ? "검토자" : "승인자"))].join(", ");
+      const badge = isUnmatched
+        ? `<span class="status-pill warning" style="font-size:0.68rem">미매칭</span>`
+        : `<span class="status-pill stable" style="font-size:0.68rem">매칭됨</span>`;
+      return `<tr>
+        <td style="padding:8px 6px;font-size:0.82rem;white-space:nowrap">${escapeHtml(a.raw_name)} ${badge}</td>
+        <td style="padding:8px 6px;font-size:0.75rem;color:var(--text-muted)">${fields} · ${count}개 항목</td>
+        <td style="padding:8px 6px">
+          <select class="owner-map-select" data-raw="${escapeHtml(a.raw_name)}" style="font-size:0.8rem;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);min-width:180px">
+            ${userOptions}
+          </select>
+        </td>
+      </tr>`;
+    }).join("");
+    return `<p style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:0.04em">${title}</p>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:6px;font-size:0.72rem;color:var(--text-muted);font-weight:500">담당자 입력값</th>
+          <th style="text-align:left;padding:6px;font-size:0.72rem;color:var(--text-muted);font-weight:500">사용 위치</th>
+          <th style="text-align:left;padding:6px;font-size:0.72rem;color:var(--text-muted);font-weight:500">대체할 계정</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  };
+
+  body.innerHTML = renderSection(`미매칭 (${unmatched.length}건)`, unmatched, true)
+    + renderSection(`매칭됨 (${matched.length}건)`, matched, false);
+}
+async function applyOwnerRemap() {
+  const projectId = state.wbsPlanProjectId;
+  if (!projectId) return;
+  const selects = document.querySelectorAll(".owner-map-select");
+  const mappings = {};
+  selects.forEach((sel) => {
+    const raw = sel.dataset.raw;
+    const val = sel.value;
+    if (val) mappings[raw] = val;
+  });
+  if (!Object.keys(mappings).length) {
+    document.querySelector("#ownerMapStatus").textContent = "변경할 매핑을 선택하세요.";
+    return;
+  }
+  const statusEl = document.querySelector("#ownerMapStatus");
+  statusEl.textContent = "적용 중…";
+  try {
+    const result = await request(`/api/projects/${encodeURIComponent(projectId)}/owner-remap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mappings }),
+    });
+    statusEl.style.color = "var(--green)";
+    statusEl.textContent = `${result.updated}개 항목이 업데이트되었습니다.`;
+    // WBS 데이터 새로고침
+    await loadWbsPlanProject(projectId);
+    setTimeout(() => document.querySelector("#ownerMapDialog")?.close(), 1200);
+  } catch (err) {
+    statusEl.style.color = "var(--red)";
+    statusEl.textContent = `오류: ${escapeHtml(String(err))}`;
+  }
+}
+document.querySelector("#wbsBaselineChips")?.addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-wbs-type-chip]");
+  if (!chip) return;
+  state.wbsPlanTypeFilter = chip.dataset.wbsTypeChip;
+  document.querySelectorAll("[data-wbs-type-chip]").forEach((c) => c.classList.toggle("active", c.dataset.wbsTypeChip === state.wbsPlanTypeFilter));
+  renderWbsPlanTable();
+});
+document.querySelector("#wbsOwnerMapButton")?.addEventListener("click", openOwnerMapModal);
+document.querySelector("#ownerMapClose")?.addEventListener("click",     () => document.querySelector("#ownerMapDialog")?.close());
+document.querySelector("#ownerMapCancelBtn")?.addEventListener("click", () => document.querySelector("#ownerMapDialog")?.close());
+document.querySelector("#ownerMapApplyBtn")?.addEventListener("click",  applyOwnerRemap);

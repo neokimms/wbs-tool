@@ -258,3 +258,71 @@ async function loadTenantSwitcher() {
   }
   renderTenantSwitcher();
 }
+
+/* ── origin/main 이식: 테넌트 전환 ── */
+function resetTenantScopedState() {
+  state.dashboard = createDashboardState();
+  state.projects = [];
+  state.approvals = [];
+  state.importJobs = [];
+  state.users = [];
+  state.userGroups = [];
+  state.auditEvents = [];
+  state.risks = [];
+  state.issues = [];
+  state.notifications = [];
+  state.projectOperationPolicy = { ...fallbackProjectOperationPolicy, tenant_id: state.currentTenantId || "default" };
+  state.projectPolicyStatus = "";
+  state.selectedProjectId = null;
+  state.projectPlan = null;
+  state.projectDetail = null;
+  state.syncRuns = [];
+  state.resourceData = null;
+  state.wbsPlanProjectId = null;
+  state.wbsPlanRows = [];
+  state.workboardProjectId = null;
+  state.workboardLoadedProjectId = null;
+  state.workboardRows = [];
+  state.myWorkItems = [];
+  state.workboardSelectedCode = null;
+  state.workboardStatusMessage = "";
+  state.workboardDragKey = null;
+  state.workboardGanttDrag = null;
+  state.agileSprints = [];
+  state.agileItems = [];
+  state.agileMetrics = null;
+  state.agileLoadedProjectId = null;
+  state.agileLoading = false;
+  state.agileSelectedSprintId = "";
+  state.agileDragKey = null;
+  state.opViewProjectId = null;
+  state.opViewRows = [];
+}
+async function switchTenant(tenantId) {
+  if (!tenantId || tenantId === state.currentTenantId) return;
+  state.currentTenantId = tenantId;
+  window.localStorage.setItem(TENANT_ID_KEY, tenantId);
+  state.currentTenant = state.tenants.find((tenant) => tenant.id === tenantId) || { id: tenantId, status: "Active" };
+  resetTenantScopedState();
+  renderTenantSwitcher();
+  renderAll();
+  showAppSkeletons();
+  try {
+    await loadData({ tenantId });
+    await loadTenantSwitcher();
+  } catch (error) {
+    alert(`테넌트 전환 실패: ${error.message}`);
+  }
+}
+window.switchTenant = switchTenant;
+document.querySelector("#tenantSelect")?.addEventListener("change", (event) => {
+  switchTenant(event.target.value);
+});
+document.querySelector("#tenantSelect")?.addEventListener("input", (event) => {
+  switchTenant(event.target.value);
+});
+document.querySelector("#tenantSwitcher")?.addEventListener("change", (event) => {
+  if (event.target?.matches?.("#tenantSelect")) {
+    switchTenant(event.target.value);
+  }
+});

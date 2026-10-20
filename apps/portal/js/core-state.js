@@ -40,6 +40,31 @@ const fallbackTemplates = [
     description: "접수, 영향도 분석, 조치, 검증, 릴리스, 회고 중심의 유지보수 템플릿",
     phases: [],
   },
+  {
+    key: "agile-standard",
+    name: "Agile 표준 WBS",
+    project_type: "Agile",
+    description: "Epic, Story, Sprint, Definition of Done 중심의 Agile WBS 샘플 템플릿",
+    phases: [
+      { code: "AGL.B", name: "제품 백로그", weight: 20 },
+      { code: "AGL.S1", name: "Sprint 1", weight: 35 },
+      { code: "AGL.S2", name: "Sprint 2", weight: 35 },
+      { code: "AGL.R", name: "릴리스/회고", weight: 10 },
+    ],
+  },
+  {
+    key: "hybrid-standard",
+    name: "Hybrid 표준 WBS",
+    project_type: "Hybrid",
+    description: "상위 WBS 기준선과 Sprint 실행 백로그를 연결하는 Hybrid WBS 샘플 템플릿",
+    phases: [
+      { code: "HYB.1", name: "착수/기준선", weight: 10 },
+      { code: "HYB.2", name: "상위 설계/아키텍처", weight: 20 },
+      { code: "HYB.3", name: "Agile 실행 트랙", weight: 35 },
+      { code: "HYB.4", name: "통합 테스트/전환", weight: 25 },
+      { code: "HYB.5", name: "운영 전환/안정화", weight: 10 },
+    ],
+  },
 ];
 
 const fallbackProjects = [
@@ -136,6 +161,7 @@ const fallbackSettings = {
         display_name: "OpenProject",
         mode: "ce-api-adapter",
         dependency_boundary: "pm-engine-api",
+        portal_enabled: true,
       },
     },
   ],
