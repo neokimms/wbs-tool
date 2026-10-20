@@ -37,7 +37,7 @@ function renderAll() {
 
 async function loadData() {
   try {
-    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs, users, auditEvents, settings, risks, issues] = await Promise.all([
+    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs, users, userGroups, auditEvents, settings, risks, issues] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
@@ -46,6 +46,7 @@ async function loadData() {
       canAccessOperations() ? request("/api/operations/health") : Promise.resolve(restrictedOperationsHealth),
       request("/api/imports?limit=8"),
       canManageUsers() ? request("/api/users") : Promise.resolve([]),
+      canManageUsers() ? request("/api/user-groups") : Promise.resolve([]),
       canViewAudit() ? request("/api/audit-events?limit=30") : Promise.resolve([]),
       canViewSettings() ? request("/api/settings") : Promise.resolve(fallbackSettings),
       request("/api/risks").catch(() => []),
@@ -68,6 +69,7 @@ async function loadData() {
     loadNotifications();
     startNotifPolling();
     state.users = users;
+    state.userGroups = userGroups;
     state.auditEvents = auditEvents;
     state.settings = settings;
     try {
@@ -111,6 +113,7 @@ async function loadData() {
     state.importJobs = [];
     state.templateVersions = [];
     state.users = [];
+    state.userGroups = [];
     state.auditEvents = [];
     state.settings = fallbackSettings;
   }
@@ -180,12 +183,18 @@ async function createPortalUser(event) {
     email: document.querySelector("#userEmailInput").value.trim(),
     display_name: document.querySelector("#userNameInput").value.trim(),
     role: document.querySelector("#userRoleInput").value,
+    group_id: document.querySelector("#userGroupInput").value,
     password: document.querySelector("#userPasswordInput").value,
     status: "Active",
   };
 
   submitButton.disabled = true;
   status.textContent = "";
+  if (!payload.group_id) {
+    status.textContent = "소속 그룹을 선택하세요.";
+    submitButton.disabled = false;
+    return;
+  }
 
   try {
     await request("/api/users", {
@@ -209,7 +218,12 @@ async function updatePortalUser(row) {
   const payload = {
     role: row.querySelector('[data-user-field="role"]').value,
     status: row.querySelector('[data-user-field="status"]').value,
+    group_id: row.querySelector('[data-user-field="group_id"]').value,
   };
+  if (!payload.group_id) {
+    status.textContent = "사용자 소속 그룹을 선택하세요.";
+    return;
+  }
   if (passwordInput.value) {
     payload.password = passwordInput.value;
   }

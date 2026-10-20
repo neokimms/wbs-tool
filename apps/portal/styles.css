@@ -8680,3 +8680,73 @@ body.dark-mode .template-picker { background: var(--c-gray-900); }
 .op-gantt-resizer:hover::after, body.op-gantt-resizing .op-gantt-resizer::after { background: var(--c-ms-blue, #0071e3); }
 body.op-gantt-resizing { cursor: col-resize; user-select: none; }
 body.dark-mode .op-gantt-row[data-type="단계"] .op-gantt-label { background: linear-gradient(rgba(0,113,227,.1), rgba(0,113,227,.1)), var(--surface) !important; }
+
+/* ── 사용자 소속 그룹 (origin/main 이식) ── */
+.user-group-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.user-group-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.user-group-chip,
+.user-group-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.user-group-chip small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.user-group-chip.is-suspended {
+  opacity: 0.62;
+}
+
+.user-group-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.user-group-create-row input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .user-group-toolbar,
+  .user-group-create-row {
+    grid-template-columns: 1fr;
+  }
+}
+

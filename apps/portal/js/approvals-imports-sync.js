@@ -769,48 +769,6 @@ function statusOptions(selectedStatus) {
     .join("");
 }
 
-function renderUsersPanel() {
-  if (!document.querySelector("#userRows")) return;
-  document.querySelector("#userCount").textContent = state.users.length;
-  document.querySelector("#userRows").innerHTML = state.users.length
-    ? state.users
-        .map(
-          (user) => `
-            <tr data-user-id="${escapeHtml(user.id)}">
-              <td>
-                <strong>${escapeHtml(user.display_name)}</strong>
-                <small>${escapeHtml(user.email)}</small>
-                <small>${user.must_change_password ? "비밀번호 변경 필요" : "비밀번호 정상"}</small>
-              </td>
-              <td>
-                <select data-user-field="role" aria-label="${escapeHtml(user.email)} 역할">
-                  ${roleOptions(user.role)}
-                </select>
-              </td>
-              <td>
-                <select data-user-field="status" aria-label="${escapeHtml(user.email)} 상태">
-                  ${statusOptions(user.status)}
-                </select>
-              </td>
-              <td>${escapeHtml(user.last_login_at ? formatTimestamp(user.last_login_at) : "-")}</td>
-              <td>${escapeHtml(user.active_sessions ?? 0)}</td>
-              <td>
-                <div class="table-actions">
-                  <input data-user-field="password" type="password" minlength="8" placeholder="새 비밀번호" aria-label="${escapeHtml(user.email)} 새 비밀번호" />
-                  <button class="table-action" type="button" data-user-action="save">저장</button>
-                  <button class="table-action" type="button" data-user-action="revoke">세션 종료</button>
-                </div>
-              </td>
-            </tr>
-          `,
-        )
-        .join("")
-    : `
-      <tr class="empty-row">
-        <td colspan="6">등록된 사용자 없음</td>
-      </tr>
-    `;
-}
 
 /* 감사 로그 이벤트 분류 */
 const AUDIT_TAB_TYPES = {

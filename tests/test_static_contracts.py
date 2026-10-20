@@ -147,7 +147,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
     def test_user_group_affiliation_contract_exists(self):
         for snippet in (
             "wbs_user_groups",

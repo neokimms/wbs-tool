@@ -452,3 +452,33 @@ function canAccessView(viewId) {
 
 /* 역할 레벨 */
 const ROLE_LEVEL = { viewer: 1, pmo: 2, admin: 3 };
+
+/* 테이블 정렬 공용 (사용자·리스크·프로젝트 목록) — origin/main 이식 */
+function compareTableValues(a, b, dir = "asc") {
+  const normalize = (value) => {
+    if (value === undefined || value === null || value === "") return "";
+    if (typeof value === "number") return value;
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp) && /^\d{4}-\d{2}-\d{2}/.test(String(value))) return timestamp;
+    return String(value).toLowerCase();
+  };
+  const av = normalize(a);
+  const bv = normalize(b);
+  let result;
+  if (typeof av === "number" && typeof bv === "number") {
+    result = av - bv;
+  } else {
+    result = String(av).localeCompare(String(bv), "ko", { numeric: true, sensitivity: "base" });
+  }
+  return dir === "desc" ? -result : result;
+}
+
+function updateSortButtons(selector, activeKey, dir) {
+  document.querySelectorAll(selector).forEach((btn) => {
+    const key = btn.dataset.projectSort || btn.dataset.riSort || btn.dataset.userSort;
+    const active = key === activeKey;
+    btn.classList.toggle("active", active);
+    const icon = btn.querySelector("span");
+    if (icon) icon.textContent = active ? (dir === "asc" ? "↑" : "↓") : "";
+  });
+}
