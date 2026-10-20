@@ -127,7 +127,13 @@ function renderWbsPlanFilters() {
     searchInput.value    = state.wbsPlanSearch;
     searchInput.disabled = !rows.length;
   }
+
+  document.querySelectorAll("[data-wbs-type-chip]").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.wbsTypeChip === state.wbsPlanTypeFilter);
+    chip.disabled = !rows.length && chip.dataset.wbsTypeChip !== "";
+  });
 }
+
 
 function renderWbsPlanProjectList() {
   const select = document.querySelector("#wbsPlanProjectSelect");
@@ -382,6 +388,8 @@ function renderWbsPlanTable() {
   const hasProject = Boolean(state.wbsPlanProjectId);
 
   document.querySelector("#wbsAddRowButton").disabled       = !hasProject || !canMutate;
+  const ownerMapBtn = document.querySelector("#wbsOwnerMapButton");
+  if (ownerMapBtn) ownerMapBtn.disabled = !hasProject;
   const saveBtn = document.querySelector("#wbsSaveButton");
   const saveable = hasProject && canMutate && state.wbsPlanDirty;
   saveBtn.disabled = !saveable;
@@ -431,31 +439,74 @@ function renderWbsPlanTable() {
   }
   if (!filtered.length) {
     tbody.innerHTML = `<tr class="wbs-empty-row"><td colspan="11">${
-      state.wbsStatusFilter || state.wbsPlanSearch ? "검색 조건에 맞는 항목 없음" : "행 추가 버튼이나 Excel 업로드로 WBS를 시작하세요"
+      state.wbsStatusFilter || state.wbsPlanTypeFilter || state.wbsPlanPhaseFilter || state.wbsPlanSearch ? "검색 조건에 맞는 항목 없음" : "행 추가 버튼이나 Excel 업로드로 WBS를 시작하세요"
     }</td></tr>`;
     return;
   }
 
   const rendered = [];
   const visited  = new Set();
+  const hasActiveWbsPlanFilter = Boolean(state.wbsStatusFilter || state.wbsPlanTypeFilter || state.wbsPlanPhaseFilter || state.wbsPlanSearch.trim());
+  const filteredKeys = new Set(filtered.map((row) => row.code).filter(Boolean));
+  const visibleKeys = new Set(filteredKeys);
+
+  if (hasActiveWbsPlanFilter) {
+    filtered.forEach((row) => {
+      let cur = row;
+      const seen = new Set();
+      while (cur?.parent_code && !seen.has(cur.parent_code)) {
+        seen.add(cur.parent_code);
+        visibleKeys.add(cur.parent_code);
+        cur = rowByCode.get(cur.parent_code);
+      }
+    });
+  }
+
+  function hasVisibleDescendant(code) {
+    return (childMap[code] || []).some((childCode) => visibleKeys.has(childCode) || hasVisibleDescendant(childCode));
+  }
+
+  let rowCounter = 0;
+
   function walkProRow(code) {
     if (visited.has(code)) return;
     visited.add(code);
     const row = rowByCode.get(code);
     if (!row) return;
+    if (hasActiveWbsPlanFilter && !visibleKeys.has(code)) return;
     const depth      = wbsItemDepth(row, rowByCode);
     const children   = childMap[code] || [];
     const hasChildren = children.length > 0;
     const expanded   = isWbsExpanded(code);
-    rendered.push(renderWbsProRow(row, depth, hasChildren, canMutate));
-    if (hasChildren && expanded) children.forEach((c) => walkProRow(c));
+    rowCounter += 1;
+    rendered.push(renderWbsProRow(row, depth, hasChildren, canMutate, rowCounter));
+    if (hasChildren && (expanded || (hasActiveWbsPlanFilter && hasVisibleDescendant(code)))) {
+      children.forEach((c) => walkProRow(c));
+    }
   }
 
-  allRows.filter((r) => !r.parent_code).forEach((r) => { if (r.code) walkProRow(r.code); });
-  filtered.forEach((r) => { if (!visited.has(r.code)) rendered.push(renderWbsProRow(r, wbsItemDepth(r,rowByCode), false, canMutate)); });
+  allRows
+    .filter((r) => !r.parent_code || !rowByCode.has(r.parent_code))
+    .forEach((r) => {
+      if (r.code) {
+        walkProRow(r.code);
+      } else if (!hasActiveWbsPlanFilter) {
+        rowCounter += 1;
+        rendered.push(renderWbsProRow(r, 0, false, canMutate, rowCounter));
+      }
+    });
+
+  if (hasActiveWbsPlanFilter) {
+    filtered.forEach((r) => {
+      if (r.code && visited.has(r.code)) return;
+      rowCounter += 1;
+      rendered.push(renderWbsProRow(r, wbsItemDepth(r,rowByCode), false, canMutate, rowCounter));
+    });
+  }
 
   tbody.innerHTML = rendered.join("");
 }
+
 
 function renderWbsPlan() {
   renderWbsPlanProjectList();

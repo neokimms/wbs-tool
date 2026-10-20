@@ -2,13 +2,19 @@
    (app.js 에서 분리. 클래식 스크립트로 전역 스코프를 공유하므로 index.html 의 로드 순서를 지킬 것) */
 
 async function request(path, options = {}) {
-  const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
+  const headers = {
+    ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+    ...(options.headers || {}),
+  };
   if (state.authToken) {
     headers.Authorization = `Bearer ${state.authToken}`;
   }
+  if (state.currentTenantId) {
+    headers["X-Tenant-ID"] = state.currentTenantId;
+  }
   const response = await fetch(`${API_BASE}${path}`, {
-    headers,
     ...options,
+    headers,
   });
 
   if (!response.ok) {
@@ -30,6 +36,9 @@ async function request(path, options = {}) {
     } catch (error) {
       detail = response.statusText || detail;
     }
+    if (response.status === 401 && state.authToken && path !== "/api/auth/login" && path !== "/api/auth/me") {
+      clearSession("세션이 만료되었습니다. 다시 로그인해주세요.");
+    }
     throw new Error(detail);
   }
 
@@ -37,6 +46,7 @@ async function request(path, options = {}) {
   const contentType = response.headers.get("content-type") || "";
   return contentType.includes("application/json") ? response.json() : response;
 }
+
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -455,10 +465,12 @@ function canAccessView(viewId) {
   if (viewId === "users")      return canManageUsers();
   if (viewId === "audit")      return canViewAudit();
   if (viewId === "wbs-plan")   return Boolean(state.currentUser);
-  if (viewId === "op-view")    return canAccessOperations();
+  if (viewId === "workboard")  return Boolean(state.currentUser);
+  if (viewId === "op-view")    return Boolean(state.currentUser);
   if (viewId === "guide")      return Boolean(state.currentUser);
   return true;
 }
+
 
 /* 역할 레벨 */
 const ROLE_LEVEL = { viewer: 1, pmo: 2, admin: 3 };

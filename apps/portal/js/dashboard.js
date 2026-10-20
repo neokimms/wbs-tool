@@ -18,6 +18,7 @@ function renderAuthState() {
       avatarName.textContent = "-";
     }
   }
+  renderTenantSwitcher();
 
   /* ── 역할 기반 메뉴 표시/숨김 ── */
   const userLevel = ROLE_LEVEL[state.currentUser?.role] || 0;
@@ -26,6 +27,7 @@ function renderAuthState() {
     link.classList.toggle("nav-role-hidden", userLevel < minLevel);
     link.hidden = userLevel < minLevel;
   });
+  toggleNavAndPanel("#op-view", canAccessView("op-view"));
 
   /* ── 설정 탭 권한별 표시 ── */
   const stgTabBar = document.querySelector("#settingsTabBar");
@@ -34,6 +36,7 @@ function renderAuthState() {
       const tab = btn.dataset.stgTab;
       let visible = true;
       if (tab === "platform")     visible = canViewSettings();
+      if (tab === "policy")       visible = canViewSettings();
       if (tab === "operations")   visible = canAccessOperations();
       if (tab === "users")        visible = canManageUsers();
       if (tab === "audit")        visible = canViewAudit();
@@ -59,6 +62,7 @@ function renderAuthState() {
   }
 }
 
+
 function renderMetrics() {
   renderPortfolioMeta();
   renderDashboardKpiBanner();
@@ -68,10 +72,10 @@ function renderPortfolioMeta() {
   const meta = document.querySelector("#portfolioMeta");
   if (!meta) return;
   const m       = state.dashboard.metrics || {};
-  const total   = m.projects || state.projects.length;
-  const pending = m.pending_approvals || 0;
-  const risks   = m.risk_count || 0;
-  const issues  = m.issue_count || 0;
+  const total   = m.projects ?? state.projects.length;
+  const pending = m.pending_approvals ?? 0;
+  const risks   = m.risk_count ?? 0;
+  const issues  = m.issue_count ?? 0;
   const spi     = m.portfolio_spi;
   const syncLbl = syncStateLabel(state.pmPreflight?.state);
   const syncCls = syncStateClass(state.pmPreflight?.state);
@@ -79,22 +83,20 @@ function renderPortfolioMeta() {
   const spiHtml = spi != null
     ? `<span>SPI <strong class="${spi >= 1 ? "kpi-good" : spi >= 0.8 ? "kpi-warn" : "kpi-bad"}">${spi.toFixed(2)}</strong></span>`
     : "";
-  const riskHtml = risks > 0
-    ? `<span class="kpi-badge kpi-risk">리스크 <strong>${risks}</strong></span>`
-    : "";
-  const issueHtml = issues > 0
-    ? `<span class="kpi-badge kpi-issue">이슈 <strong>${issues}</strong></span>`
-    : "";
+  const riskHtml = risks > 0 ? riCountButton({ type: "risks", count: risks }) : "";
+  const issueHtml = issues > 0 ? riCountButton({ type: "issues", count: issues }) : "";
 
   meta.innerHTML = `
+    <span>테넌트 <strong>${escapeHtml(tenantDisplayName(state.currentTenantId))}</strong></span>
     <span><strong>${total}</strong>개 프로젝트</span>
     <span><strong>${pending}</strong>건 승인 대기</span>
     ${spiHtml}
     ${riskHtml}
     ${issueHtml}
-    <span>OpenProject <span class="status-pill ${syncCls}" style="font-size:0.72rem;padding:1px 7px">${escapeHtml(syncLbl)}</span></span>
+    <span>외부 연동 <span class="status-pill ${syncCls}" style="font-size:0.72rem;padding:1px 7px">${escapeHtml(syncLbl)}</span></span>
   `;
 }
+
 
 function renderDashboardKpiBanner() {
   const banner = document.querySelector("#dashboardKpiBanner");
@@ -186,81 +188,52 @@ function renderPortfolioFilter() {
 }
 
 function renderTemplates() {
-  /* ── 표준 WBS 목록 (3개 분류) ── */
+  setWbsListTab(state.wbsListTab || "standard");
+  /* ── 표준 WBS 목록 ── */
   const templateList = document.querySelector("#templateList");
   if (templateList) {
-    // 3개 방법론 분류
-    const METHOD_GROUPS = [
-      {
-        key: "waterfall",
-        label: "Waterfall / SI 계열",
-        icon: "🏗️",
-        types: ["System Integration", "Maintenance", "Data Migration"],
-        color: "var(--blue)",
-      },
-      {
-        key: "agile",
-        label: "Agile / 스크럼",
-        icon: "🔄",
-        types: ["Agile"],
-        color: "#1f9d55",
-      },
-      {
-        key: "hybrid",
-        label: "Hybrid / 혼합형",
-        icon: "⚡",
-        types: ["Hybrid"],
-        color: "#7356bf",
-      },
-    ];
-
-    const makeCard = (template) => {
-      const meta = [
-        escapeHtml(projectTypeLabel(template.project_type)),
-        template.item_count ? `${template.item_count}개 항목` : null,
-      ].filter(Boolean).join(" · ");
-      return `
-      <div class="template-card">
-        <div class="template-card-info">
-          <strong>${escapeHtml(template.name)}</strong>
-          <span>${meta}</span>
-          <span class="tpl-sep">|</span>
-          <p>${escapeHtml(template.description)}</p>
+    const groups = groupByDeliveryMode([...state.templates].sort(compareTemplates), templateDeliveryMode);
+    templateList.innerHTML = groups.map(({ mode, items }) => `
+      <section class="wbs-mode-group mode-${mode}" aria-label="${escapeHtml(deliveryModeLabel(mode))} 표준 WBS">
+        <div class="wbs-mode-header">
+          ${renderDeliveryModeBadge(mode, "mode-large")}
+          <div>
+            <span>${escapeHtml(DELIVERY_MODE_DESCRIPTIONS[mode] || "")}</span>
+          </div>
+          <em>${items.length}개 템플릿</em>
         </div>
-        <div style="display:flex;gap:5px;flex-shrink:0">
-          <button class="secondary-button u-btn-xs" type="button"
-            data-template-preview="${escapeHtml(template.key)}"
-           
-            title="웹에서 미리보기">🔍 미리보기</button>
-          <button class="secondary-button u-btn-xs" type="button"
-            data-template-download="${escapeHtml(template.key)}"
-           
-            title="${escapeHtml(template.name)} Excel 다운로드">↓ Excel</button>
+        <div class="template-mode-list">
+          ${items.map((template) => {
+            const templateMode = templateDeliveryMode(template);
+            const typeLabel = projectTypeLabel(template.project_type);
+            const itemCount = template.item_count ? `${template.item_count}개 항목` : "-";
+            return `
+              <div class="template-card template-card-standard mode-${templateMode}">
+                ${renderDeliveryModeBadge(templateMode)}
+                <strong class="template-card-title">${escapeHtml(template.name)}</strong>
+                <span class="template-card-type">${escapeHtml(typeLabel)}</span>
+                <span class="template-card-count">${escapeHtml(itemCount)}</span>
+                <span class="template-card-tenant">${renderTenantBadge(template.tenant_id)}</span>
+                <p class="template-card-description">${escapeHtml(template.description)}</p>
+                <div class="template-card-actions">
+                  <button class="secondary-button" type="button"
+                    data-template-preview="${escapeHtml(template.key)}"
+                    title="웹에서 미리보기">🔍 미리보기</button>
+                  <button class="secondary-button" type="button"
+                    data-template-download="${escapeHtml(template.key)}"
+                    title="${escapeHtml(template.name)} Excel 다운로드">↓ Excel</button>
+                </div>
+              </div>`;
+          }).join("")}
         </div>
-      </div>`;
-    };
-
-    const html = METHOD_GROUPS.map((group) => {
-      const groupTemplates = state.templates.filter((t) => group.types.includes(t.project_type));
-      if (!groupTemplates.length) return "";
-      return `
-      <div class="tpl-method-group">
-        <div class="tpl-method-header">
-          <span class="tpl-method-icon">${group.icon}</span>
-          <span class="tpl-method-label" style="color:${group.color}">${group.label}</span>
-          <span class="tpl-method-count">${groupTemplates.length}종</span>
-        </div>
-        ${groupTemplates.map(makeCard).join("")}
-      </div>`;
-    }).join("");
-
-    templateList.innerHTML = html ||
-      `<div class="wbs-board-empty"><strong>등록된 표준 WBS 없음</strong><span>API 연결 후 자동으로 불러옵니다.</span></div>`;
+      </section>
+    `).join("");
   }
 
   /* ── 일반 WBS (프로젝트별) 목록 ── */
   renderCustomWbsList();
 }
+
 
 function renderCustomWbsList() {
   const container = document.querySelector("#customWbsList");
@@ -272,36 +245,48 @@ function renderCustomWbsList() {
     return;
   }
 
-  container.innerHTML = projects.map((p) => {
-    const wbsCount = p.id && state.wbsPlanProjectId === p.id ? state.wbsPlanRows.length : null;
-    const countText = wbsCount != null ? `WBS ${wbsCount}개 항목` : "";
-    const meta = p.metadata || {};
-    const desc = [
-      escapeHtml(projectTypeLabel(p.template_key)),
-      countText ? escapeHtml(countText) : null,
-    ].filter(Boolean).join(" · ");
-    return `
-      <div class="template-card">
-        <div class="template-card-info">
-          <strong>${escapeHtml(p.name)}</strong>
-          <span>${desc}</span>
-          ${meta.description ? `<span class="tpl-sep">|</span><p>${escapeHtml(meta.description)}</p>` : ""}
+  const sortedProjects = [...projects].sort(compareProjectsForWbsList);
+  const groups = groupByDeliveryMode(sortedProjects, projectDeliveryMode);
+  container.innerHTML = groups.map(({ mode, items }) => `
+    <section class="wbs-mode-group mode-${mode}" aria-label="${escapeHtml(deliveryModeLabel(mode))} 일반 WBS">
+      <div class="wbs-mode-header">
+        ${renderDeliveryModeBadge(mode, "mode-large")}
+        <div>
+          <span>${escapeHtml(DELIVERY_MODE_DESCRIPTIONS[mode] || "")}</span>
         </div>
-        <span class="status-pill ${statusClass(p.status)}" style="flex-shrink:0">${statusLabel(p.status)}</span>
-        <div style="display:flex;gap:5px;flex-shrink:0">
-          <button class="secondary-button u-btn-xs" type="button"
-            data-custom-wbs-preview="${escapeHtml(p.id || "")}"
-            ${p.id ? "" : "disabled"}
-           
-            title="${escapeHtml(p.name)} WBS 미리보기">🔍 미리보기</button>
-          <button class="secondary-button u-btn-xs" type="button"
-            data-custom-wbs-upload="${escapeHtml(p.id || "")}"
-            ${(p.id && ["Draft","Review","Rejected"].includes(p.status) && canMutateWork()) ? "" : "disabled"}
-           >↑ Excel</button>
-        </div>
-      </div>`;
-  }).join("");
+        <em>${items.length}개 프로젝트</em>
+      </div>
+      <div class="template-mode-list">
+        ${items.map((p) => {
+          const mode = projectDeliveryMode(p);
+          const wbsCount = p.id && state.wbsPlanProjectId === p.id ? state.wbsPlanRows.length : null;
+          const countText = wbsCount != null ? `WBS ${wbsCount}개` : "-";
+          const meta = p.metadata || {};
+          return `
+            <div class="template-card template-card-custom mode-${mode}">
+              ${renderDeliveryModeBadge(mode)}
+              <strong class="template-card-title">${escapeHtml(p.name)}</strong>
+              <span class="template-card-type">${escapeHtml(projectTemplateLabel(p))}</span>
+              <span class="template-card-count">${escapeHtml(countText)}</span>
+              <span class="template-card-tenant">${renderTenantBadge(p.tenant_id)}</span>
+              <p class="template-card-description">${escapeHtml(meta.description || "-")}</p>
+              <span class="status-pill ${statusClass(p.status)}" style="flex-shrink:0">${statusLabel(p.status)}</span>
+              <div class="template-card-actions">
+                <button class="secondary-button" type="button"
+                  data-custom-wbs-preview="${escapeHtml(p.id || "")}"
+                  ${p.id ? "" : "disabled"}
+                  title="${escapeHtml(p.name)} WBS 미리보기">🔍 미리보기</button>
+                <button class="secondary-button" type="button"
+                  data-custom-wbs-upload="${escapeHtml(p.id || "")}"
+                  ${(p.id && ["Draft","Review","Rejected"].includes(p.status) && canMutateWork()) ? "" : "disabled"}>↑ Excel</button>
+              </div>
+            </div>`;
+        }).join("")}
+      </div>
+    </section>
+  `).join("");
 }
+
 
 /* 일반 WBS 목록에서 빠른 업로드 (선택 프로젝트 → Excel 업로드 탭 이동) */
 
@@ -362,4 +347,100 @@ async function openProjectWbsPreview(projectId) {
     document.querySelector("#templateDrawerContent").innerHTML =
       `<p style="color:var(--red);padding:16px">${escapeHtml(error.message)}</p>`;
   }
+}
+
+/* ── origin/main 이식: renderAuthState 의존 헬퍼 ── */
+function toggleNavAndPanel(hash, allowed) {
+  const link = document.querySelector(`.nav-list a[href="${hash}"]`);
+  const panel = document.querySelector(hash);
+  if (link) link.hidden = !allowed;
+  if (panel) panel.hidden = !allowed;
+}
+
+/* ── origin/main 이식: renderTemplates 의존 헬퍼 ── */
+const DELIVERY_MODE_LABELS = {
+  waterfall: "Waterfall",
+  agile: "Agile",
+  hybrid: "Hybrid",
+};
+
+const DELIVERY_MODE_ORDER = ["waterfall", "agile", "hybrid"];
+
+const DELIVERY_MODE_DESCRIPTIONS = {
+  waterfall: "단계형 WBS, 가중치, 일정, 산출물 중심",
+  agile: "Backlog, Sprint, Story Point 중심",
+  hybrid: "상위 WBS 기준선과 Sprint 실행 연결",
+};
+
+const TEMPLATE_KEY_ORDER = ["si-standard", "migration-data", "maintenance", "agile-standard", "hybrid-standard"];
+
+const TEMPLATE_TYPE_ORDER = ["System Integration", "Data Migration", "Maintenance", "Agile", "Hybrid", "Uploaded"];
+
+function deliveryModeLabel(mode) {
+  return DELIVERY_MODE_LABELS[mode] || mode || "Waterfall";
+}
+function orderedIndex(list, value) {
+  const index = list.indexOf(value);
+  return index === -1 ? list.length : index;
+}
+function templateSortRank(template) {
+  const key = template?.key || template?.template_key || "";
+  const keyRank = orderedIndex(TEMPLATE_KEY_ORDER, key);
+  if (keyRank !== TEMPLATE_KEY_ORDER.length) return keyRank;
+  return TEMPLATE_KEY_ORDER.length + orderedIndex(TEMPLATE_TYPE_ORDER, template?.project_type || "");
+}
+function compareTemplates(a, b) {
+  const rankDiff = templateSortRank(a) - templateSortRank(b);
+  if (rankDiff) return rankDiff;
+  return (a.name || a.key || "").localeCompare(b.name || b.key || "", "ko");
+}
+function renderDeliveryModeBadge(mode, extraClass = "") {
+  const normalized = DELIVERY_MODE_ORDER.includes(mode) ? mode : "waterfall";
+  const className = `delivery-mode-badge mode-${normalized} ${extraClass}`.trim();
+  return `<span class="${escapeHtml(className)}">${escapeHtml(deliveryModeLabel(normalized))}</span>`;
+}
+function groupByDeliveryMode(items, modeGetter) {
+  return DELIVERY_MODE_ORDER
+    .map((mode) => ({
+      mode,
+      items: items.filter((item) => modeGetter(item) === mode),
+    }))
+    .filter((group) => group.items.length);
+}
+function setWbsListTab(tabId) {
+  const nextTab = tabId === "custom" ? "custom" : "standard";
+  state.wbsListTab = nextTab;
+  document.querySelectorAll("[data-wbs-list-tab]").forEach((btn) => {
+    const isActive = btn.dataset.wbsListTab === nextTab;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  document.querySelectorAll("[data-wbs-list-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.wbsListPanel !== nextTab;
+  });
+}
+
+/* ── origin/main 이식: renderCustomWbsList 의존 헬퍼 ── */
+function deliveryModeOrder(mode) {
+  const index = DELIVERY_MODE_ORDER.indexOf(mode);
+  return index === -1 ? DELIVERY_MODE_ORDER.length : index;
+}
+function compareProjectsForWbsList(a, b) {
+  const modeDiff = deliveryModeOrder(projectDeliveryMode(a)) - deliveryModeOrder(projectDeliveryMode(b));
+  if (modeDiff) return modeDiff;
+  const templateDiff = orderedIndex(TEMPLATE_KEY_ORDER, a.template_key || "") - orderedIndex(TEMPLATE_KEY_ORDER, b.template_key || "");
+  if (templateDiff) return templateDiff;
+  return (a.name || "").localeCompare(b.name || "", "ko");
+}
+function projectTemplateLabel(project) {
+  const template = state.templates.find((t) => t.key === project?.template_key)
+    || fallbackTemplates.find((t) => t.key === project?.template_key);
+  if (template) return projectTypeLabel(template.project_type);
+  return projectTypeLabel(project?.template_key);
+}
+function currentWorkboardProject() {
+  return state.projects.find((project) => project.id === state.workboardProjectId) || null;
+}
+function projectDeliveryMode(project = currentWorkboardProject()) {
+  return project?.delivery_mode || project?.metadata?.delivery_mode || "waterfall";
 }

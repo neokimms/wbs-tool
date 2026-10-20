@@ -35,9 +35,13 @@ function renderAll() {
   renderRisksPanel();
 }
 
-async function loadData() {
+async function loadData({ tenantId = state.currentTenantId } = {}) {
+  const runId = (state.loadDataRunId || 0) + 1;
+  state.loadDataRunId = runId;
+  const isCurrentRun = () => runId === state.loadDataRunId && tenantId === state.currentTenantId;
+  showAppSkeletons();
   try {
-    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs, users, userGroups, auditEvents, settings, risks, issues] = await Promise.all([
+    const [dashboard, templates, projects, approvals, pmPreflight, operationsHealth, importJobs, users, userGroups, auditEvents, settings, projectPolicy, risks, issues, myWorkItems, announcements] = await Promise.all([
       request("/api/dashboard"),
       request("/api/templates"),
       request("/api/projects"),
@@ -49,9 +53,14 @@ async function loadData() {
       canManageUsers() ? request("/api/user-groups") : Promise.resolve([]),
       canViewAudit() ? request("/api/audit-events?limit=30") : Promise.resolve([]),
       canViewSettings() ? request("/api/settings") : Promise.resolve(fallbackSettings),
+      canViewSettings() ? request("/api/project-operation-policy") : Promise.resolve({ ...fallbackProjectOperationPolicy, tenant_id: state.currentTenantId || "default" }),
       request("/api/risks").catch(() => []),
       request("/api/issues").catch(() => []),
+      request("/api/me/work-items").catch(() => []),
+      request("/api/announcements").catch(() => []),
     ]);
+
+    if (!isCurrentRun()) return;
 
     state.dashboard = dashboard;
     state.templates = templates;
@@ -66,15 +75,21 @@ async function loadData() {
     state.importJobs = importJobs;
     state.risks = risks;
     state.issues = issues;
+    state.announcements = announcements || [];
+    state.myWorkItems = (myWorkItems || []).map((row) => ({ ...row, metadata: normalizeTaskMetadata(row.metadata) }));
     loadNotifications();
     startNotifPolling();
     state.users = users;
     state.userGroups = userGroups;
+    refreshUserDatalist();
     state.auditEvents = auditEvents;
     state.settings = settings;
+    state.projectOperationPolicy = projectPolicy || { ...fallbackProjectOperationPolicy, tenant_id: state.currentTenantId || "default" };
     try {
       state.templateVersions = await request(`/api/templates/${encodeURIComponent(defaultTemplateKey())}/versions?limit=8`);
+      if (!isCurrentRun()) return;
     } catch (error) {
+      if (!isCurrentRun()) return;
       state.templateVersions = [];
     }
     state.selectedImportJobId = importJobs.some((job) => job.id === state.selectedImportJobId)
@@ -85,7 +100,13 @@ async function loadData() {
       ? state.selectedProjectId
       : projects[0]?.id || null;
     if (state.selectedProjectId) {
-      await loadProjectPlan(state.selectedProjectId, { render: false });
+      try {
+        await loadProjectPlan(state.selectedProjectId, { render: false });
+      } catch (error) {
+        state.projectPlan = null;
+        state.wbsPlanRows = [];
+      }
+      if (!isCurrentRun()) return;
     } else {
       state.projectPlan = null;
     }
@@ -94,16 +115,34 @@ async function loadData() {
       ? currentSyncProjectId
       : projects[0]?.id || null;
     if (syncProjectId) {
-      await loadSyncRuns(syncProjectId, { render: false });
+      try {
+        await loadSyncRuns(syncProjectId, { render: false });
+      } catch (error) {
+        state.syncRuns = [];
+      }
+      if (!isCurrentRun()) return;
     } else {
       state.syncRuns = [];
     }
   } catch (error) {
+    if (!isCurrentRun()) return;
+    const tenantAccessError = /tenant|테넌트|assigned/i.test(error.message || "");
     state.apiConnected = false;
-    state.projects = state.projects.length ? state.projects : fallbackProjects;
-    state.dashboard.metrics.projects = state.projects.length;
-    state.dashboard.metrics.templates = state.templates.length;
-    state.dashboard.metrics.pending_approvals = state.approvals.filter((approval) => approval.status === "Pending").length;
+    if (tenantAccessError) {
+      state.projects = [];
+      state.approvals = [];
+      state.risks = [];
+      state.issues = [];
+      state.myWorkItems = [];
+      state.projectPlan = null;
+      state.selectedProjectId = null;
+      state.dashboard = createDashboardState();
+    } else {
+      state.projects = state.projects.length ? state.projects : fallbackProjects;
+      state.dashboard.metrics.projects = state.projects.length;
+      state.dashboard.metrics.templates = state.templates.length;
+      state.dashboard.metrics.pending_approvals = state.approvals.filter((approval) => approval.status === "Pending").length;
+    }
     state.operationsHealth = {
       ...fallbackOperationsHealth,
       status: "critical",
@@ -115,11 +154,16 @@ async function loadData() {
     state.users = [];
     state.userGroups = [];
     state.auditEvents = [];
+    state.myWorkItems = [];
     state.settings = fallbackSettings;
+    state.projectOperationPolicy = { ...fallbackProjectOperationPolicy, tenant_id: state.currentTenantId || "default" };
+  } finally {
+    if (isCurrentRun()) hideAppSkeletons();
   }
 
-  renderAll();
+  if (isCurrentRun()) renderAll();
 }
+
 
 function openProjectDialog() {
   const dialog = document.querySelector("#projectDialog");
@@ -373,10 +417,10 @@ async function decideApproval(approvalId, action) {
     if (action === "approve" && approval.auto_sync) {
       const sync = approval.auto_sync;
       if (sync.triggered && !sync.error) {
-        const msg = `✅ 승인 완료 + OpenProject 자동 동기화 (${sync.created ?? 0}개 작업패키지 생성)`;
+        const msg = `✅ 승인 완료 + 외부 도구 기준선 자동 반영 (${sync.created ?? 0}개 작업 항목 생성)`;
         showAutoSyncToast(msg, "success");
       } else if (sync.triggered && sync.error) {
-        showAutoSyncToast(`✅ 승인 완료 (OP 자동 동기화 실패: ${sync.error.slice(0,60)})`, "warn");
+        showAutoSyncToast(`✅ 승인 완료 (외부 기준선 자동 반영 실패: ${sync.error.slice(0,60)})`, "warn");
       } else if (!sync.triggered) {
         // OP 미연결 시 → 토스트 없음 (정상)
       }
@@ -390,6 +434,7 @@ async function decideApproval(approvalId, action) {
     });
   }
 }
+
 
 /* 자동 동기화 결과 토스트 알림 */
 function showAutoSyncToast(message, type = "success") {
@@ -487,6 +532,7 @@ async function authenticatedDownload(url, filename) {
     alert(`Excel 다운로드 실패: ${error.message}`);
   }
 }
+
 
 
 /* WBS 계획 패널용: 선택 프로젝트의 템플릿 Excel 다운로드 */
@@ -898,4 +944,74 @@ function projectOperationPolicy() {
     ...(state.projectOperationPolicy || {}),
     tenant_id: state.projectOperationPolicy?.tenant_id || state.currentTenantId || "default",
   };
+}
+
+/* ── origin/main 이식: loadData 의존 헬퍼 ── */
+function createDashboardState(metricOverrides = {}) {
+  return {
+    metrics: {
+      projects: 0,
+      templates: fallbackTemplates.length,
+      pending_approvals: 0,
+      preview_imports: 0,
+      risk_count: 0,
+      issue_count: 0,
+      portfolio_spi: null,
+      openproject_sync: "ready",
+      database: "PostgreSQL 17",
+      ...metricOverrides,
+    },
+    status_distribution: [],
+    latest_projects: [],
+    latest_approvals: [],
+    project_kpis: [],
+    status_heatmap: [],
+    risk_hotspots: [],
+  };
+}
+function skeletonRows(columns = 4, rows = 4) {
+  return Array.from({ length: rows }, () => `
+    <tr class="skeleton-row">
+      ${Array.from({ length: columns }, () => `<td><div class="skeleton-cell"></div></td>`).join("")}
+    </tr>
+  `).join("");
+}
+function showAppSkeletons() {
+  if (!state.currentUser) return;
+  document.body.dataset.loading = "true";
+  const projectRows = document.querySelector("#projectRows");
+  if (projectRows) projectRows.innerHTML = skeletonRows(8, 5);
+
+  const approvals = document.querySelector("#approvalPipelineList");
+  if (approvals) {
+    approvals.innerHTML = `
+      <div class="skeleton-stack">
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-line short"></div>
+      </div>`;
+  }
+
+  const importHistory = document.querySelector("#importHistoryList");
+  if (importHistory) {
+    importHistory.innerHTML = `
+      <div class="skeleton-stack">
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line short"></div>
+      </div>`;
+  }
+}
+function hideAppSkeletons() {
+  delete document.body.dataset.loading;
+}
+function normalizeTaskMetadata(metadata) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? { ...metadata } : {};
+}
+function refreshUserDatalist() {
+  const dl = document.querySelector("#wbsUserDatalist");
+  if (!dl) return;
+  dl.innerHTML = (state.users || []).map((u) =>
+    `<option value="${escapeHtml(u.display_name)}">${escapeHtml(u.email || "")}</option>`
+  ).join("");
 }

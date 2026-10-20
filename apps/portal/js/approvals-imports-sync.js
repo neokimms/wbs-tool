@@ -87,11 +87,11 @@ function renderApprovalPipelineCard(project, approval) {
     footerHtml = `<div class="pipe-footer-meta"><span>WBS 등록 후 승인 요청 가능</span></div>`;
   }
 
-  /* 동기화 배지 (OpenProject 연동 상태) */
+  /* 기준선 반영 배지 (외부 연동 상태) */
   const isSynced  = project.status === "Synced" || project.status === "Closed";
   const hasSyncId = Boolean(project.openproject_project_id);
   const syncBadge = (isSynced || hasSyncId)
-    ? `<span class="pipe-sync-badge ${isSynced ? "synced" : "linked"}">🔗 ${isSynced ? "OpenProject 동기화 완료" : "OpenProject 연결됨"}</span>`
+    ? `<span class="pipe-sync-badge ${isSynced ? "synced" : "linked"}">🔗 ${isSynced ? "기준선 반영 완료" : "외부 연동 연결됨"}</span>`
     : "";
 
   return `
@@ -108,6 +108,7 @@ function renderApprovalPipelineCard(project, approval) {
       ${footerHtml ? `<div class="pipe-footer">${footerHtml}</div>` : ""}
     </div>`;
 }
+
 
 /* ── 승인 이력 공통 렌더 (뷰에 따라 파이프라인 / 테이블 분기) ── */
 function renderApprovals() {
@@ -407,6 +408,15 @@ function renderProjectTemplateSelect(preserveSelection = true) {
 function renderSyncProjectSelect() {
   const selector = document.querySelector("#syncProjectSelect");
   const projects = state.projects.filter((project) => project.id);
+  if (!externalIntegrationEnabled()) {
+    selector.innerHTML = '<option value="">외부 연동 사용 안 함</option>';
+    selector.disabled = true;
+    ["#syncPreflightButton", "#syncDryRunButton", "#syncRunButton"].forEach((id) => {
+      const el = document.querySelector(id);
+      if (el) el.disabled = true;
+    });
+    return;
+  }
   const selectedValue = state.userSelectedSyncProject && selector.value ? selector.value : projects[0]?.id || "";
 
   selector.innerHTML = projects.length
@@ -421,7 +431,7 @@ function renderSyncProjectSelect() {
   const canMutate   = canMutateWork();
   const canSyncAction = hasProject && canMutate;
 
-  // 프로젝트 상태 확인 — Approved만 실 동기화 허용
+  // 프로젝트 상태 확인 — Approved만 실제 기준선 반영 허용
   const selectedProject = state.projects.find((p) => p.id === selector.value);
   const projectStatus   = selectedProject?.status || "";
   const isApproved      = projectStatus === "Approved";
@@ -435,23 +445,47 @@ function renderSyncProjectSelect() {
   document.querySelector("#syncDryRunButton").disabled    = !canSyncAction;
   document.querySelector("#syncRunButton").disabled       = !canActualSync;
 
-  // 동기화 버튼 tooltip — 상태에 따라 안내 메시지 변경
-  let syncTitle = "OpenProject 작업 패키지를 생성합니다";
+  // 기준선 반영 버튼 tooltip — 상태에 따라 안내 메시지 변경
+  let syncTitle = "외부 도구에 기준선 작업 항목을 반영합니다";
   if (!state.pmPreflight?.ready_for_actual_sync) {
     syncTitle = "점검 버튼을 클릭해 연계 상태를 확인하세요";
   } else if (isSynced) {
-    syncTitle = `프로젝트 상태가 '${statusLabel(projectStatus)}'입니다. 동기화가 이미 완료된 프로젝트입니다.`;
+    syncTitle = `프로젝트 상태가 '${statusLabel(projectStatus)}'입니다. 기준선 반영이 이미 완료된 프로젝트입니다.`;
   } else if (!isApproved && hasProject) {
-    syncTitle = `프로젝트 상태가 '${statusLabel(projectStatus)}'입니다. 승인(Approved) 상태에서만 동기화 가능합니다.`;
+    syncTitle = `프로젝트 상태가 '${statusLabel(projectStatus)}'입니다. 승인(Approved) 상태에서만 기준선 반영이 가능합니다.`;
   }
   document.querySelector("#syncRunButton").title = syncTitle;
 }
+
 
 function selectedSyncProjectId() {
   return document.querySelector("#syncProjectSelect").value;
 }
 
 function renderSyncPanel() {
+  if (!externalIntegrationEnabled()) {
+    document.querySelector("#syncEngineStatus").textContent = "사용 안 함";
+    document.querySelector("#syncEngineStatus").className = "status-pill attention";
+    document.querySelector("#syncMode").textContent = "내부 WBS Only · 선택형 외부 연동 꺼짐";
+    document.querySelector("#syncState").textContent = "작업 현황, 자원 가동율, 주간 보고서는 내부 WBS 기준으로 운영됩니다.";
+    document.querySelector("#syncPendingRows").textContent = "-";
+    document.querySelector("#syncChecks").innerHTML = `
+      <article class="sync-check">
+        <div>
+          <strong>외부 연동 비활성</strong>
+          <small>설정 토글을 켜면 기준선 반영과 외부 상태 가져오기를 다시 사용할 수 있습니다.</small>
+        </div>
+        <span class="status-pill attention">선택</span>
+      </article>`;
+    document.querySelector("#syncPayloadPreview").textContent = "외부 연동을 사용하지 않는 동안 payload 생성과 실제 기준선 반영은 실행하지 않습니다.";
+    ["#syncPreflightButton", "#syncDryRunButton", "#syncRunButton", "#syncPullButton", "#opInstanceCheckBtn"].forEach((selector) => {
+      const el = document.querySelector(selector);
+      if (el) el.disabled = true;
+    });
+    renderSyncedProjectsList();
+    renderOpInstanceSection();
+    return;
+  }
   const preflight = state.pmPreflight || fallbackPreflight;
   const stateValue = preflight.state || "dry_run_only";
   const status = document.querySelector("#syncEngineStatus");
@@ -465,7 +499,7 @@ function renderSyncPanel() {
   const selProj   = state.projects.find((p) => p.id === selectedSyncProjectId());
   const projState = selProj ? ` · 프로젝트: ${statusLabel(selProj.status)}` : "";
   document.querySelector("#syncState").textContent =
-    (preflight.ready_for_actual_sync ? "실제 동기화 준비" : "모의 실행 모드") + projState;
+    (preflight.ready_for_actual_sync ? "실제 기준선 반영 준비" : "모의 반영 모드") + projState;
 
   const summary = state.syncDetail?.summary;
   const rowSummary = summary?.pending_work_packages !== undefined
@@ -480,7 +514,7 @@ function renderSyncPanel() {
     ? `
       <article class="sync-check">
         <div>
-          <strong>동기화 요청</strong>
+          <strong>기준선 반영 요청</strong>
           <small>${escapeHtml(preflightMessageLabel(state.syncDetail.error))}</small>
         </div>
         <span class="status-pill critical">오류</span>
@@ -506,7 +540,7 @@ function renderSyncPanel() {
   const preview = payload
     ? JSON.stringify(payload, null, 2)
     : state.syncDetail?.status
-      ? `${statusLabel(state.syncDetail.status)}: 계획 행 ${summary?.total_rows ?? 0}개`
+      ? `${statusLabel(state.syncDetail.status)}: 기준선 행 ${summary?.total_rows ?? 0}개`
       : "샘플 payload 대기";
   document.querySelector("#syncPayloadPreview").textContent = preview;
 
@@ -516,6 +550,7 @@ function renderSyncPanel() {
   // 온프레미스 인스턴스 섹션 업데이트
   renderOpInstanceSection();
 }
+
 
 function renderSyncPullSection() {
   const projectId = selectedSyncProjectId();
@@ -802,16 +837,21 @@ function renderAuditPanel() {
   if (auditCount) auditCount.textContent = filtered.length;
 
   auditList.innerHTML = filtered.length
-    ? filtered.map((event) => `
+    ? filtered.map((event) => {
+        const detail = auditDetailLine(event);
+        return `
         <article class="audit-event">
           <div>
             <strong>${escapeHtml(auditSummaryLabel(event.summary))}</strong>
             <small>${escapeHtml(eventTypeLabel(event.event_type))} · ${escapeHtml(event.actor_email || "시스템")}</small>
+            ${detail ? `<small class="audit-event-detail">${escapeHtml(detail)}</small>` : ""}
           </div>
           <span>${escapeHtml(formatTimestamp(event.created_at))}</span>
-        </article>`).join("")
+        </article>`;
+      }).join("")
     : `<article class="audit-event empty-run"><div><strong>이벤트 없음</strong><small>해당 분류의 감사 이력이 없습니다.</small></div></article>`;
 }
+
 
 /* ── origin/main 이식: renderProjectTemplateSelect 의존 헬퍼 ── */
 function templateDeliveryMode(template) {
@@ -832,4 +872,39 @@ function syncProjectDeliveryModeWithTemplate() {
   const modeSelector = document.querySelector("#projectDeliveryModeInput");
   if (!templateSelector || !modeSelector) return;
   modeSelector.value = templateDeliveryModeByKey(templateSelector.value);
+}
+
+/* ── origin/main 이식: renderAuditPanel 의존 헬퍼 ── */
+function auditDetailLine(event) {
+  const meta = event.metadata || {};
+
+  if (event.event_type === "project_wbs.import_applied") {
+    const added = meta.added || 0;
+    const changed = meta.changed || 0;
+    const removed = meta.removed || 0;
+    if (!added && !changed && !removed) return "";
+
+    const parts = [];
+    if (added)   parts.push(`추가 ${added}건`);
+    if (changed) parts.push(`변경 ${changed}건`);
+    if (removed) parts.push(`삭제 ${removed}건`);
+    let line = parts.join(" · ");
+
+    const items = Array.isArray(meta.diff_items) ? meta.diff_items : [];
+    if (items.length) {
+      const tagFor = (change) => (change === "added" ? "+" : change === "removed" ? "-" : "~");
+      const sample = items
+        .slice(0, 5)
+        .map((it) => `${tagFor(it.change)}${it.code || ""}${it.name ? ` ${it.name}` : ""}`)
+        .join(", ");
+      line += ` (${sample}${items.length > 5 ? " 외" : ""})`;
+    }
+    return line;
+  }
+
+  if (event.event_type === "work_item.updated" && meta.changes) {
+    return meta.changes;
+  }
+
+  return "";
 }
