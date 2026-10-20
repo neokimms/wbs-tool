@@ -91,11 +91,18 @@ function renderSettingsPanel() {
   const engine = state.settings?.pm_engine || state.pmPreflight?.engine || {};
   document.querySelector("#settingsEngineMode").textContent = `${engine.display_name || engineModeLabel(engine.adapter || "openproject")} · ${engineModeLabel(engine.mode || "adapter")}`;
   document.querySelector("#settingsEngineBoundary").textContent = engine.dependency_boundary || "pm-engine-api";
-  document.querySelector("#settingsEngineRuntime").textContent = engine.enabled ? "실제 동기화 허용" : "모의 실행 보호";
+  document.querySelector("#settingsEngineRuntime").textContent = externalIntegrationEnabled()
+    ? (engine.enabled ? "실제 기준선 반영 허용" : "모의 반영 보호")
+    : "외부 연동 사용 안 함";
   document.querySelector("#settingsJsonInput").value = setting ? JSON.stringify(setting.value || {}, null, 2) : "{}";
   document.querySelector("#settingsJsonInput").disabled = !setting || !canManageUsers();
   document.querySelector("#settingsSaveButton").disabled = !setting || !canManageUsers();
   document.querySelector("#settingsStatus").textContent = state.settingsStatus;
+  const externalToggle = document.querySelector("#externalIntegrationToggle");
+  if (externalToggle) {
+    externalToggle.checked = externalIntegrationEnabled();
+    externalToggle.disabled = !canManageUsers();
+  }
 }
 
 /* ── 사용자 가이드 렌더링 ───────────────────────────────────────────── */
@@ -294,7 +301,7 @@ function renderGuidePanel() {
 
   const menuHtml = WBS_GUIDE_MENUS.map((menu) => {
     const isActive = menu.id === viewId;
-    return `<button class="guide-menu-btn ${isActive ? "active" : ""}" type="button" data-guide-view="${escapeHtml(menu.id)}">${escapeHtml(menu.label)}</button>`;
+    return `<button class="guide-menu-btn ${isActive ? "active" : ""}" type="button" role="tab" aria-selected="${isActive ? "true" : "false"}" aria-controls="guideContent" data-guide-view="${escapeHtml(menu.id)}">${escapeHtml(menu.label)}</button>`;
   }).join("");
   document.querySelector("#guideMenu").innerHTML = menuHtml;
 
@@ -320,4 +327,17 @@ function renderGuidePanel() {
   ].filter(Boolean).join("");
 
   document.querySelector("#guideContent").innerHTML = sections;
+}
+
+/* ── origin/main 이식: renderSettingsPanel 의존 헬퍼 ── */
+function pmEngineSettingValue() {
+  const setting = (state.settings?.settings || []).find((item) => item.key === "pm_engine");
+  return setting?.value && typeof setting.value === "object" ? setting.value : {};
+}
+function externalIntegrationEnabled() {
+  const value = pmEngineSettingValue();
+  const engine = state.settings?.pm_engine || state.pmPreflight?.engine || {};
+  if (value.portal_enabled === false || engine.portal_enabled === false) return false;
+  if (["disabled", "none", "internal"].includes(String(value.adapter || engine.adapter || "").toLowerCase())) return false;
+  return true;
 }

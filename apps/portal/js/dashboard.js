@@ -162,6 +162,27 @@ function renderPortfolioFilter() {
   document.querySelectorAll("#portfolioFilter .filter-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.filter === state.portfolioFilter);
   });
+
+  const ownerSelect = document.querySelector("#portfolioOwnerFilter");
+  if (ownerSelect) {
+    const all = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
+    const owners = [...new Set(all.map((p) => p.owner).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+    const current = owners.includes(state.portfolioOwnerFilter) ? state.portfolioOwnerFilter : "";
+    if (state.portfolioOwnerFilter !== current) state.portfolioOwnerFilter = current;
+    ownerSelect.innerHTML = [
+      `<option value="">담당자 전체</option>`,
+      ...owners.map((owner) => `<option value="${escapeHtml(owner)}">${escapeHtml(owner)}</option>`),
+    ].join("");
+    ownerSelect.value = current;
+  }
+
+  document.querySelectorAll("[data-project-sort]").forEach((btn) => {
+    const key = btn.dataset.projectSort;
+    const active = key === state.portfolioSortKey;
+    btn.classList.toggle("active", active);
+    const icon = btn.querySelector("span");
+    if (icon) icon.textContent = active ? (state.portfolioSortDir === "asc" ? "↑" : "↓") : "";
+  });
 }
 
 function renderTemplates() {

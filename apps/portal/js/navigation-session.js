@@ -36,6 +36,7 @@ function updateActiveNavigation(viewId = "dashboard") {
       link.removeAttribute("aria-current");
     }
   });
+  updateTopbarTitle(viewId);
 }
 
 function applyPortalView(hash = "", options = {}) {
@@ -82,11 +83,17 @@ function clearSession(message = "") {
 async function activateSession(session) {
   state.authToken = session.token || state.authToken;
   state.currentUser = session.user;
+  if (session.tenant?.id) {
+    state.currentTenantId = session.tenant.id;
+    state.currentTenant = session.tenant;
+    window.localStorage.setItem(TENANT_ID_KEY, state.currentTenantId);
+  }
   if (session.token) {
     window.localStorage.setItem(AUTH_TOKEN_KEY, session.token);
   }
   document.querySelector("#loginStatus").textContent = "";
   renderAuthState();
+  await loadTenantSwitcher();
   applyPortalView(window.location.hash || "#dashboard", {
     updateHistory: false,
     scrollToTop: false,
@@ -201,3 +208,53 @@ document.querySelector("#passwordDialogClose").addEventListener("click", closePa
 document.querySelector("#passwordCancelButton").addEventListener("click", closePasswordDialog);
 document.querySelector("#passwordForm").addEventListener("submit", changePassword);
 document.querySelector("#createProjectButton").addEventListener("click", openProjectDialog);
+
+/* ── origin/main 이식: updateActiveNavigation 의존 헬퍼 ── */
+function viewLabel(viewId = "dashboard") {
+  const link = navLinks.find((item) => normalizedViewId(item.hash) === viewId);
+  return link?.textContent.trim() || "대시보드";
+}
+function updateTopbarTitle(viewId = "dashboard") {
+  const title = document.querySelector("#topbarTitle");
+  const eyebrow = document.querySelector("#topbarEyebrow");
+  if (eyebrow) eyebrow.textContent = "기업 WBS 플랫폼";
+  if (title) title.textContent = viewLabel(viewId);
+}
+
+/* ── origin/main 이식: activateSession 의존 헬퍼 ── */
+
+function renderTenantSwitcher() {
+  const wrap = document.querySelector("#tenantSwitcher");
+  const select = document.querySelector("#tenantSelect");
+  const badge = document.querySelector("#tenantStatusBadge");
+  if (!wrap || !select || !badge) return;
+  const isAuthenticated = Boolean(state.currentUser && state.authToken);
+  wrap.hidden = !isAuthenticated;
+  if (!isAuthenticated) return;
+
+  const tenants = state.tenants.length
+    ? state.tenants
+    : [{ id: state.currentTenantId || "default", name: state.currentTenantId || "default", status: state.currentTenant?.status || "Active" }];
+  const selectedExists = tenants.some((tenant) => tenant.id === state.currentTenantId);
+  if (!selectedExists) {
+    tenants.unshift({ id: state.currentTenantId || "default", name: state.currentTenantId || "default", status: state.currentTenant?.status || "Active" });
+  }
+  select.innerHTML = tenants.map((tenant) => `
+    <option value="${escapeHtml(tenant.id)}" ${tenant.id === state.currentTenantId ? "selected" : ""}>
+      ${escapeHtml(tenant.name || tenant.id)}${tenant.status === "Suspended" ? " (중지)" : ""}
+    </option>
+  `).join("");
+  const current = tenants.find((tenant) => tenant.id === state.currentTenantId) || tenants[0];
+  badge.textContent = current?.status === "Suspended" ? "중지" : current?.id || state.currentTenantId;
+  badge.classList.toggle("is-suspended", current?.status === "Suspended");
+}
+async function loadTenantSwitcher() {
+  if (!state.authToken) return;
+  try {
+    state.tenants = await request("/api/tenants");
+    state.currentTenant = state.tenants.find((tenant) => tenant.id === state.currentTenantId) || state.currentTenant;
+  } catch (error) {
+    state.tenants = [];
+  }
+  renderTenantSwitcher();
+}

@@ -127,6 +127,8 @@ function openProjectDialog() {
   document.querySelector("#projectFormStatus").textContent = "";
   document.querySelector("#projectStartInput").value = new Date().toISOString().slice(0, 10);
   renderProjectTemplateSelect(false);
+  const modeSelector = document.querySelector("#projectDeliveryModeInput");
+  if (modeSelector) modeSelector.value = projectOperationPolicy().default_delivery_mode || "waterfall";
   dialog.showModal();
   document.querySelector("#projectNameInput").focus();
 }
@@ -144,6 +146,7 @@ async function createProject(event) {
     template_key: document.querySelector("#projectTemplateSelect").value,
     owner: document.querySelector("#projectOwnerInput").value.trim(),
     start_date: document.querySelector("#projectStartInput").value || null,
+    delivery_mode: document.querySelector("#projectDeliveryModeInput")?.value || "waterfall",
     end_date: document.querySelector("#projectEndInput")?.value || null,
     description: document.querySelector("#projectDescInput")?.value.trim() || null,
     client_name: document.querySelector("#projectClientInput")?.value.trim() || null,
@@ -805,7 +808,7 @@ async function dryRunProjectSync() {
   const projectId = selectedSyncProjectId();
   if (!projectId) return;
 
-  document.querySelector("#syncEngineStatus").textContent = "모의 실행";
+  document.querySelector("#syncEngineStatus").textContent = "모의 반영";
   document.querySelector("#syncEngineStatus").className = "status-pill attention";
 
   try {
@@ -830,7 +833,7 @@ async function runProjectSync() {
   const projectId = selectedSyncProjectId();
   if (!projectId || !state.pmPreflight?.ready_for_actual_sync) return;
 
-  document.querySelector("#syncEngineStatus").textContent = "동기화 중";
+  document.querySelector("#syncEngineStatus").textContent = "기준선 반영 중";
   document.querySelector("#syncEngineStatus").className = "status-pill attention";
   document.querySelector("#syncRunButton").disabled = true;
 
@@ -885,4 +888,14 @@ async function pullOpenProjectStatus() {
     if (statusEl) statusEl.textContent = `오류: ${error.message}`;
     if (pullBtn) pullBtn.disabled = false;
   }
+}
+
+/* ── origin/main 이식: openProjectDialog 의존 헬퍼 ── */
+
+function projectOperationPolicy() {
+  return {
+    ...fallbackProjectOperationPolicy,
+    ...(state.projectOperationPolicy || {}),
+    tenant_id: state.projectOperationPolicy?.tenant_id || state.currentTenantId || "default",
+  };
 }

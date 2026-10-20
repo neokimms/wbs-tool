@@ -194,7 +194,11 @@ const PHASE_COLORS = ["#0071e3", "#1f9d55", "#b7791f", "#7356bf", "#d92d20", "#0
 function renderProjects() {
   const all = state.apiConnected ? state.projects : state.projects.length ? state.projects : fallbackProjects;
   const allowedStatuses = PORTFOLIO_FILTER_STATUSES[state.portfolioFilter];
-  const rows = allowedStatuses ? all.filter((p) => allowedStatuses.includes(p.status)) : all;
+  const filteredByStatus = allowedStatuses ? all.filter((p) => allowedStatuses.includes(p.status)) : all;
+  const filteredByOwner = state.portfolioOwnerFilter
+    ? filteredByStatus.filter((p) => (p.owner || "") === state.portfolioOwnerFilter)
+    : filteredByStatus;
+  const rows = [...filteredByOwner].sort(comparePortfolioProjects);
   const canMutate = canMutateWork();
 
   renderPortfolioFilter();
@@ -208,6 +212,7 @@ function renderProjects() {
           : project.status === "Review"
             ? "승인 요청 중"
             : canRequestApproval ? "승인 요청" : "승인 대기";
+        const riCounts = projectRiCounts(project.id);
         return `
           <tr class="${isSelected ? "selected-row" : ""}">
             <td>
@@ -217,8 +222,15 @@ function renderProjects() {
             </td>
             <td>${escapeHtml(project.owner)}</td>
             <td><span class="status-pill ${statusClass(project.status)}">${statusLabel(project.status)}</span></td>
+            <td>${renderTenantBadge(project.tenant_id)}</td>
             <td>${escapeHtml(projectTypeLabel(project.template_key))}</td>
             <td>${escapeHtml(project.start_date || "-")}</td>
+            <td>
+              <div class="ri-count-group">
+                ${riCountButton({ type: "risks", count: riCounts.risks, projectId: project.id, label: "R" })}
+                ${riCountButton({ type: "issues", count: riCounts.issues, projectId: project.id, label: "I" })}
+              </div>
+            </td>
             <td>
               <div class="table-actions">
                 <button class="table-action" type="button"
@@ -231,7 +243,9 @@ function renderProjects() {
             </td>
           </tr>`;
       }).join("")
-    : `<tr class="empty-row"><td colspan="6">${allowedStatuses ? "해당 상태의 프로젝트 없음" : "등록된 프로젝트 없음"}</td></tr>`;
+    : `<tr class="empty-row"><td colspan="8">${
+        allowedStatuses || state.portfolioOwnerFilter ? "조건에 맞는 프로젝트 없음" : "등록된 프로젝트 없음"
+      }</td></tr>`;
 }
 
 function renderProjectPlan() {
@@ -289,8 +303,9 @@ function renderProjectDrawerContent(project) {
     <div class="drawer-section">
       <div class="drawer-actions">
         <button type="button" class="primary-action" data-drawer-action="wbs" data-project-id="${escapeHtml(project.id)}">WBS 관리 열기</button>
+        <button type="button" data-drawer-action="workboard" data-project-id="${escapeHtml(project.id)}">작업 현황</button>
         <button type="button" data-drawer-action="approval" data-project-id="${escapeHtml(project.id)}" ${canRequestApproval ? "" : "disabled"}>승인 요청</button>
-        <button type="button" data-drawer-action="sync" data-project-id="${escapeHtml(project.id)}">OpenProject 연계</button>
+        <button type="button" data-drawer-action="sync" data-project-id="${escapeHtml(project.id)}">외부 연동</button>
       </div>
     </div>
 
@@ -327,7 +342,7 @@ function renderProjectDrawerContent(project) {
           <dd>${escapeHtml(projectTypeLabel(project.template_key))}</dd>
         </dl>
         <dl class="drawer-info-item">
-          <dt>OpenProject</dt>
+          <dt>외부 연동 ID</dt>
           <dd>${project.openproject_project_id ? `#${escapeHtml(project.openproject_project_id)}` : "미연결"}</dd>
         </dl>
       </div>
@@ -376,4 +391,30 @@ function renderProjectDrawerContent(project) {
         : `<p style="font-size:0.84rem;color:var(--text-muted)">승인 이력 없음</p>`}
     </div>
   `;
+}
+
+/* ── origin/main 이식: renderProjects 의존 헬퍼 ── */
+function tenantDisplayName(tenantId) {
+  const id = tenantId || state.currentTenantId || "default";
+  const tenant = state.tenants.find((item) => item.id === id);
+  return tenant?.name || id;
+}
+function renderTenantBadge(tenantId) {
+  const id = tenantId || state.currentTenantId || "default";
+  return `<span class="tenant-inline-badge" title="테넌트 ID: ${escapeHtml(id)}">${escapeHtml(tenantDisplayName(id))}</span>`;
+}
+function comparePortfolioProjects(a, b) {
+  const key = state.portfolioSortKey || "name";
+  const dir = state.portfolioSortDir === "desc" ? -1 : 1;
+  const valueFor = (project) => {
+    if (key === "status") return statusLabel(project.status);
+    if (key === "template_key") return projectTypeLabel(project.template_key);
+    return project[key] || "";
+  };
+  const av = valueFor(a);
+  const bv = valueFor(b);
+  if (key === "start_date") {
+    return ((new Date(av || "1900-01-01")) - (new Date(bv || "1900-01-01"))) * dir;
+  }
+  return String(av).localeCompare(String(bv), "ko") * dir;
 }

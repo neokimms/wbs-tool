@@ -142,6 +142,20 @@ const fallbackSettings = {
   pm_engine: fallbackPreflight.engine,
 };
 
+const TENANT_ID_KEY = "wbs.portal.tenantId";
+
+const fallbackProjectOperationPolicy = {
+  tenant_id: "default",
+  default_delivery_mode: "waterfall",
+  story_point_mode: "numeric",
+  fibonacci_points: [1, 2, 3, 5, 8, 13],
+  sprint_length_policy: "custom",
+  dod_management: "team",
+  default_dod_items: [],
+  openproject_sprint_version_sync: false,
+  metadata: {},
+};
+
 const state = {
   authToken: window.localStorage.getItem(AUTH_TOKEN_KEY),
   currentUser: null,
@@ -238,4 +252,43 @@ const state = {
   noteEditor: null,          // TipTap Editor 인스턴스
   noteSavePending: false,
   noteSaveTimer: null,
+  /* ── origin/main(6/11) 이식 화면 상태 ── */
+  currentTenantId: window.localStorage.getItem(TENANT_ID_KEY) || "default",
+  currentTenant: null,
+  projectOperationPolicy: fallbackProjectOperationPolicy,
+  projectPolicyStatus: "",
+  loadDataRunId: 0,
+  portfolioSortKey: "name",
+  portfolioSortDir: "asc",
+  portfolioTab: "list",     // "list" | "cr" — 프로젝트 현황 전사 탭
+  portfolioCr: null,        // /api/change-requests 캐시
+  portfolioCrFilter: "all", // "all" | "open" | "approved" | "rejected"
+  wbsListTab: "standard",   // "standard" | "custom"
+  opGanttDrag: null,
+  opGanttEditMessage: "",
+  opGanttEditStatus: "idle",
+  workboardProjectId: null,
+  workboardLoadedProjectId: null,
+  workboardRows: [],
+  myWorkItems: [],
+  workboardView: "mine",
+  workboardSelectedCode: null,
+  workboardLoading: false,
+  workboardStatusMessage: "",
+  workboardDragKey: null,
+  workboardGanttDrag: null,
+  agileSprints: [],
+  agileItems: [],
+  agileMetrics: null,
+  agileLoadedProjectId: null,
+  agileLoading: false,
+  agileSelectedSprintId: "",
+  agileDragKey: null,
+  announcements: [],        // 공지사항 게시판
+  announceFilter: "all",    // "all" | "tenant" | "project"
+  announceEditId: null,      // 수정 중인 공지 id (null=신규)
+  // P3
+  pdMembersList: null,       // 해당 프로젝트의 멤버 목록
+  pdMemberCandidates: null,  // 추가 가능한 사용자 후보 목록
+  resourceView: "workload",  // workload | accounts | capacity,
 };

@@ -396,11 +396,12 @@ function renderProjectTemplateSelect(preserveSelection = true) {
   const selector = document.querySelector("#projectTemplateSelect");
   const selectedValue = preserveSelection && selector.value ? selector.value : defaultTemplateKey();
   selector.innerHTML = state.templates
-    .map((template) => `<option value="${template.key}">${escapeHtml(template.name)}</option>`)
+    .map((template) => `<option value="${template.key}">${escapeHtml(template.name)} · ${escapeHtml(projectTypeLabel(template.project_type))}</option>`)
     .join("");
   selector.value = state.templates.some((template) => template.key === selectedValue)
     ? selectedValue
     : defaultTemplateKey();
+  syncProjectDeliveryModeWithTemplate();
 }
 
 function renderSyncProjectSelect() {
@@ -810,4 +811,25 @@ function renderAuditPanel() {
           <span>${escapeHtml(formatTimestamp(event.created_at))}</span>
         </article>`).join("")
     : `<article class="audit-event empty-run"><div><strong>이벤트 없음</strong><small>해당 분류의 감사 이력이 없습니다.</small></div></article>`;
+}
+
+/* ── origin/main 이식: renderProjectTemplateSelect 의존 헬퍼 ── */
+function templateDeliveryMode(template) {
+  if (!template) return "waterfall";
+  const key = String(template.key || template.template_key || "").toLowerCase();
+  const projectType = String(template.project_type || "").toLowerCase();
+  if (projectType === "agile" || key.startsWith("agile")) return "agile";
+  if (projectType === "hybrid" || key.startsWith("hybrid")) return "hybrid";
+  return "waterfall";
+}
+function templateDeliveryModeByKey(templateKey) {
+  const template = state.templates.find((t) => t.key === templateKey)
+    || fallbackTemplates.find((t) => t.key === templateKey);
+  return templateDeliveryMode(template);
+}
+function syncProjectDeliveryModeWithTemplate() {
+  const templateSelector = document.querySelector("#projectTemplateSelect");
+  const modeSelector = document.querySelector("#projectDeliveryModeInput");
+  if (!templateSelector || !modeSelector) return;
+  modeSelector.value = templateDeliveryModeByKey(templateSelector.value);
 }

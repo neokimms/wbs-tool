@@ -62,7 +62,7 @@ function formatTimestamp(value) {
 function syncStateLabel(value) {
   const labels = {
     ready: "준비",
-    dry_run_only: "모의 실행",
+    dry_run_only: "모의 반영",
     auth_failed: "인증 오류",
     offline: "오프라인",
     blocked: "차단",
@@ -95,13 +95,13 @@ function statusLabel(status) {
     Approved: "승인",
     Rejected: "반려",
     Closed: "종료",
-    Synced: "동기화 완료",
+    Synced: "기준선 반영 완료",
     Preview: "미리보기",
     Applied: "반영 완료",
     Accepted: "정상",
     Pending: "대기",
     Locked: "잠김",
-    DryRun: "모의 실행",
+    DryRun: "모의 반영",
     Blocked: "차단",
     Error: "오류",
     Preflight: "사전 점검",
@@ -161,6 +161,8 @@ function projectTypeLabel(value) {
     "System Integration": "SI 구축",
     "Data Migration": "데이터 이관",
     Maintenance: "유지보수",
+    Agile: "Agile",
+    Hybrid: "Hybrid",
     Uploaded: "업로드",
   };
   return labels[value] || value || "-";
@@ -183,7 +185,7 @@ function itemTypeLabel(value) {
 
 function engineModeLabel(value) {
   const labels = {
-    openproject: "OpenProject",
+    openproject: "외부 연동",
     mock: "모의 엔진",
     "ce-api-adapter": "CE API 어댑터",
     adapter: "어댑터",
@@ -193,8 +195,8 @@ function engineModeLabel(value) {
 
 function syncModeLabel(value) {
   const labels = {
-    dry_run: "모의 실행",
-    actual: "실제 실행",
+    dry_run: "모의 반영",
+    actual: "실제 반영",
     history: "이력 조회",
   };
   return labels[value] || value || "-";
@@ -206,10 +208,10 @@ function syncCheckLabel(value) {
     pm_engine_adapter: "PM 엔진 어댑터",
     external_api: "외부 API",
     api_root: "API 루트",
-    sync_enabled: "동기화 실행 설정",
+    sync_enabled: "기준선 반영 설정",
     api_token: "API 토큰",
     authenticated_user: "인증 사용자",
-    sync_request: "동기화 요청",
+    sync_request: "기준선 반영 요청",
   };
   return labels[value] || operationCheckLabel(value);
 }
@@ -222,8 +224,8 @@ function operationCheckLabel(value) {
     "Project portfolio": "프로젝트 포트폴리오",
     "PMO approval queue": "PMO 승인 대기열",
     "Excel preview queue": "Excel 미리보기 대기열",
-    "OpenProject preflight": "OpenProject 사전 점검",
-    "Sync audit trail": "동기화 감사 이력",
+    "OpenProject preflight": "외부 연동 사전 점검",
+    "Sync audit trail": "기준선 반영 감사 이력",
     "Baseline lock": "기준선 잠금",
     "Access control": "접근 제어",
     "Settings registry": "설정 레지스트리",
@@ -245,10 +247,10 @@ function preflightMessageLabel(value) {
   return String(value)
     .replace("Mock PM engine adapter is ready for local product validation", "로컬 제품 검증용 모의 PM 엔진 어댑터 준비 완료")
     .replace("OpenProject API calls are skipped by the mock adapter", "모의 어댑터에서는 OpenProject API 호출 생략")
-    .replace("Actual OpenProject sync is enabled", "실제 OpenProject 동기화 실행 허용")
-    .replace("Actual OpenProject sync is disabled; dry-run and planning endpoints remain available", "실제 OpenProject 동기화는 비활성화되어 있으며 모의 실행과 계획 기능은 사용 가능")
+    .replace("Actual OpenProject sync is enabled", "외부 도구 실제 기준선 반영 허용")
+    .replace("Actual OpenProject sync is disabled; dry-run and planning endpoints remain available", "외부 도구 실제 기준선 반영은 비활성화되어 있으며 모의 반영과 계획 기능은 사용 가능")
     .replace("OPENPROJECT_API_TOKEN is configured", "OPENPROJECT_API_TOKEN 설정 완료")
-    .replace("OPENPROJECT_API_TOKEN is not configured; actual sync will be blocked", "OPENPROJECT_API_TOKEN 미설정으로 실제 동기화 차단")
+    .replace("OPENPROJECT_API_TOKEN is not configured; actual sync will be blocked", "OPENPROJECT_API_TOKEN 미설정으로 실제 기준선 반영 차단")
     .replace("Skipped because OPENPROJECT_API_TOKEN is not configured", "OPENPROJECT_API_TOKEN 미설정으로 건너뜀")
     .replace("OpenProject endpoint is unreachable", "OpenProject 엔드포인트에 연결할 수 없음")
     .replace("OpenProject endpoint returned an error", "OpenProject 엔드포인트 오류 반환")
@@ -273,7 +275,7 @@ function operationCheckMessage(value) {
     .replace("old", "경과")
     .replace("pending approvals", "건 승인 대기")
     .replace("imports waiting for apply", "건 반영 대기")
-    .replace("sync runs recorded", "건 동기화 이력")
+    .replace("sync runs recorded", "건 기준선 반영 이력")
     .replace("locked WBS baselines", "건 WBS 기준선 잠김")
     .replace("portal users configured", "명 포털 사용자 등록")
     .replace("settings registered", "건 설정 등록")
@@ -308,7 +310,7 @@ function settingCategoryLabel(value) {
 
 function eventTypeLabel(value) {
   const labels = {
-    "pm_engine.sync_recorded": "PM 엔진 동기화",
+    "pm_engine.sync_recorded": "PM 엔진 기준선 반영",
     "auth.login_locked": "로그인 잠금",
     "auth.login_failed": "로그인 실패",
     "auth.login": "로그인",
@@ -329,6 +331,10 @@ function eventTypeLabel(value) {
     "import.applied": "Excel 반영",
     "project_wbs.import_applied": "프로젝트 WBS 반영",
     "template.resequenced": "WBS 코드 정렬",
+    "work_item.updated": "작업 항목 변경",
+    "project_member.added": "프로젝트 멤버 추가",
+    "project_member.role_changed": "프로젝트 멤버 역할 변경",
+    "project_member.removed": "프로젝트 멤버 제거",
   };
   return labels[value] || value || "-";
 }
@@ -336,7 +342,7 @@ function eventTypeLabel(value) {
 function auditSummaryLabel(value) {
   if (!value) return "-";
   return String(value)
-    .replace("PM engine sync", "PM 엔진 동기화")
+    .replace("PM engine sync", "PM 엔진 기준선 반영")
     .replace("User created:", "사용자 생성:")
     .replace("User updated:", "사용자 수정:")
     .replace("Setting updated:", "설정 변경:")
@@ -352,7 +358,11 @@ function auditSummaryLabel(value) {
     .replace("Excel import rejected:", "Excel 업로드 반려:")
     .replace("Excel import applied:", "Excel 반영:")
     .replace("Project WBS import applied:", "프로젝트 WBS 반영:")
-    .replace("WBS codes resequenced:", "WBS 코드 정렬:");
+    .replace("WBS codes resequenced:", "WBS 코드 정렬:")
+    .replace("Work item updated:", "작업 항목 변경:")
+    .replace("Project member added:", "프로젝트 멤버 추가:")
+    .replace("Project member role changed:", "프로젝트 멤버 역할 변경:")
+    .replace("Project member removed:", "프로젝트 멤버 제거:");
 }
 
 
