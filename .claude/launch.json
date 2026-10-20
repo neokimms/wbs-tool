@@ -4,26 +4,38 @@
     {
       "name": "wbs-portal",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3010", "--directory", "apps/portal"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "3010",
+        "--directory",
+        "apps/portal"
+      ],
       "port": 3010
     },
     {
       "name": "curator-portal",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3011", "--directory", "docs/daily-automation/web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "3011",
+        "--directory",
+        "docs/daily-automation/web"
+      ],
       "port": 3011
     },
     {
       "name": "daily-duration",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3013", "--directory", "docs/daily-automation/mobile/app/build/web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "3013",
+        "--directory",
+        "docs/daily-automation/mobile/app/build/web"
+      ],
       "port": 3013
-    },
-    {
-      "name": "legalize-portal",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3031", "--directory", "apps/legalize"],
-      "port": 3031
     }
   ]
 }

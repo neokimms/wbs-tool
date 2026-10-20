@@ -85,31 +85,6 @@ services:
     ports:
       - "${WBS_PORTAL_PORT:-3010}:80"
 
-  # ── Legalize.ki ──────────────────────────────────────────
-  legalize-api:
-    build:
-      context: ./services/legalize
-    profiles: ["legalize"]
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-wbs}:${POSTGRES_PASSWORD:-wbs_dev_password}@postgres:5432/${POSTGRES_DB:-wbs_platform}
-      CASES_DIR: /app/cases
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "${LEGALIZE_API_PORT:-8030}:8030"
-    volumes:
-      - ./services/legalize/cases:/app/cases:ro
-      - ./okf-repo:/app/okf-repo:rw          # Tier 1 (Git 미추적 — 양형 데이터)
-      - ./okf-full:/app/okf-full:rw          # Tier 2 (전량 sharded · gitignore)
-
-  legalize-portal:
-    build:
-      context: ./apps/legalize
-    profiles: ["legalize"]
-    ports:
-      - "${LEGALIZE_PORTAL_PORT:-3030}:80"
-
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     profiles: ["monitoring"]
