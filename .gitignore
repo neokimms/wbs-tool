@@ -16,6 +16,9 @@ backups/postgres/*
 !backups/postgres/.gitkeep
 services/legalize/.env
 
+# 양형 데이터 — WBS 저장소에 커밋 금지 (OKF Tier 1·2, Legalize 데이터)
+okf-repo/
+services/legalize/data/
 # OKF Tier 2 (전량 sharded · Git 미추적)
 okf-full/
 okf-full-*.tar.zst

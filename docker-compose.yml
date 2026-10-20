@@ -100,7 +100,7 @@ services:
       - "${LEGALIZE_API_PORT:-8030}:8030"
     volumes:
       - ./services/legalize/cases:/app/cases:ro
-      - ./okf-repo:/app/okf-repo:rw          # Tier 1 (Git 추적)
+      - ./okf-repo:/app/okf-repo:rw          # Tier 1 (Git 미추적 — 양형 데이터)
       - ./okf-full:/app/okf-full:rw          # Tier 2 (전량 sharded · gitignore)
 
   legalize-portal:
