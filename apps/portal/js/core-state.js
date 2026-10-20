@@ -213,9 +213,14 @@ const state = {
   wbsPlanTypeFilter: "",
   risks: [],
   issues: [],
+  portfolioOwnerFilter: "",
   riTab: "risks",           // "risks" | "issues"
   riProjectFilter: "",
   riStatusFilter: "",
+  riOwnerFilter: "",
+  riDetail: null,
+  riSortKey: "due_date",
+  riSortDir: "asc",
   notifications: [],
   // P3
   projectDetail: null,       // 상세 페이지 데이터

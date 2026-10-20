@@ -195,7 +195,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
     def test_risk_issue_detail_and_navigation_exist(self):
         for snippet in (
             'id="riDetailDrawer"',
