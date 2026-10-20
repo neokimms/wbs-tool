@@ -21,6 +21,7 @@ function switchSettingsTab(tabId) {
 
   // 탭 전환 시 콘텐츠 렌더링
   if (tabId === "approvals")    renderSettingsApprovals();
+  if (tabId === "policy")       renderProjectPolicyPanel();
   if (tabId === "operations")   renderOperationsPanel();
   if (tabId === "users")        renderUsersPanel();
   if (tabId === "audit")        renderAuditPanel();
@@ -340,4 +341,94 @@ function externalIntegrationEnabled() {
   if (value.portal_enabled === false || engine.portal_enabled === false) return false;
   if (["disabled", "none", "internal"].includes(String(value.adapter || engine.adapter || "").toLowerCase())) return false;
   return true;
+}
+
+/* ── origin/main 이식: switchSettingsTab 의존 헬퍼 ── */
+function storyPointOptions(policy = projectOperationPolicy()) {
+  const values = Array.isArray(policy.fibonacci_points) && policy.fibonacci_points.length
+    ? policy.fibonacci_points
+    : fallbackProjectOperationPolicy.fibonacci_points;
+  return values.map((point) => Number(point));
+}
+function deliveryPolicyLabel(value) {
+  return DELIVERY_MODE_LABELS[value] || "Waterfall";
+}
+function sprintPolicyLabel(value) {
+  const labels = {
+    custom: "프로젝트별 자유 설정",
+    fixed_1w: "1주 고정",
+    fixed_2w: "2주 고정",
+    fixed_4w: "4주 고정",
+  };
+  return labels[value] || labels.custom;
+}
+function renderProjectPolicyPanel() {
+  const container = document.querySelector("#projectPolicyPanel");
+  if (!container) return;
+  const policy = projectOperationPolicy();
+  const canEdit = canManageUsers();
+  const dodText = (policy.default_dod_items || []).join("\n");
+  const fibText = storyPointOptions(policy).join(", ");
+  container.innerHTML = `
+    <div class="policy-header">
+      <div>
+        <p class="eyebrow">현재 테넌트</p>
+        <h3>${escapeHtml(tenantDisplayName(policy.tenant_id))}</h3>
+      </div>
+      <div class="policy-summary">
+        <span>${escapeHtml(deliveryPolicyLabel(policy.default_delivery_mode))}</span>
+        <span>${escapeHtml(policy.story_point_mode === "fibonacci" ? "피보나치 SP" : "숫자 직접 입력")}</span>
+        <span>${escapeHtml(sprintPolicyLabel(policy.sprint_length_policy))}</span>
+      </div>
+    </div>
+    <div class="policy-grid">
+      <label class="policy-field">
+        <span>신규 프로젝트 기본 방법론</span>
+        <select id="policyDefaultDeliveryMode" ${canEdit ? "" : "disabled"}>
+          <option value="waterfall" ${policy.default_delivery_mode === "waterfall" ? "selected" : ""}>Waterfall - 표준 WBS/간트</option>
+          <option value="agile" ${policy.default_delivery_mode === "agile" ? "selected" : ""}>Agile - 백로그/스프린트</option>
+          <option value="hybrid" ${policy.default_delivery_mode === "hybrid" ? "selected" : ""}>Hybrid - WBS + Sprint</option>
+        </select>
+      </label>
+      <label class="policy-field">
+        <span>Story Point 산정 방식</span>
+        <select id="policyStoryPointMode" ${canEdit ? "" : "disabled"}>
+          <option value="numeric" ${policy.story_point_mode === "numeric" ? "selected" : ""}>숫자 직접 입력</option>
+          <option value="fibonacci" ${policy.story_point_mode === "fibonacci" ? "selected" : ""}>피보나치 값만 허용</option>
+        </select>
+      </label>
+      <label class="policy-field">
+        <span>피보나치 허용값</span>
+        <input id="policyFibonacciPoints" value="${escapeHtml(fibText)}" ${canEdit ? "" : "disabled"} />
+      </label>
+      <label class="policy-field">
+        <span>Sprint 길이 정책</span>
+        <select id="policySprintLength" ${canEdit ? "" : "disabled"}>
+          <option value="custom" ${policy.sprint_length_policy === "custom" ? "selected" : ""}>프로젝트별 자유 설정</option>
+          <option value="fixed_1w" ${policy.sprint_length_policy === "fixed_1w" ? "selected" : ""}>1주 고정</option>
+          <option value="fixed_2w" ${policy.sprint_length_policy === "fixed_2w" ? "selected" : ""}>2주 고정</option>
+          <option value="fixed_4w" ${policy.sprint_length_policy === "fixed_4w" ? "selected" : ""}>4주 고정</option>
+        </select>
+      </label>
+      <label class="policy-field">
+        <span>DoD 관리 방식</span>
+        <select id="policyDodManagement" ${canEdit ? "" : "disabled"}>
+          <option value="organization" ${policy.dod_management === "organization" ? "selected" : ""}>전사 공통 기준 우선</option>
+          <option value="team" ${policy.dod_management === "team" ? "selected" : ""}>팀별 커스터마이징 허용</option>
+        </select>
+      </label>
+      <label class="policy-field policy-toggle">
+        <span>OpenProject Sprint → Version 자동 생성</span>
+        <input id="policyOpenProjectVersionSync" type="checkbox" ${policy.openproject_sprint_version_sync ? "checked" : ""} ${canEdit ? "" : "disabled"} />
+      </label>
+      <label class="policy-field policy-dod-field">
+        <span>기본 DoD 항목</span>
+        <textarea id="policyDodItems" rows="6" ${canEdit ? "" : "disabled"} placeholder="한 줄에 하나씩 입력">${escapeHtml(dodText)}</textarea>
+      </label>
+    </div>
+    <div class="settings-actions policy-actions">
+      <p class="form-status" id="projectPolicyStatus">${escapeHtml(state.projectPolicyStatus || "")}</p>
+      <button class="primary-button" id="projectPolicySaveButton" type="button" ${canEdit ? "" : "disabled"}>운영 정책 저장</button>
+    </div>
+  `;
 }

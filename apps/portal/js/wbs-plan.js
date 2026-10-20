@@ -202,13 +202,15 @@ function wbsProFilteredRows() {
   const rows   = state.wbsPlanRows;
   const q      = state.wbsPlanSearch.trim().toLowerCase();
   const sf     = state.wbsStatusFilter;
+  const tf     = state.wbsPlanTypeFilter;
   const phase  = state.wbsPlanPhaseFilter;
   return rows.filter((r) => {
     const meta = r.metadata || {};
-    const matchSearch = !q || [r.code,r.name,r.owner].filter(Boolean).join(" ").toLowerCase().includes(q);
+    const matchSearch = !q || [r.code,r.name,r.item_type,r.owner].filter(Boolean).join(" ").toLowerCase().includes(q);
     const matchStatus = !sf  || (meta.status || "대기") === sf;
+    const matchType   = !tf || r.item_type === tf;
     const matchPhase  = !phase || r.code === phase || (r.parent_code && r.parent_code.startsWith(phase));
-    return matchSearch && matchStatus && matchPhase;
+    return matchSearch && matchStatus && matchType && matchPhase;
   });
 }
 

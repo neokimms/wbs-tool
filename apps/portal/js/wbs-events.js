@@ -71,13 +71,18 @@ function startInlineEdit(el, code, field) {
   const input = document.createElement("input");
   input.className = "wbs-name-input";
   input.value = currentVal;
+  if (field === "owner") {
+    input.setAttribute("list", "wbsUserDatalist");
+    input.setAttribute("autocomplete", "off");
+    input.placeholder = "담당자 검색...";
+  }
   el.replaceWith(input);
   input.focus();
   input.select();
   const commit = () => {
     const val = input.value.trim();
     if (field === "name" && val) row.name = val;
-    if (field === "owner") row.owner = val;
+    if (field === "owner") row.owner = val || null;
     state.wbsPlanDirty = true;
     renderWbsPlanTable();
   };
@@ -323,6 +328,10 @@ function renderWbsDictPanel(row, meta, canMutate) {
       <div class="wbs-detail-field">
         <label class="wbs-detail-label">조직 / 팀</label>
         <input id="detailTeam" value="${escapeHtml(meta.team||"")}" ${canMutate?"":"disabled"} placeholder="예) PMO팀, 개발1팀" />
+      </div>
+      <div class="wbs-detail-field">
+        <label class="wbs-detail-label">공수 (시간)</label>
+        <input id="detailEffort" value="${escapeHtml(meta.effort||"")}" ${canMutate?"":"disabled"} placeholder="예) 8h" />
       </div>
       <div class="wbs-detail-field">
         <label class="wbs-detail-label">비고 (메모)</label>
@@ -610,6 +619,8 @@ function saveWbsDictPartial() {
     if (notesEl) meta.notes = notesEl.innerHTML;
     const teamEl2 = document.querySelector("#detailTeam");
     if (teamEl2 !== null && teamEl2 !== undefined) meta.team = teamEl2.value.trim();
+    const effortEl2 = document.querySelector("#detailEffort");
+    if (effortEl2 !== null && effortEl2 !== undefined) meta.effort = effortEl2.value.trim();
   }
   if (tab === "scope") {
     meta.scope = {

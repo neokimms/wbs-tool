@@ -564,7 +564,7 @@ function renderSyncPullSection() {
 
   if (!projectId) {
     if (pullBtn) pullBtn.disabled = true;
-    if (statusEl) statusEl.textContent = "동기화된 프로젝트를 선택하면 상태 가져오기가 활성화됩니다.";
+    if (statusEl) statusEl.textContent = "기준선이 반영된 프로젝트를 선택하면 상태 가져오기가 활성화됩니다.";
     return;
   }
 
@@ -580,11 +580,11 @@ function renderSyncPullSection() {
 
   if (statusEl) {
     if (!hasSynced) {
-      statusEl.textContent = "아직 동기화된 작업 패키지가 없습니다. 승인 시 자동 동기화되거나 수동 동기화를 실행하세요.";
+      statusEl.textContent = "아직 반영된 작업 항목이 없습니다. 승인 시 자동 기준선 반영 또는 수동 반영을 실행하세요.";
     } else {
       const lastPull  = engineMeta.last_pull_at;
       const lastSync  = engineMeta.last_sync_at;
-      const autoNote  = isAutoSynced ? " (승인 시 자동 동기화)" : "";
+      const autoNote  = isAutoSynced ? " (승인 시 자동 기준선 반영)" : "";
       const pullNote  = lastPull ? ` · Pull: ${formatTimestamp(lastPull)}` : "";
       const syncNote  = lastSync ? ` · Push: ${formatTimestamp(lastSync)}` : "";
       statusEl.textContent = `${wpCount}개 항목 매핑됨${autoNote}${syncNote}${pullNote}`;
@@ -616,6 +616,22 @@ function renderAutoSyncStatus() {
 }
 
 function renderOpInstanceSection() {
+  if (!externalIntegrationEnabled()) {
+    const urlEl = document.querySelector("#opInstanceUrl");
+    if (urlEl) urlEl.textContent = "-";
+    const openBtn = document.querySelector("#opInstanceOpenBtn");
+    if (openBtn) openBtn.hidden = true;
+    const statusEl = document.querySelector("#opInstanceStatus");
+    if (statusEl) {
+      statusEl.textContent = "선택 꺼짐";
+      statusEl.className = "op-instance-status checking";
+    }
+    const metaEl = document.querySelector("#opInstanceMeta");
+    if (metaEl) {
+      metaEl.innerHTML = `<span class="op-meta-item">운영 기준 <strong>내부 WBS</strong></span>`;
+    }
+    return;
+  }
   const preflight  = state.pmPreflight || fallbackPreflight;
   const engine     = preflight.engine || preflight.runtime || {};
   const baseUrl    = engine.base_url || "http://localhost:8080";
@@ -664,7 +680,7 @@ function renderOpInstanceSection() {
       `<span class="op-meta-item">어댑터 <strong>${escapeHtml(engineModeLabel(adapter))}</strong></span>`,
       `<span class="op-meta-item">인증 <strong>${escapeHtml(authMode.toUpperCase())}</strong></span>`,
       `<span class="op-meta-item">토큰 <strong>${hasToken ? "✓ 설정됨" : "✗ 미설정"}</strong></span>`,
-      `<span class="op-meta-item">실 동기화 <strong>${syncEnabled ? "✓ 허용" : "✗ 비활성"}</strong></span>`,
+      `<span class="op-meta-item">실 기준선 반영 <strong>${syncEnabled ? "✓ 허용" : "✗ 비활성"}</strong></span>`,
     ].join("");
   }
 }
@@ -691,6 +707,12 @@ function renderSyncedProjectsList() {
   const countEl     = document.querySelector("#syncedProjectCount");
   if (!container) return;
 
+  if (!externalIntegrationEnabled()) {
+    if (countEl) countEl.textContent = "0";
+    container.innerHTML = `<p class="sync-pull-status">외부 연동을 사용하지 않는 동안 기준선 반영 프로젝트 목록은 표시하지 않습니다.</p>`;
+    return;
+  }
+
   const engine      = state.pmPreflight?.engine || state.pmPreflight?.runtime || {};
   const baseUrl     = engine.base_url || "http://localhost:8080";
   const syncedProjects = state.projects.filter((p) =>
@@ -700,7 +722,7 @@ function renderSyncedProjectsList() {
   if (countEl) countEl.textContent = syncedProjects.length;
 
   if (!syncedProjects.length) {
-    container.innerHTML = `<p class="sync-pull-status">동기화 완료된 프로젝트가 없습니다. 승인된 프로젝트를 동기화하면 여기에 표시됩니다.</p>`;
+    container.innerHTML = `<p class="sync-pull-status">기준선 반영 완료 프로젝트가 없습니다. 승인된 프로젝트의 기준선을 반영하면 여기에 표시됩니다.</p>`;
     return;
   }
 
@@ -721,8 +743,8 @@ function renderSyncedProjectsList() {
           <small>OP ID: ${escapeHtml(opProjId)} · ${escapeHtml(projectTypeLabel(p.template_key))}</small>
         </div>
         <div class="op-project-links">
-          <a class="op-link-btn" href="${wpUrl}" target="_blank" rel="noopener" title="작업패키지 목록">
-            📋 작업패키지
+          <a class="op-link-btn" href="${wpUrl}" target="_blank" rel="noopener" title="작업 항목 목록">
+            📋 작업 항목
           </a>
           <a class="op-link-btn" href="${ganttUrl}" target="_blank" rel="noopener" title="간트 차트">
             📊 간트 차트

@@ -10,6 +10,8 @@ async function openProjectDetail(projectId) {
   state.projectDetail = null;
   state.pdCrList = [];
   state.pdDiffData = null;
+  state.pdMembersList = null;
+  state.pdMemberCandidates = null;
   applyPortalView("#projectDetail", { updateHistory: true });
   document.querySelector("#pdTitle").textContent = "로딩 중…";
   try {
@@ -127,24 +129,42 @@ async function renderPdCrTab() {
   if (!state.pdCrList.length) {
     try { state.pdCrList = await request(`/api/projects/${pid}/change-requests`); } catch { state.pdCrList = []; }
   }
+  const canMutate = canMutateWork();
   const rows = state.pdCrList.length === 0
-    ? `<tr><td colspan="6" class="empty-state">등록된 변경요청이 없습니다.</td></tr>`
-    : state.pdCrList.map(cr => `<tr>
+    ? `<tr><td colspan="7" class="empty-state">등록된 변경요청이 없습니다.</td></tr>`
+    : state.pdCrList.map(cr => {
+        const isOpen = cr.status === "Open";
+        let actionsHtml = "—";
+        if (isOpen && canMutate) {
+          actionsHtml = `<div class="pipe-actions">
+              <button class="pipe-reject-btn"  type="button" data-cr-action="Rejected" data-cr-id="${escapeHtml(cr.id)}">반려</button>
+              <button class="pipe-approve-btn" type="button" data-cr-action="Approved" data-cr-id="${escapeHtml(cr.id)}">승인</button>
+            </div>`;
+        } else if (cr.status === "Approved" || cr.status === "Rejected") {
+          actionsHtml = `<span class="ri-status-pill ${cr.status === "Approved" ? "st-closed" : "st-closed"}">${cr.status === "Approved" ? "승인됨" : "반려됨"}</span>`;
+          if (cr.resolution) actionsHtml += `<div class="cr-resolution-note">${escapeHtml(cr.resolution)}</div>`;
+        }
+        return `<tr>
         <td>${cr.version}</td>
         <td>${cr.title}</td>
         <td><span class="ri-status-pill sev-${cr.priority === '높음' ? 'high' : cr.priority === '보통' ? 'med' : 'low'}">${cr.priority}</span></td>
         <td><span class="ri-status-pill st-${cr.status === 'Approved' ? 'closed' : cr.status === 'Rejected' ? 'closed' : 'open'}">${cr.status}</span></td>
         <td>${cr.requested_by || '—'}</td>
         <td>${(cr.created_at||'').substring(0,10)}</td>
-      </tr>`).join("");
+        <td>${actionsHtml}</td>
+      </tr>`;
+      }).join("");
   body.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
       <button class="primary-button btn-sm" id="addCrBtn">+ 변경요청 등록</button>
     </div>
-    <table class="ri-table"><thead><tr><th>번호</th><th>제목</th><th>우선순위</th><th>상태</th><th>요청자</th><th>등록일</th></tr></thead>
+    <table class="ri-table"><thead><tr><th>번호</th><th>제목</th><th>우선순위</th><th>상태</th><th>요청자</th><th>등록일</th><th>처리</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
   document.querySelector("#addCrBtn")?.addEventListener("click", () => {
     document.querySelector("#crDialog")?.showModal();
+  });
+  body.querySelectorAll("[data-cr-action]").forEach((btn) => {
+    btn.addEventListener("click", () => decideChangeRequest(btn.dataset.crId, btn.dataset.crAction));
   });
 }
 
@@ -237,3 +257,33 @@ async function renderPdDiffTab() {
     } finally { btn.disabled = false; }
   });
 })();
+
+/* ── origin/main 이식: renderPdCrTab 의존 헬퍼 ── */
+async function decideChangeRequest(crId, action) {
+  if (!crId) return;
+  let resolution = "";
+  if (action === "Rejected") {
+    resolution = window.prompt("반려 사유를 입력하세요 (필수):", "");
+    if (resolution === null) return;
+    if (!resolution.trim()) {
+      alert("반려 사유는 필수입니다. 입력 후 다시 시도하세요.");
+      return;
+    }
+  } else {
+    if (!window.confirm("이 변경요청을 승인하시겠습니까?")) return;
+  }
+
+  try {
+    const payload = { status: action };
+    if (resolution.trim()) payload.resolution = resolution.trim();
+    const updated = await request(`/api/change-requests/${encodeURIComponent(crId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    state.pdCrList = state.pdCrList.map((cr) => cr.id === updated.id ? updated : cr);
+    state.portfolioCr = null;
+    renderPdCrTab();
+  } catch (err) {
+    alert(err?.message || "처리 중 오류가 발생했습니다.");
+  }
+}

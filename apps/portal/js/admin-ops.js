@@ -127,17 +127,19 @@ function renderSmtpTab() {
 async function renderTenantsTab() {
   if (!state.tenants.length) {
     try { state.tenants = await request("/api/tenants"); } catch { state.tenants = []; }
+    renderTenantSwitcher();
   }
   const tbody = document.querySelector("#tenantTableBody");
   if (!tbody) return;
   if (!state.tenants.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">테넌트가 없습니다.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">테넌트가 없습니다.</td></tr>`;
     return;
   }
   tbody.innerHTML = state.tenants.map(t => `<tr>
     <td><code>${t.id}</code></td>
     <td>${t.name}</td>
     <td><span class="ri-status-pill st-${t.status === 'Active' ? 'open' : 'closed'}">${t.status}</span></td>
+    <td>${Number(t.project_count || 0)}개 / ${Number(t.wbs_item_count || 0)}행</td>
     <td>${(t.created_at||'').substring(0,10)}</td>
     <td>
       ${t.id !== 'default' ? `<button class="secondary-button btn-sm" data-tenant-suspend="${t.id}" data-tenant-status="${t.status}">

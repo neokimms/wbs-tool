@@ -910,7 +910,7 @@ async function pullOpenProjectStatus() {
   const statusEl = document.querySelector("#syncPullStatus");
 
   if (pullBtn) pullBtn.disabled = true;
-  if (statusEl) statusEl.textContent = "OpenProject에서 상태 가져오는 중…";
+  if (statusEl) statusEl.textContent = "외부 도구에서 상태 가져오는 중…";
 
   try {
     const result = await request(
