@@ -274,6 +274,14 @@ function computeWbsRollupMap(rows) {
   (kids.get(null) || []).forEach(walk);
   return out;
 }
+/* 프로젝트 전체 진척률 — 최상위 항목들을 가상 루트 아래에 두고 같은 산식으로 가중 롤업 (서버 프로젝트 진척률과 동일) */
+function computeWbsOverallProgress(rows) {
+  const ROOT = "__wbs_overall_root__";
+  const codes = new Set((rows || []).map((r) => r && r.code).filter(Boolean));
+  const wrapped = [{ code: ROOT, item_type: "프로젝트" }, ...(rows || []).filter((r) => r && r.code).map((r) =>
+    r.parent_code && codes.has(r.parent_code) ? r : { ...r, parent_code: ROOT })];
+  return computeWbsRollupMap(wrapped).get(ROOT)?.progress ?? 0;
+}
 function wbsRowIsParent(code) {
   return (state.wbsPlanRows || []).some((r) => r.parent_code === code);
 }
@@ -747,11 +755,30 @@ async function saveWbsPlan() {
 
     renderWbsPlanTable();
     renderWbsWeightMini();
+    // 작업 현황(워크보드)에 동일 프로젝트가 로드되어 있으면 즉시 동기화
+    if (state.workboardProjectId === state.wbsPlanProjectId) {
+      state.workboardRows = state.wbsPlanRows.map((row) => ({ ...row, metadata: normalizeTaskMetadata(row.metadata) }));
+      state.workboardLoadedProjectId = state.wbsPlanProjectId;
+      if (proj && ["agile", "hybrid"].includes(projectDeliveryMode(proj))) {
+        await syncAgileFromWbs(state.wbsPlanProjectId);
+        const [syncedItems, syncedMetrics] = await Promise.all([
+          request(`/api/projects/${encodeURIComponent(state.wbsPlanProjectId)}/agile/backlog`).catch(() => null),
+          request(`/api/projects/${encodeURIComponent(state.wbsPlanProjectId)}/agile/metrics`).catch(() => null),
+        ]);
+        if (syncedItems) state.agileItems = syncedItems;
+        if (syncedMetrics) state.agileMetrics = syncedMetrics;
+        state.agileLoadedProjectId = state.wbsPlanProjectId;
+      }
+      if (document.body.dataset.portalView === "workboard") {
+        renderWorkboardPanel();
+      }
+    }
   } catch (error) {
     if (statusEl) statusEl.textContent = error.message;
     saveBtn.disabled = false;
   }
 }
+
 
 /* 셀렉트 옵션 텍스트: 프로젝트명 + 버전 정보 */
 function formatProjectSelectLabel(p) {

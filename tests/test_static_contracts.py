@@ -108,14 +108,14 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + MIGRATIONS)
 
-    @PORTAL_PORT_PENDING
     def test_gantt_edit_and_design_contracts_exist(self):
         for snippet in (
             "WorkPackageDateUpdate",
             '@router.patch("/api/projects/{project_id}/op-work-packages/{work_package_id}/dates")',
             "update_work_package_dates",
-            "op-gantt-editable",
-            "data-gantt-handle",
+            # 원격(6/11)은 WBS 현황 간트 편집을 끄고 작업 현황 간트로 이동 — 드래그 편집 계약은 작업 현황 기준
+            "workboard-gantt-editable",
+            "data-wb-gantt-handle",
             "resource-period-control",
             "sortable-th",
             "portfolioOwnerFilter",
@@ -247,7 +247,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
     def test_internal_workboard_contract_exists(self):
         for snippet in (
             'href="#workboard"',
@@ -281,39 +280,32 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
-    def test_wbs_overview_is_internal_wbs_centered(self):
+    def test_wbs_overview_keeps_openproject_source_with_summary(self):
+        """WBS 현황: 데이터 원천은 OpenProject 작업패키지(미연동 시 로컬 폴백) 유지 + 원격 요약 스트립·자동 조회 이식 (2026-10 통합 결정 A)."""
         for snippet in (
             'href="#op-view"                   data-min-role="viewer"',
-            "op-view-overview-strip",
-            "op-view-header-right",
-            "op-view-header-right .wbs-project-select",
-            "op-view-header-right .sync-ctrl-btn",
-            "op-view-summary",
-            "grid-template-columns: repeat(4, minmax(92px, 1fr))",
-            ".op-view .op-tab-content:not([hidden])",
-            "margin-top: 16px",
-            'aria-label="WBS 현황 프로젝트 선택"',
+            'id="opViewSummary"',
             'data-op-tab="assignee"',
             'data-op-tab="delayed"',
-            'id="opViewSummary"',
-            'id="opAssigneeWrap"',
-            'id="opDelayedWrap"',
-            "function opViewProjects()",
-            "function filteredOpViewRows",
+            "/op-work-packages",
+            "function renderOpViewPanels()",
+            "function renderOpViewSummary()",
+            "function maybeLoadOpViewProject()",
             "function isOpRowInProgressWindow",
             "todayUtcDate",
-            "state.opViewProjectId === state.wbsPlanProjectId",
-            "renderOpAssigneeSummary",
-            "renderOpDelayedRows",
-            "/wbs-items",
-            "내부 WBS · 외부 연동됨",
-            "WBS 현황 — 전체 진행 모니터링",
-            "WBS 현황은 내부 WBS 데이터를 기준으로 표시합니다.",
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
+    def test_workboard_progress_follows_wbs_rollup_rule(self):
+        """작업 현황도 진척률 공통 산식 사용: 상위 항목은 롤업 값·입력 비활성, KPI 는 가중 롤업."""
+        for snippet in (
+            "function workboardRollup()",
+            "function workboardRowIsParent(row)",
+            "computeWbsOverallProgress(state.workboardRows)",
+            "workboardRowIsParent(row) ? undefined",
+        ):
+            self.assertIn(snippet, PORTAL_JS)
+
     def test_agile_wbs_phase_1_to_5_contract_exists(self):
         for snippet in (
             "delivery_mode text NOT NULL DEFAULT 'waterfall'",
@@ -374,7 +366,6 @@ class WbsPlatformContracts(unittest.TestCase):
         ):
             self.assertIn(snippet, API + MIGRATIONS + PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
-    @PORTAL_PORT_PENDING
     def test_tenant_project_operation_policy_contract_exists(self):
         for snippet in (
             "wbs_project_operation_policies",

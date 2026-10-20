@@ -41,8 +41,7 @@ async function loadOpViewProject(projectId) {
   if (!projectId) {
     state.opViewProjectId = null;
     state.opViewRows = [];
-    renderOpWorkPackages();
-    renderOpGantt();
+    renderOpViewPanels();
     return;
   }
   state.opViewProjectId = projectId;
@@ -65,8 +64,7 @@ async function loadOpViewProject(projectId) {
   const refreshBtn = document.querySelector("#opViewRefreshBtn");
   if (refreshBtn) refreshBtn.disabled = false;
 
-  renderOpWorkPackages();
-  renderOpGantt();
+  renderOpViewPanels();
 }
 
 function switchOpViewTab(tabId) {
@@ -567,4 +565,128 @@ function renderOpGantt() {
     state.opGanttFullRange = !state.opGanttFullRange;
     renderOpGantt();
   });
+}
+
+/* ── origin/main 이식: 요약 스트립·화면 진입 시 자동 조회 (데이터 원천은 로컬 op-work-packages 유지) ── */
+function renderOpViewPanels() {
+  renderOpViewSummary();
+  renderOpWorkPackages();
+  renderOpGantt();
+  // 담당자·지연 탭은 로컬 렌더러 사용 (OpenProject 작업패키지 + 로컬 폴백 데이터 기준)
+  if (state.opViewTab === "assignee") renderOpAssignee();
+  if (state.opViewTab === "delayed") renderOpDelayed();
+}
+
+function ensureOpViewProjectSelection() {
+  const projects = opViewProjects();
+  if (!projects.length) {
+    state.opViewProjectId = null;
+    state.opViewRows = [];
+    return null;
+  }
+  const exists = projects.some((project) => project.id === state.opViewProjectId);
+  if (!state.opViewProjectId || !exists) {
+    state.opViewProjectId = projects[0].id;
+    state.opViewRows = [];
+  }
+  return state.opViewProjectId;
+}
+
+function maybeLoadOpViewProject() {
+  const projectId = ensureOpViewProjectSelection();
+  renderOpViewProjectSelect();
+  if (!projectId) {
+    renderOpViewPanels();
+    return;
+  }
+  if (!state.opViewRows.length) loadOpViewProject(projectId);
+}
+
+function renderOpViewSummary() {
+  const wrap = document.querySelector("#opViewSummary");
+  if (!wrap) return;
+  const project = currentOpViewProject();
+  const rows = state.opViewRows || [];
+  if (!project) {
+    wrap.innerHTML = `
+      <div class="workboard-alert"><strong>${opViewProjects().length}</strong><span>현재 테넌트 프로젝트</span></div>
+      <div class="workboard-alert"><strong>-</strong><span>프로젝트 선택 대기</span></div>`;
+    return;
+  }
+
+  const done = rows.filter((row) => opRowStatus(row) === "완료").length;
+  const active = rows.filter(isOpRowInProgressWindow).length;
+  const delayed = rows.filter(isOpRowDelayed).length;
+  const avgProgress = rows.length
+    ? Math.round(rows.reduce((sum, row) => sum + opRowProgress(row), 0) / rows.length)
+    : 0;
+  const mode = DELIVERY_MODE_LABELS[projectDeliveryMode(project)] || "Waterfall";
+  const linked = project.openproject_project_id ? "외부 연동됨" : "내부 WBS";
+
+  wrap.innerHTML = `
+    <div class="workboard-alert"><strong>${rows.length}</strong><span>전체 WBS 항목</span></div>
+    <div class="workboard-alert"><strong>${active}</strong><span>진행중</span></div>
+    <div class="workboard-alert"><strong>${done}</strong><span>완료</span></div>
+    <div class="workboard-alert ${delayed ? "overdue" : ""}"><strong>${delayed}</strong><span>지연/기한 초과</span></div>
+    <div class="workboard-alert"><strong>${avgProgress}%</strong><span>평균 진행률</span></div>
+    <div class="workboard-alert"><strong>${escapeHtml(mode)}</strong><span>${escapeHtml(linked)}</span></div>`;
+}
+
+/* ── origin/main 이식: WBS 현황 요약 의존 헬퍼 ── */
+function opViewProjects() {
+  return (state.projects || []).filter((project) => project && project.id);
+}
+function currentOpViewProject() {
+  return state.projects.find((project) => project.id === state.opViewProjectId) || null;
+}
+function normalizeWbsStatus(value) {
+  const raw = String(value || "").trim();
+  const aliases = {
+    "미시작": "대기",
+    "진행 중": "진행중",
+    "진행": "진행중",
+    "done": "완료",
+    "Done": "완료",
+    "closed": "완료",
+    "Closed": "완료",
+  };
+  const status = aliases[raw] || raw || "대기";
+  return WBS_STATUSES.includes(status) ? status : "대기";
+}
+function opRowMeta(row) {
+  return normalizeTaskMetadata(row?.metadata);
+}
+function opRowStatus(row) {
+  const meta = opRowMeta(row);
+  return normalizeWbsStatus(meta.status || row?.status || row?.op_status);
+}
+function opRowProgress(row) {
+  const meta = opRowMeta(row);
+  const value = meta.progress ?? row?.progress ?? row?.op_progress;
+  const number = Number(value);
+  if (Number.isFinite(number)) return Math.max(0, Math.min(100, Math.round(number)));
+  return opRowStatus(row) === "완료" ? 100 : 0;
+}
+function todayUtcDate() {
+  const today = new Date();
+  return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+}
+function isOpRowDelayed(row) {
+  const status = opRowStatus(row);
+  if (status === "완료") return false;
+  if (status === "지연") return true;
+  const finish = parseIsoDate(row?.finish_date);
+  if (!finish) return false;
+  return finish < todayUtcDate();
+}
+function isOpRowInProgressWindow(row) {
+  const status = opRowStatus(row);
+  if (["완료", "지연", "보류"].includes(status)) return false;
+  if (isOpRowDelayed(row)) return false;
+  const start = parseIsoDate(row?.start_date);
+  const finish = parseIsoDate(row?.finish_date);
+  const today = todayUtcDate();
+  if (start) return start <= today && (!finish || finish >= today);
+  if (finish) return status === "진행중";
+  return status === "진행중";
 }

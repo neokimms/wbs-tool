@@ -29,11 +29,20 @@ function renderAll() {
   renderUsersPanel();
   renderAuditPanel();
   renderSettingsPanel();
+  renderProjectPolicyPanel();
   renderWbsPlan();
-  renderOpViewProjectSelect();
+  renderWorkboardPanel();
+  if (document.body.dataset.portalView === "op-view") {
+    maybeLoadOpViewProject();
+  } else {
+    renderOpViewProjectSelect();
+    renderOpViewPanels();
+  }
   renderGuidePanel();
   renderRisksPanel();
+  renderAnnouncementsPanel();
 }
+
 
 async function loadData({ tenantId = state.currentTenantId } = {}) {
   const runId = (state.loadDataRunId || 0) + 1;

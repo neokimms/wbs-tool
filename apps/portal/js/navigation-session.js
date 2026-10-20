@@ -58,8 +58,15 @@ function applyPortalView(hash = "", options = {}) {
   if (options.scrollToTop !== false) {
     window.scrollTo({ top: 0, behavior: options.behavior || "auto" });
   }
+  if (viewId === "workboard") {
+    renderWorkboardPanel();
+    maybeLoadWorkboardProject();
+  }
+  if (viewId === "op-view") {
+    maybeLoadOpViewProject();
+  }
+  if (viewId === "portfolio") applyPortfolioTab();
   if (viewId === "announcements") renderAnnouncementsPanel();
-  if (viewId === "workboard") initWorkboardPanel();
   if (viewId === "risks") renderRisksPanel();
   if (viewId === "resource") renderResourcePanel();
   if (viewId === "settings" && state.settingsTab === "tenants") renderTenantsTab();
@@ -69,6 +76,7 @@ function applyPortalView(hash = "", options = {}) {
   if (viewId === "meetings" && typeof renderMeetingsPanel === "function") renderMeetingsPanel();
   if (viewId === "workboard" && typeof renderWorkboardMyActions === "function") renderWorkboardMyActions();
 }
+
 
 function clearSession(message = "") {
   state.authToken = null;
@@ -326,3 +334,10 @@ document.querySelector("#tenantSwitcher")?.addEventListener("change", (event) =>
     switchTenant(event.target.value);
   }
 });
+
+/* ── origin/main 이식: applyPortalView 의존 헬퍼 ── */
+function maybeLoadWorkboardProject() {
+  const projectId = ensureWorkboardProjectSelection();
+  if (!projectId || state.workboardLoading || state.workboardLoadedProjectId === projectId) return;
+  loadWorkboardProject(projectId);
+}
