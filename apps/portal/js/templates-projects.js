@@ -235,7 +235,7 @@ function renderProjects() {
               <div class="table-actions">
                 <button class="table-action" type="button"
                   data-project-action="plan" data-project-id="${project.id || ""}"
-                  ${project.id ? "" : "disabled"}>WBS 관리</button>
+                  ${project.id ? "" : "disabled"}>WBS 계획</button>
                 <button class="table-action" type="button"
                   data-project-action="approval" data-project-id="${project.id || ""}"
                   ${canRequestApproval ? "" : "disabled"}>${escapeHtml(approvalActionLabel)}</button>
@@ -302,8 +302,8 @@ function renderProjectDrawerContent(project) {
     <!-- 빠른 액션 -->
     <div class="drawer-section">
       <div class="drawer-actions">
-        <button type="button" class="primary-action" data-drawer-action="wbs" data-project-id="${escapeHtml(project.id)}">WBS 관리 열기</button>
-        <button type="button" data-drawer-action="workboard" data-project-id="${escapeHtml(project.id)}">작업 현황</button>
+        <button type="button" class="primary-action" data-drawer-action="wbs" data-project-id="${escapeHtml(project.id)}">WBS 계획 열기</button>
+        <button type="button" data-drawer-action="workboard" data-project-id="${escapeHtml(project.id)}">작업 보드</button>
         <button type="button" data-drawer-action="approval" data-project-id="${escapeHtml(project.id)}" ${canRequestApproval ? "" : "disabled"}>승인 요청</button>
         <button type="button" data-drawer-action="sync" data-project-id="${escapeHtml(project.id)}">외부 연동</button>
       </div>

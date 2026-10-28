@@ -769,7 +769,7 @@ async function applyImportToProject(projectId) {
     // notice 초기화
     const noticeEl = document.querySelector("#importApplyNotice");
     if (noticeEl) noticeEl.hidden = true;
-    // WBS 관리 탭으로 이동 후 서버에서 전체 WBS 재로드
+    // WBS 계획 탭으로 이동 후 서버에서 전체 WBS 재로드
     window.location.hash = "wbs-plan";
     const drawer = document.querySelector("#templateDrawer");
     if (drawer) drawer.hidden = true;
@@ -931,7 +931,7 @@ async function pullOpenProjectStatus() {
       statusEl.textContent = `완료 — ${result.updated}개 항목 업데이트됨 · ${result.pulled_at ? formatTimestamp(result.pulled_at) : ""}`;
     }
 
-    // WBS 관리 메뉴에 해당 프로젝트가 로드된 경우 재로드
+    // WBS 계획 메뉴에 해당 프로젝트가 로드된 경우 재로드
     if (state.wbsPlanProjectId === projectId) {
       const rows = await request(`/api/projects/${encodeURIComponent(projectId)}/wbs-items`);
       state.wbsPlanRows = rows.map((r) => ({ ...r }));

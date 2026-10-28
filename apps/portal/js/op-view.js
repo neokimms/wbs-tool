@@ -212,7 +212,7 @@ function renderOpDelayed() {
 }
 
 /* ── 작업패키지 테이블 렌더링 ─────────────────── */
-/* OP 상태 색상 매핑 (WBS 관리 STATUS_STYLE과 동일한 방식) */
+/* OP 상태 색상 매핑 (WBS 계획 STATUS_STYLE과 동일한 방식) */
 const OP_STATUS_COLOR = {
   "미시작":  { bg: "#f3f4f6", color: "#6b7280" },
   "진행 중": { bg: "#dbeafe", color: "#1d4ed8" },
@@ -296,7 +296,7 @@ function renderOpWorkPackages() {
     const children = childMap[key] || [];
     const hasChildren = children.length > 0;
 
-    // 상태 스타일 — WBS 관리와 동일한 STATUS_STYLE 사용
+    // 상태 스타일 — WBS 계획와 동일한 STATUS_STYLE 사용
     const status   = r.op_status || "미시작";
     const sc       = OP_STATUS_COLOR[status] || OP_STATUS_COLOR["미시작"];
     const isDone   = status === "완료";

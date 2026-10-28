@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>KT AX WBS</title>
-    <link rel="stylesheet" href="./styles.css?v=20261021-port2" />
+    <link rel="stylesheet" href="./styles.css?v=20261029-menu2" />
   </head>
   <body data-auth="pending">
 
@@ -64,18 +64,33 @@
           </div>
         </div>
         <nav class="nav-list">
-          <a class="active" href="#dashboard"  data-min-role="viewer" data-tooltip="대시보드"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/></svg></span><span class="nav-label">대시보드</span></a>
-          <a href="#announcements"             data-min-role="viewer" data-tooltip="공지사항"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4V4Zm12 1.5V8h2.5L16 5.5ZM6 11h8v2H6v-2Zm0 4h8v2H6v-2Zm0-8h6v2H6V7Z"/></svg></span><span class="nav-label">공지사항</span></a>
-          <a href="#portfolio"                 data-min-role="viewer" data-tooltip="프로젝트 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4V7Zm2 2v8h12V9H6Zm2-4h8v2H8V5Z"/></svg></span><span class="nav-label">프로젝트 현황</span></a>
-          <a href="#op-view"                   data-min-role="viewer" data-tooltip="WBS 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4V5Zm0 6h10v4H4v-4Zm12 0h4v10h-4V11ZM4 17h10v4H4v-4Z"/></svg></span><span class="nav-label">WBS 현황</span></a>
-          <a href="#wbs-plan"                  data-min-role="viewer" data-tooltip="WBS 관리"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h5v5H5V4Zm0 11h5v5H5v-5Zm9-6h5v5h-5V9Zm-4-2h2v2h-2V7Zm2 5h2v2h-2v-2Zm-2 5h4v2h-4v-2Z"/></svg></span><span class="nav-label">WBS 관리</span></a>
-          <a href="#workboard"                 data-min-role="viewer" data-tooltip="작업 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h5v14H4V5Zm7 0h4v14h-4V5Zm6 0h3v14h-3V5Z"/></svg></span><span class="nav-label">작업 현황</span></a>
-          <a href="#meetings"                  data-min-role="viewer" data-tooltip="회의·Action Item"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v11H8l-4 4V4Zm2 2v8.2L7.2 13H18V6H6Zm2 2h8v2H8V8Zm0 3h5v1.5H8V11Zm9.3 6.6 1.4-1.4 1.8 1.8 3.1-3.1 1.4 1.4-4.5 4.5-3.2-3.2Z"/></svg></span><span class="nav-label">회의·Action Item</span></a>
-          <a href="#templates"                 data-min-role="viewer" data-tooltip="표준/일반 WBS 관리"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z"/></svg></span><span class="nav-label">표준/일반 WBS 관리</span></a>
-          <a href="#risks"                     data-min-role="viewer" data-tooltip="리스크·이슈"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm1 13h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg></span><span class="nav-label">리스크·이슈</span></a>
-          <a href="#resource"                  data-min-role="pmo" data-tooltip="자원 배분"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c0-4 3-7 6-7s6 3 6 7H2Zm12.5 0c-.2-2.2-1-4-2.3-5.4 1-.6 2.2-.9 3.8-.9 3 0 5 2.5 5 6.3h-6.5Z"/></svg></span><span class="nav-label">자원 배분</span></a>
-          <a href="#settings"                  data-min-role="pmo" data-tooltip="설정"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 3h-3l-.4 2.2c-.6.2-1.1.4-1.6.7L6.6 4.7 4.5 6.8l1.2 1.9c-.3.5-.5 1-.7 1.6L3 10.7v3l2 .4c.2.6.4 1.1.7 1.6l-1.2 1.9 2.1 2.1 1.9-1.2c.5.3 1 .5 1.6.7l.4 2.2h3l.4-2.2c.6-.2 1.1-.4 1.6-.7l1.9 1.2 2.1-2.1-1.2-1.9c.3-.5.5-1 .7-1.6l2-.4v-3l-2-.4c-.2-.6-.4-1.1-.7-1.6l1.2-1.9-2.1-2.1-1.9 1.2c-.5-.3-1-.5-1.6-.7L13.5 3ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg></span><span class="nav-label">설정</span></a>
-          <a href="#notes"                       data-min-role="viewer" data-tooltip="노트/보고서"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H4V2h2Zm8 1.5V8h4.5L14 3.5ZM6 4v16h12V10h-5V4H6Zm2 8h8v2H8v-2Zm0 4h6v2H8v-2Z"/></svg></span><span class="nav-label">노트/보고서</span></a>
+          <div class="nav-group" role="group" aria-labelledby="navGroup0">
+            <p class="nav-group-title" id="navGroup0">개요</p>
+            <a class="active" href="#dashboard"  data-min-role="viewer" data-tooltip="대시보드"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/></svg></span><span class="nav-label">대시보드</span></a>
+            <a href="#announcements"             data-min-role="viewer" data-tooltip="공지사항"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h12l4 4v12H4V4Zm12 1.5V8h2.5L16 5.5ZM6 11h8v2H6v-2Zm0 4h8v2H6v-2Zm0-8h6v2H6V7Z"/></svg></span><span class="nav-label">공지사항</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="navGroup1">
+            <p class="nav-group-title" id="navGroup1">계획</p>
+            <a href="#portfolio"                 data-min-role="viewer" data-tooltip="프로젝트"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4V7Zm2 2v8h12V9H6Zm2-4h8v2H8V5Z"/></svg></span><span class="nav-label">프로젝트</span></a>
+            <a href="#wbs-plan"                  data-min-role="viewer" data-tooltip="WBS 계획"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h5v5H5V4Zm0 11h5v5H5v-5Zm9-6h5v5h-5V9Zm-4-2h2v2h-2V7Zm2 5h2v2h-2v-2Zm-2 5h4v2h-4v-2Z"/></svg></span><span class="nav-label">WBS 계획</span></a>
+            <a href="#templates"                 data-min-role="viewer" data-tooltip="WBS 템플릿"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5V4Zm3 4h8V6H8v2Zm0 4h8v-2H8v2Zm0 4h5v-2H8v2Z"/></svg></span><span class="nav-label">WBS 템플릿</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="navGroup2">
+            <p class="nav-group-title" id="navGroup2">실행</p>
+            <a href="#op-view"                   data-min-role="viewer" data-tooltip="WBS 현황"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v4H4V5Zm0 6h10v4H4v-4Zm12 0h4v10h-4V11ZM4 17h10v4H4v-4Z"/></svg></span><span class="nav-label">WBS 현황</span></a>
+            <a href="#workboard"                 data-min-role="viewer" data-tooltip="작업 보드"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h5v14H4V5Zm7 0h4v14h-4V5Zm6 0h3v14h-3V5Z"/></svg></span><span class="nav-label">작업 보드</span></a>
+            <a href="#resource"                  data-min-role="pmo" data-tooltip="자원 배분"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-1a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20c0-4 3-7 6-7s6 3 6 7H2Zm12.5 0c-.2-2.2-1-4-2.3-5.4 1-.6 2.2-.9 3.8-.9 3 0 5 2.5 5 6.3h-6.5Z"/></svg></span><span class="nav-label">자원 배분</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="navGroup3">
+            <p class="nav-group-title" id="navGroup3">통제·협업</p>
+            <a href="#risks"                     data-min-role="viewer" data-tooltip="리스크·이슈"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3Zm1 13h-2v2h2v-2Zm0-7h-2v5h2V9Z"/></svg></span><span class="nav-label">리스크·이슈</span></a>
+            <a href="#meetings"                  data-min-role="viewer" data-tooltip="회의·조치사항"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v11H8l-4 4V4Zm2 2v8.2L7.2 13H18V6H6Zm2 2h8v2H8V8Zm0 3h5v1.5H8V11Zm9.3 6.6 1.4-1.4 1.8 1.8 3.1-3.1 1.4 1.4-4.5 4.5-3.2-3.2Z"/></svg></span><span class="nav-label">회의·조치사항</span></a>
+            <a href="#notes"                       data-min-role="viewer" data-tooltip="노트·보고서"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H4V2h2Zm8 1.5V8h4.5L14 3.5ZM6 4v16h12V10h-5V4H6Zm2 8h8v2H8v-2Zm0 4h6v2H8v-2Z"/></svg></span><span class="nav-label">노트·보고서</span></a>
+          </div>
+          <div class="nav-group" role="group" aria-labelledby="navGroup4">
+            <p class="nav-group-title" id="navGroup4">관리</p>
+            <a href="#settings"                  data-min-role="pmo" data-tooltip="시스템 설정"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13.5 3h-3l-.4 2.2c-.6.2-1.1.4-1.6.7L6.6 4.7 4.5 6.8l1.2 1.9c-.3.5-.5 1-.7 1.6L3 10.7v3l2 .4c.2.6.4 1.1.7 1.6l-1.2 1.9 2.1 2.1 1.9-1.2c.5.3 1 .5 1.6.7l.4 2.2h3l.4-2.2c.6-.2 1.1-.4 1.6-.7l1.9 1.2 2.1-2.1-1.2-1.9c.3-.5.5-1 .7-1.6l2-.4v-3l-2-.4c-.2-.6-.4-1.1-.7-1.6l1.2-1.9-2.1-2.1-1.9 1.2c-.5-.3-1-.5-1.6-.7L13.5 3ZM12 9a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"/></svg></span><span class="nav-label">시스템 설정</span></a>
+          </div>
           <a href="#guide" class="nav-guide-link" data-min-role="viewer" data-tooltip="사용자 가이드"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Zm3 2v11a1 1 0 0 0 1 1h8V7a1 1 0 0 0-1-1H8Zm2 3h5v2h-5V9Zm0 4h5v2h-5v-2Z"/></svg></span><span class="nav-label">사용자 가이드</span></a>
         </nav>
       </aside>
@@ -145,8 +160,8 @@
           <article class="panel wide" id="portfolio">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">프로젝트</p>
-                <h2>프로젝트 현황</h2>
+                <p class="eyebrow">포트폴리오</p>
+                <h2>프로젝트</h2>
               </div>
               <div class="portfolio-header-right" id="portfolioHeaderRight">
                 <div class="portfolio-filter" id="portfolioFilter" role="group" aria-label="프로젝트 필터">
@@ -230,14 +245,14 @@
             <div class="approval-pipeline-list" id="approvalPipelineList"></div>
           </article>
 
-          <!-- ── WBS 관리 (Professional Table View) ──────── -->
+          <!-- ── WBS 계획 (Professional Table View) ──────── -->
           <article class="panel panel-wbs-pro" id="wbs-plan">
 
             <!-- ── 헤더: 제목 + 프로젝트 선택 + 액션 ── -->
             <div class="wbs-pro-header">
               <div class="wbs-pro-title-block">
-                <p class="eyebrow">기준선</p>
-                <h2>WBS 기준선 관리</h2>
+                <p class="eyebrow">기준선 관리</p>
+                <h2>WBS 계획</h2>
               </div>
               <select id="wbsPlanProjectSelect" class="wbs-pro-project-select" aria-label="프로젝트 선택">
                 <option value="">프로젝트 선택…</option>
@@ -320,11 +335,11 @@
             <div class="panel-header">
               <div>
                 <p class="eyebrow">실행 관리</p>
-                <h2>작업 현황</h2>
+                <h2>작업 보드</h2>
                 <p class="workboard-lead">프로젝트 WBS 항목을 내부 작업 항목으로 운영합니다.</p>
               </div>
               <div class="panel-header-actions workboard-actions">
-                <select id="workboardProjectSelect" class="wbs-project-select" aria-label="작업 현황 프로젝트 선택">
+                <select id="workboardProjectSelect" class="wbs-project-select" aria-label="작업 보드 프로젝트 선택">
                   <option value="">프로젝트 선택…</option>
                 </select>
                 <select id="projectDeliveryModeSelect" class="wbs-project-select agile-mode-select" aria-label="프로젝트 수행 방식">
@@ -337,16 +352,16 @@
               </div>
             </div>
 
-            <nav class="workboard-tab-bar" id="workboardTabBar" role="tablist" aria-label="작업 현황 보기">
+            <nav class="workboard-tab-bar" id="workboardTabBar" role="tablist" aria-label="작업 보드 보기">
               <button class="workboard-tab active" type="button" role="tab" aria-selected="true" data-workboard-view="mine">내 작업</button>
-              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="board">작업 보드</button>
+              <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="board">칸반 보드</button>
               <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="gantt">간트</button>
               <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-backlog">백로그</button>
               <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-board">스프린트 보드</button>
               <button class="workboard-tab" type="button" role="tab" aria-selected="false" data-workboard-view="agile-metrics">번다운·Velocity</button>
             </nav>
 
-            <section class="mt-my-actions" id="workboardMyActions" aria-label="내 Action Item"></section>
+            <section class="mt-my-actions" id="workboardMyActions" aria-label="내 조치사항"></section>
             <div class="workboard-alert-row" id="workboardAlertRow" aria-live="polite"></div>
             <div class="workboard-body" id="workboardBody">
               <p class="empty-state">프로젝트를 선택하면 내부 WBS 작업 현황이 표시됩니다.</p>
@@ -376,8 +391,8 @@
           <article class="panel" id="templates" data-active-tab="list">
             <div class="panel-header">
               <div>
-                <p class="eyebrow">WBS 관리</p>
-                <h2>표준/일반 WBS 관리</h2>
+                <p class="eyebrow">표준·일반 템플릿</p>
+                <h2>WBS 템플릿</h2>
               </div>
               <nav class="tpl-tab-bar" role="tablist" aria-label="표준 WBS 탭">
                 <button class="tpl-tab active" role="tab" aria-selected="true"
@@ -409,7 +424,7 @@
               <div class="wbs-section" id="customWbsPanel" data-wbs-list-panel="custom" role="tabpanel" hidden>
                 <div class="wbs-section-header">
                   <div class="wbs-section-badge custom">일반 WBS</div>
-                  <p class="wbs-section-desc">프로젝트별 맞춤 WBS입니다. Excel 업로드로 등록하거나 WBS 관리 메뉴에서 직접 편집합니다.</p>
+                  <p class="wbs-section-desc">프로젝트별 맞춤 WBS입니다. Excel 업로드로 등록하거나 WBS 계획 메뉴에서 직접 편집합니다.</p>
                 </div>
                 <div class="custom-wbs-list" id="customWbsList"></div>
               </div>
@@ -580,24 +595,24 @@
           </dialog>
 
           <!-- ── P2-02: 리스크 · 이슈 트래킹 ─────────── -->
-          <!-- ── 회의·Action Item ── -->
+          <!-- ── 회의·조치사항 ── -->
           <article class="panel" id="meetings">
             <div class="panel-header">
               <div>
                 <p class="eyebrow">협업 관리</p>
-                <h2>회의·Action Item</h2>
-                <p class="workboard-lead">회의록에서 나온 Action Item을 담당자·기한·상태로 추적하고 WBS 작업·이슈와 연결합니다.</p>
+                <h2>회의·조치사항</h2>
+                <p class="workboard-lead">회의록에서 나온 조치사항을 담당자·기한·상태로 추적하고 WBS 작업·이슈와 연결합니다.</p>
               </div>
               <div class="panel-header-actions mt-actions">
                 <select id="mtProjectSelect" class="wbs-project-select" aria-label="프로젝트 선택"><option value="">프로젝트 선택…</option></select>
-                <button class="secondary-button" id="mtNewActionBtn" type="button">＋ Action Item</button>
+                <button class="secondary-button" id="mtNewActionBtn" type="button">＋ 조치사항</button>
                 <button class="primary-button" id="mtNewMeetingBtn" type="button">＋ 회의 등록</button>
               </div>
             </div>
             <nav class="ri-tab-bar mt-tab-bar" id="mtTabBar" role="tablist">
               <button class="ri-tab active" data-mt-tab="meetings" role="tab">회의록</button>
-              <button class="ri-tab" data-mt-tab="actions" role="tab">Action Item</button>
-              <button class="ri-tab" data-mt-tab="mine" role="tab">내 Action Item</button>
+              <button class="ri-tab" data-mt-tab="actions" role="tab">조치사항</button>
+              <button class="ri-tab" data-mt-tab="mine" role="tab">내 조치사항</button>
             </nav>
             <div class="mt-summary" id="mtSummary"></div>
             <div class="ri-filter-bar mt-filter-bar" id="mtFilterBar">
@@ -637,8 +652,8 @@
               </div>
               <div class="mt-ai-editor">
                 <div class="mt-ai-editor-head">
-                  <strong>Action Item</strong>
-                  <span class="mt-hint">담당자·기한을 지정하면 '내 Action Item'과 알림으로 전달됩니다.</span>
+                  <strong>조치사항</strong>
+                  <span class="mt-hint">담당자·기한을 지정하면 '내 조치사항'과 알림으로 전달됩니다.</span>
                   <button class="secondary-button mt-small" type="button" id="mtAddAiRow">＋ 행 추가</button>
                 </div>
                 <div id="mtAiRows" class="mt-ai-rows"></div>
@@ -653,11 +668,11 @@
             </form>
           </dialog>
 
-          <!-- Action Item 다이얼로그 -->
+          <!-- 조치사항 다이얼로그 -->
           <dialog class="dialog" id="actionItemDialog" aria-labelledby="actionItemDialogTitle">
             <form class="dialog-panel" id="actionItemForm" method="dialog">
               <div class="dialog-header">
-                <h3 id="actionItemDialogTitle">Action Item</h3>
+                <h3 id="actionItemDialogTitle">조치사항</h3>
                 <button class="icon-button" type="button" id="actionItemDialogClose">×</button>
               </div>
               <div class="form-grid">
@@ -835,7 +850,7 @@
               <button class="pd-tab"        data-pd-tab="cr"        role="tab">변경요청</button>
               <button class="pd-tab"        data-pd-tab="approvals" role="tab">승인 이력</button>
               <button class="pd-tab"        data-pd-tab="diff"      role="tab">버전 비교</button>
-              <button class="pd-tab"        data-pd-tab="meetings"  role="tab">회의·Action</button>
+              <button class="pd-tab"        data-pd-tab="meetings"  role="tab">회의·조치사항</button>
               <button class="pd-tab"        data-pd-tab="members"   role="tab">멤버·역할</button>
             </nav>
             <div id="pdBody" class="pd-body"></div>
@@ -905,7 +920,7 @@
           <!-- ── 설정 (탭: 플랫폼 설정 | 승인 이력 | 운영 점검 | 사용자 | 감사 로그) ── -->
           <article class="panel" id="settings" data-settings-tab="platform">
             <div class="panel-header">
-              <div><p class="eyebrow">관리</p><h2>설정</h2></div>
+              <div><p class="eyebrow">관리</p><h2>시스템 설정</h2></div>
               <nav class="stg-tab-bar" id="settingsTabBar" role="tablist" aria-label="설정 탭">
                 <button class="stg-tab active" role="tab" data-stg-tab="platform"    aria-selected="true">플랫폼 설정</button>
                 <button class="stg-tab"        role="tab" data-stg-tab="policy"      aria-selected="false">프로젝트 운영 정책</button>
@@ -1379,7 +1394,7 @@
                   <span id="opWpCount" class="wbs-row-count"></span>
                 </div>
               </div>
-              <!-- WBS 관리와 동일한 테이블 구조 -->
+              <!-- WBS 계획와 동일한 테이블 구조 -->
               <div class="wbs-table-wrap" style="max-height:calc(100vh - 360px)">
                 <table class="wbs-pro-table">
                   <thead>
@@ -1419,10 +1434,10 @@
             </div>
           </article>
 
-          <!-- ── 노트 / 보고서 ─────────────────────────────── -->
+          <!-- ── 노트·보고서 ─────────────────────────────── -->
           <article class="panel notes-panel" id="notes">
             <div class="panel-header">
-              <div><p class="eyebrow">문서 관리</p><h2>노트 / 보고서</h2></div>
+              <div><p class="eyebrow">문서 관리</p><h2>노트·보고서</h2></div>
             </div>
             <div class="notes-layout">
               <!-- 폴더 트리 -->
@@ -1820,30 +1835,30 @@
 
     <script src="./config.js"></script>
     <!-- 포털 스크립트: 클래식 스크립트로 전역 스코프를 공유 — 순서 변경 금지 (boot.js 는 항상 마지막) -->
-    <script src="./js/core-state.js?v=20261021-port2"></script>
-    <script src="./js/guide-content.js?v=20261021-port2"></script>
-    <script src="./js/core-utils.js?v=20261021-port2"></script>
-    <script src="./js/dashboard.js?v=20261021-port2"></script>
-    <script src="./js/templates-projects.js?v=20261021-port2"></script>
-    <script src="./js/approvals-imports-sync.js?v=20261021-port2"></script>
-    <script src="./js/settings-guide.js?v=20261021-port2"></script>
-    <script src="./js/wbs-plan.js?v=20261021-port2"></script>
-    <script src="./js/data-actions.js?v=20261021-port2"></script>
-    <script src="./js/op-view.js?v=20261021-port2"></script>
-    <script src="./js/navigation-session.js?v=20261021-port2"></script>
-    <script src="./js/events-global.js?v=20261021-port2"></script>
-    <script src="./js/wbs-extras.js?v=20261021-port2"></script>
-    <script src="./js/wbs-events.js?v=20261021-port2"></script>
-    <script src="./js/notifications.js?v=20261021-port2"></script>
-    <script src="./js/workboard.js?v=20261021-port2"></script>
-    <script src="./js/announcements.js?v=20261021-port2"></script>
-    <script src="./js/risks.js?v=20261021-port2"></script>
-    <script src="./js/project-detail.js?v=20261021-port2"></script>
-    <script src="./js/admin-ops.js?v=20261021-port2"></script>
-    <script src="./js/ui-shell.js?v=20261021-port2"></script>
-    <script src="./js/notes.js?v=20261021-port2"></script>
-    <script src="./js/meetings.js?v=20261021-port2"></script>
-    <script src="./js/admin-users.js?v=20261021-port2"></script>
-    <script src="./js/boot.js?v=20261021-port2"></script>
+    <script src="./js/core-state.js?v=20261029-menu2"></script>
+    <script src="./js/guide-content.js?v=20261029-menu2"></script>
+    <script src="./js/core-utils.js?v=20261029-menu2"></script>
+    <script src="./js/dashboard.js?v=20261029-menu2"></script>
+    <script src="./js/templates-projects.js?v=20261029-menu2"></script>
+    <script src="./js/approvals-imports-sync.js?v=20261029-menu2"></script>
+    <script src="./js/settings-guide.js?v=20261029-menu2"></script>
+    <script src="./js/wbs-plan.js?v=20261029-menu2"></script>
+    <script src="./js/data-actions.js?v=20261029-menu2"></script>
+    <script src="./js/op-view.js?v=20261029-menu2"></script>
+    <script src="./js/navigation-session.js?v=20261029-menu2"></script>
+    <script src="./js/events-global.js?v=20261029-menu2"></script>
+    <script src="./js/wbs-extras.js?v=20261029-menu2"></script>
+    <script src="./js/wbs-events.js?v=20261029-menu2"></script>
+    <script src="./js/notifications.js?v=20261029-menu2"></script>
+    <script src="./js/workboard.js?v=20261029-menu2"></script>
+    <script src="./js/announcements.js?v=20261029-menu2"></script>
+    <script src="./js/risks.js?v=20261029-menu2"></script>
+    <script src="./js/project-detail.js?v=20261029-menu2"></script>
+    <script src="./js/admin-ops.js?v=20261029-menu2"></script>
+    <script src="./js/ui-shell.js?v=20261029-menu2"></script>
+    <script src="./js/notes.js?v=20261029-menu2"></script>
+    <script src="./js/meetings.js?v=20261029-menu2"></script>
+    <script src="./js/admin-users.js?v=20261029-menu2"></script>
+    <script src="./js/boot.js?v=20261029-menu2"></script>
   </body>
 </html>

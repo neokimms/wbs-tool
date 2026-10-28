@@ -11004,3 +11004,28 @@ body.dark-mode .workboard-status-pill.status-보류 {
   }
 }
 
+
+/* ══ 좌측 메뉴 그룹 (2026-10-29) — 개요 / 계획 / 실행 / 통제·협업 / 관리 ══ */
+.nav-list { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group + .nav-group { margin-top: 10px; }
+.nav-group[hidden] { display: none; }
+.nav-group-title {
+  margin: 0;
+  padding: 4px 14px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  opacity: 0.75;
+  user-select: none;
+}
+/* 접힌 사이드바: 그룹 제목 대신 얇은 구분선 */
+.sidebar.collapsed .nav-group-title,
+body.sidebar-collapsed .nav-group-title {
+  height: 1px; padding: 0; margin: 2px 12px 4px; overflow: hidden;
+  font-size: 0; background: var(--line); opacity: 1;
+}
+.sidebar.collapsed .nav-group:first-child .nav-group-title,
+body.sidebar-collapsed .nav-group:first-child .nav-group-title { display: none; }
+@media print { .nav-group-title { display: none; } }

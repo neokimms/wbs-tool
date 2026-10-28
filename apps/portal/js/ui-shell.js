@@ -121,12 +121,12 @@
 
   // 위젯 정의: panelId → 패널 article ID, navHash → 사이드바 링크 href
   const WIDGETS = [
-    { id: "portfolio",  label: "프로젝트 현황",      navHash: "#portfolio"  },
+    { id: "portfolio",  label: "프로젝트",           navHash: "#portfolio"  },
     { id: "approvals",  label: "승인 이력",           navHash: "#approvals"  },
     { id: "sync",       label: "OpenProject 동기화", navHash: "#sync"       },
     { id: "risks",      label: "리스크·이슈",         navHash: "#risks"      },
     { id: "resource",   label: "자원 배분",           navHash: "#resource"   },
-    { id: "templates",  label: "표준 WBS 관리",       navHash: "#templates"  },
+    { id: "templates",  label: "WBS 템플릿",       navHash: "#templates"  },
   ];
 
   function loadPrefs() {
@@ -278,4 +278,22 @@
       // 참고: 서버에 /api/settings/schedule 엔드포인트가 없어 브라우저 저장만 사용한다.
     }
   });
+})();
+
+/* ═══════════════════════════════════════════════════════════════
+   좌측 메뉴 그룹: 그룹 안의 메뉴가 모두 숨겨지면(역할·위젯 설정) 그룹 제목도 숨김
+   ═══════════════════════════════════════════════════════════════ */
+(function initNavGroups() {
+  const nav = document.querySelector(".nav-list");
+  if (!nav) return;
+  const isHidden = (a) => a.hidden || a.classList.contains("nav-role-hidden") || a.style.display === "none";
+  const sync = () => {
+    nav.querySelectorAll(".nav-group").forEach((g) => {
+      const anyVisible = [...g.querySelectorAll("a")].some((a) => !isHidden(a));
+      if (g.hidden === anyVisible) g.hidden = !anyVisible;
+    });
+  };
+  sync();
+  new MutationObserver(sync).observe(nav, { subtree: true, attributes: true, attributeFilter: ["hidden", "class", "style"] });
+  window.syncNavGroups = sync;
 })();

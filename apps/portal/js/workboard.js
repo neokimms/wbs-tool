@@ -1,5 +1,5 @@
 /* AX WBS 포털 — 작업 현황 (내부 WBS 작업 운영 + Agile 백로그·스프린트·번다운)
-   origin/main(6/11) 구현 이식. 로컬의 '내 Action Item' 영역은 meetings.js 의 renderWorkboardMyActions 가 담당.
+   origin/main(6/11) 구현 이식. 로컬의 '내 조치사항' 영역은 meetings.js 의 renderWorkboardMyActions 가 담당.
    클래식 스크립트로 전역 스코프를 공유하므로 index.html 의 로드 순서를 지킬 것 */
 
 /* ── origin/main 이식: 작업 현황·Agile 화면 ── */
@@ -404,7 +404,7 @@ function renderWorkboardPanel() {
   } else if (state.workboardView === "agile-metrics") {
     body.innerHTML = renderAgileMetrics();
   } else if (!rows.length && state.workboardView !== "mine") {
-    body.innerHTML = `<div class="workboard-empty">이 프로젝트에는 아직 WBS 작업 항목이 없습니다. WBS 관리에서 항목을 추가하세요.</div>`;
+    body.innerHTML = `<div class="workboard-empty">이 프로젝트에는 아직 WBS 작업 항목이 없습니다. WBS 계획에서 항목을 추가하세요.</div>`;
   } else if (state.workboardView === "board") {
     body.innerHTML = renderWorkboardBoard(rows);
   } else if (state.workboardView === "gantt") {
@@ -436,7 +436,7 @@ function renderMyWorkboardTasks(rows) {
   if (!visible.length) {
     return `
       <div class="workboard-summary-line"><span>${escapeHtml(summary)}</span></div>
-      <div class="workboard-empty">전체 작업 보드에서 담당자를 지정하면 이 화면에 개인 작업이 표시됩니다.</div>`;
+      <div class="workboard-empty">전체 칸반 보드에서 담당자를 지정하면 이 화면에 개인 작업이 표시됩니다.</div>`;
   }
   const rowsHtml = visible.map((row) => `
     <tr>
@@ -491,7 +491,7 @@ function renderWorkboardBoard(rows) {
       </section>`;
   }).join("");
   return `
-    <div class="workboard-summary-line"><span>PM용 프로젝트 작업 보드</span><span>카드를 컬럼으로 이동해 상태를 바로 변경합니다.</span></div>
+    <div class="workboard-summary-line"><span>PM용 프로젝트 칸반 보드</span><span>카드를 컬럼으로 이동해 상태를 바로 변경합니다.</span></div>
     <div class="workboard-board">${columns}</div>`;
 }
 function renderInternalGantt(rows) {

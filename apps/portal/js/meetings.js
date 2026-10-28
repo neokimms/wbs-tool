@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════
-   회의·Action Item · 프로젝트 멤버/역할
+   회의·조치사항 · 프로젝트 멤버/역할
    - app.js 의 전역(state, request, escapeHtml, canMutateWork, canCollaborate,
      projectRoleOf, PROJECT_ROLE_LABELS)을 사용한다.
    ══════════════════════════════════════════════════════════════════ */
@@ -90,7 +90,7 @@
     const list = mt.tab === "mine" ? mt.mine : mt.actions;
     if (mt.tab === "meetings") {
       const open = mt.meetings.reduce((a, m) => a + (m.open_action_count || 0), 0);
-      box.innerHTML = `<span>회의 <strong>${mt.meetings.length}</strong></span><span>미결 Action <strong>${open}</strong></span>`;
+      box.innerHTML = `<span>회의 <strong>${mt.meetings.length}</strong></span><span>미결 조치사항 <strong>${open}</strong></span>`;
       return;
     }
     const overdue = list.filter((a) => a.is_overdue).length;
@@ -100,9 +100,9 @@
 
   function renderMeetingsTable() {
     if (!mt.projectId) return `<p class="empty-state">프로젝트를 선택하세요.</p>`;
-    if (!mt.meetings.length) return `<p class="empty-state">등록된 회의가 없습니다. ‘＋ 회의 등록’으로 회의록과 Action Item을 함께 기록하세요.</p>`;
+    if (!mt.meetings.length) return `<p class="empty-state">등록된 회의가 없습니다. ‘＋ 회의 등록’으로 회의록과 조치사항을 함께 기록하세요.</p>`;
     return `<div class="ri-table-wrap"><table class="ri-table mt-table">
-      <thead><tr><th>일자</th><th>유형</th><th>회의명</th><th>진행자</th><th>참석</th><th>Action (미결/전체)</th><th>상태</th></tr></thead>
+      <thead><tr><th>일자</th><th>유형</th><th>회의명</th><th>진행자</th><th>참석</th><th>조치사항 (미결/전체)</th><th>상태</th></tr></thead>
       <tbody>${mt.meetings.map((m) => `
         <tr class="mt-row" data-meeting-id="${esc(m.id)}">
           <td>${esc(m.meeting_date || "")}</td>
@@ -119,9 +119,9 @@
     const overdueOnly = $("#mtOverdueOnly")?.checked;
     const rows = overdueOnly ? list.filter((a) => a.is_overdue) : list;
     const cnt = $("#mtCount"); if (cnt) cnt.textContent = `${rows.length}건`;
-    if (!rows.length) return `<p class="empty-state">${mt.tab === "mine" ? "나에게 배정된 Action Item이 없습니다." : "Action Item이 없습니다."}</p>`;
+    if (!rows.length) return `<p class="empty-state">${mt.tab === "mine" ? "나에게 배정된 조치사항이 없습니다." : "조치사항이 없습니다."}</p>`;
     return `<div class="ri-table-wrap"><table class="ri-table mt-table">
-      <thead><tr>${showProject ? "<th>프로젝트</th>" : ""}<th>Action Item</th><th>담당</th><th>기한</th><th>상태</th><th>우선</th><th>연결</th></tr></thead>
+      <thead><tr>${showProject ? "<th>프로젝트</th>" : ""}<th>조치사항</th><th>담당</th><th>기한</th><th>상태</th><th>우선</th><th>연결</th></tr></thead>
       <tbody>${rows.map((a) => `
         <tr class="mt-row${a.is_overdue ? " mt-row-late" : ""}" data-action-id="${esc(a.id)}">
           ${showProject ? `<td>${esc(a.project_name || "")}</td>` : ""}
@@ -213,7 +213,7 @@
   async function quickStatus(id, status, after) {
     try {
       await request(`/api/action-items/${id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-      toast(`Action Item 상태를 '${status}'(으)로 변경했습니다.`);
+      toast(`조치사항 상태를 '${status}'(으)로 변경했습니다.`);
     } catch (err) {
       toast(err.message, "warn");
     }
@@ -232,7 +232,7 @@
 
   function aiRowHtml(a = {}) {
     return `<div class="mt-ai-row" data-ai-existing="${esc(a.id || "")}">
-      <input class="mt-ai-title" placeholder="Action Item 내용" maxlength="200" value="${esc(a.title || "")}" ${a.id ? "disabled" : ""} />
+      <input class="mt-ai-title" placeholder="조치사항 내용" maxlength="200" value="${esc(a.title || "")}" ${a.id ? "disabled" : ""} />
       <input class="mt-ai-assignee" placeholder="담당자" list="mtMemberList" maxlength="80" value="${esc(a.assignee || "")}" ${a.id ? "disabled" : ""} />
       <input class="mt-ai-due" type="date" value="${esc(a.due_date || "")}" ${a.id ? "disabled" : ""} />
       <select class="mt-ai-wbs" ${a.id ? "disabled" : ""}>${wbsOptions(a.wbs_code)}</select>
@@ -328,7 +328,7 @@
           await request(`/api/projects/${mt.projectId}/meetings`, { method: "POST", body: JSON.stringify({ ...payload, action_items: newAis }) });
         }
         dlg.close();
-        toast(`회의를 저장했습니다.${newAis.length ? ` Action Item ${newAis.length}건 등록` : ""}`);
+        toast(`회의를 저장했습니다.${newAis.length ? ` 조치사항 ${newAis.length}건 등록` : ""}`);
         await refresh();
         if (state.pdTab === "meetings" && state.projectDetail && typeof renderProjectDetailBody === "function") renderProjectDetailBody();
       } catch (err) {
@@ -339,14 +339,14 @@
     });
   }
 
-  /* ── Action Item 다이얼로그 ─────────────────────────────────── */
+  /* ── 조치사항 다이얼로그 ─────────────────────────────────── */
   async function openActionDialog(a) {
     const dlg = $("#actionItemDialog");
     $("#actionItemFormStatus").textContent = "";
     const pid = a?.project_id || mt.projectId;
     if (a && String(a.project_id) !== String(mt.projectId)) await loadProjectContext(a.project_id);
     mt.editingAction = a || null;
-    $("#actionItemDialogTitle").textContent = a ? "Action Item" : "Action Item 등록";
+    $("#actionItemDialogTitle").textContent = a ? "조치사항" : "조치사항 등록";
     $("#aiTitle").value = a?.title || "";
     $("#aiAssignee").value = a?.assignee || "";
     $("#aiDueDate").value = a?.due_date || "";
@@ -379,7 +379,7 @@
     $("#actionItemDialogCancel")?.addEventListener("click", close);
     $("#actionItemDeleteBtn")?.addEventListener("click", async () => {
       const a = mt.editingAction;
-      if (!a || !window.confirm("Action Item을 삭제할까요?")) return;
+      if (!a || !window.confirm("조치사항을 삭제할까요?")) return;
       try { await request(`/api/action-items/${a.id}`, { method: "DELETE" }); dlg.close(); toast("삭제했습니다."); await refresh(); }
       catch (err) { $("#actionItemFormStatus").textContent = err.message; }
     });
@@ -408,14 +408,14 @@
         if (a) await request(`/api/action-items/${a.id}`, { method: "PATCH", body: JSON.stringify(payload) });
         else await request(`/api/projects/${mt.projectId}/action-items`, { method: "POST", body: JSON.stringify(payload) });
         dlg.close();
-        toast(a ? "Action Item을 수정했습니다." : "Action Item을 등록했습니다.");
+        toast(a ? "조치사항을 수정했습니다." : "조치사항을 등록했습니다.");
         await refresh();
         if (typeof renderWorkboardMyActions === "function" && document.body.dataset.portalView === "workboard") renderWorkboardMyActions();
       } catch (err) { st.textContent = err.message; }
     });
   }
 
-  /* ── 작업 현황 > 내 작업: 내 Action Item ───────────────────── */
+  /* ── 작업 현황 > 내 작업: 내 조치사항 ───────────────────── */
   window.renderWorkboardMyActions = async function renderWorkboardMyActions() {
     const box = $("#workboardMyActions");
     if (!box) return;
@@ -428,7 +428,7 @@
     const overdue = items.filter((a) => a.is_overdue).length;
     box.innerHTML = `
       <div class="mt-my-head">
-        <strong>내 Action Item</strong>
+        <strong>내 조치사항</strong>
         <span class="mt-muted">미결 ${items.length}건${overdue ? ` · <span class="mt-warn">기한 경과 ${overdue}건</span>` : ""}</span>
         <a href="#meetings" class="mt-more" data-mt-goto-mine>전체 보기 →</a>
       </div>
@@ -446,7 +446,7 @@
     box.querySelector("[data-mt-goto-mine]")?.addEventListener("click", () => { mt.tab = "mine"; });
   };
 
-  /* ── 프로젝트 상세 > 회의·Action 탭 ──────────────────────────── */
+  /* ── 프로젝트 상세 > 회의·조치사항 탭 ──────────────────────────── */
   window.renderPdMeetingsTab = async function renderPdMeetingsTab(body, d) {
     const pid = d.project.id;
     body.innerHTML = `<p class="empty-state">불러오는 중…</p>`;
@@ -458,19 +458,19 @@
     body.innerHTML = `
       <div class="mt-pd-head">
         <span>회의 <strong>${meetings.length}</strong></span>
-        <span>미결 Action <strong>${actions.length}</strong></span>
+        <span>미결 조치사항 <strong>${actions.length}</strong></span>
         <span class="${overdue ? "mt-warn" : ""}">기한 경과 <strong>${overdue}</strong></span>
         <span class="u-flex-1"></span>
-        <button class="primary-button mt-small" type="button" data-pd-open-meetings>회의·Action 화면에서 관리 →</button>
+        <button class="primary-button mt-small" type="button" data-pd-open-meetings>회의·조치사항 화면에서 관리 →</button>
       </div>
       <h4 class="mt-pd-sub">최근 회의</h4>
       ${meetings.length ? `<table class="ri-table"><thead><tr><th>일자</th><th>회의명</th><th>미결/전체</th></tr></thead><tbody>
         ${meetings.slice(0, 5).map((m) => `<tr><td>${esc(m.meeting_date)}</td><td>${esc(m.title)}</td><td>${m.open_action_count}/${m.action_count}</td></tr>`).join("")}
       </tbody></table>` : `<p class="empty-state">회의 기록이 없습니다.</p>`}
-      <h4 class="mt-pd-sub">미결 Action Item</h4>
+      <h4 class="mt-pd-sub">미결 조치사항</h4>
       ${actions.length ? `<table class="ri-table"><thead><tr><th>내용</th><th>담당</th><th>기한</th><th>상태</th><th>연결</th></tr></thead><tbody>
         ${actions.slice(0, 15).map((a) => `<tr class="${a.is_overdue ? "mt-row-late" : ""}"><td>${esc(a.title)}</td><td>${esc(a.assignee || "미지정")}</td><td>${esc(a.due_date || "—")}</td><td>${statusPill(a)}</td><td>${linkBadges(a)}</td></tr>`).join("")}
-      </tbody></table>` : `<p class="empty-state">미결 Action Item이 없습니다.</p>`}`;
+      </tbody></table>` : `<p class="empty-state">미결 조치사항이 없습니다.</p>`}`;
     body.querySelector("[data-pd-open-meetings]")?.addEventListener("click", () => {
       mt.projectId = pid; mt.tab = "actions";
       applyPortalView("#meetings", { updateHistory: true });
@@ -491,7 +491,7 @@
     const roles = rolesRes.roles || [];
     const assignable = roles.filter((r) => myRole === "admin" || r.key !== "admin");
     const roleOpts = (cur) => roles.map((r) => `<option value="${r.key}" ${r.key === cur ? "selected" : ""} ${assignable.some((x) => x.key === r.key) ? "" : "disabled"}>${esc(r.label)}</option>`).join("");
-    const legend = roles.map((r) => `<li><b>${esc(r.label)}</b> — ${[r.can_edit_wbs ? "WBS·리스크 편집" : "", r.can_manage_members ? "멤버 관리" : "", r.can_collaborate ? "회의·Action·이슈 등록" : "", (!r.can_edit_wbs && !r.can_collaborate) ? "읽기 전용" : ""].filter(Boolean).join(" · ") || "담당 작업 진척 입력"}</li>`).join("");
+    const legend = roles.map((r) => `<li><b>${esc(r.label)}</b> — ${[r.can_edit_wbs ? "WBS·리스크 편집" : "", r.can_manage_members ? "멤버 관리" : "", r.can_collaborate ? "회의·조치사항·이슈 등록" : "", (!r.can_edit_wbs && !r.can_collaborate) ? "읽기 전용" : ""].filter(Boolean).join(" · ") || "담당 작업 진척 입력"}</li>`).join("");
     body.innerHTML = `
       <div class="mt-pd-head"><span>내 역할 <strong>${esc(PROJECT_ROLE_LABELS[myRole] || myRole)}</strong></span><span>멤버 <strong>${members.length}</strong></span></div>
       <table class="ri-table"><thead><tr><th>이름</th><th>이메일</th><th>프로젝트 역할</th><th></th></tr></thead><tbody>

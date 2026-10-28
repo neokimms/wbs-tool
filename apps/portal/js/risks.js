@@ -172,7 +172,7 @@ function renderRiDetailDrawer(type, id) {
         <p>${escapeHtml(item.mitigation || "등록된 대응 전략이 없습니다.")}</p>
       </section>` : ""}
     <div class="ri-detail-actions">
-      <button class="secondary-button" type="button" data-ri-detail-go-project="${escapeHtml(item.project_id || "")}">프로젝트 현황</button>
+      <button class="secondary-button" type="button" data-ri-detail-go-project="${escapeHtml(item.project_id || "")}">프로젝트 보기</button>
       ${canMutateWork() && isRisk && item.status !== "Closed" ? `<button class="primary-button" type="button" data-risk-close="${escapeHtml(item.id)}">리스크 종료</button>` : ""}
       ${canMutateWork() && !isRisk && !["Resolved", "Closed"].includes(item.status) ? `<button class="primary-button" type="button" data-issue-resolve="${escapeHtml(item.id)}">이슈 해결</button>` : ""}
     </div>`;

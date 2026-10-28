@@ -6,16 +6,16 @@
 const WBS_GUIDE_MENUS = [
   { id: "dashboard",     label: "대시보드" },
   { id: "announcements", label: "공지사항" },
-  { id: "portfolio",  label: "프로젝트 현황" },
+  { id: "portfolio",  label: "프로젝트" },
+  { id: "wbs-plan",   label: "WBS 계획" },
+  { id: "templates",  label: "WBS 템플릿" },
   { id: "op-view",    label: "WBS 현황" },
-  { id: "wbs-plan",   label: "WBS 관리" },
-  { id: "workboard",  label: "작업 현황" },
-  { id: "meetings",   label: "회의·Action Item" },
-  { id: "templates",  label: "표준/일반 WBS 관리" },
-  { id: "risks",      label: "리스크·이슈" },
+  { id: "workboard",  label: "작업 보드" },
   { id: "resource",   label: "자원 배분" },
-  { id: "notes",      label: "노트/보고서" },
-  { id: "settings",   label: "설정" },
+  { id: "risks",      label: "리스크·이슈" },
+  { id: "meetings",   label: "회의·조치사항" },
+  { id: "notes",      label: "노트·보고서" },
+  { id: "settings",   label: "시스템 설정" },
 ];
 
 const WBS_GUIDE_CONTENTS = {
@@ -29,21 +29,21 @@ const WBS_GUIDE_CONTENTS = {
     },
     summary: [
       { id: "admin",  label: "관리자(admin)", value: "전체 메뉴", description: "사용자, 테넌트, 플랫폼 설정, LDAP, SMTP, 백업, 모니터링까지 관리합니다.", tone: "good" },
-      { id: "pmo",    label: "PMO",           value: "운영 메뉴", description: "프로젝트 생성, WBS 편집, 작업 보드/간트, 승인 요청, 리스크·이슈, 자원 배분을 수행합니다.", tone: "info" },
+      { id: "pmo",    label: "PMO",           value: "운영 메뉴", description: "프로젝트 생성, WBS 편집, 칸반 보드/간트, 승인 요청, 리스크·이슈, 자원 배분을 수행합니다.", tone: "info" },
       { id: "viewer", label: "조회자",        value: "조회 중심", description: "대시보드, 프로젝트/WBS, 표준 WBS, 리스크·이슈 목록을 조회합니다. 편집 작업은 제한됩니다.", tone: "neutral" },
       { id: "tenant", label: "테넌트",        value: "데이터 격리", description: "상단 테넌트 선택을 바꾸면 프로젝트, WBS, 리스크·이슈, 자원 배분 데이터가 해당 테넌트 기준으로 다시 로드됩니다.", tone: "warn" },
     ],
     actions: [
-      { id: "go-portfolio", label: "프로젝트 현황",       description: "프로젝트 목록, 테넌트 배지, 리스크/이슈 건수, 승인 요청 상태를 확인합니다.", targetView: "portfolio", tone: "good" },
-      { id: "go-workboard", label: "작업 현황",           description: "내 작업, PM용 작업 보드, 내부 WBS 간트에서 상태/진척률/기간을 업데이트합니다.", targetView: "workboard", tone: "good" },
+      { id: "go-portfolio", label: "프로젝트",       description: "프로젝트 목록, 테넌트 배지, 리스크/이슈 건수, 승인 요청 상태를 확인합니다.", targetView: "portfolio", tone: "good" },
+      { id: "go-workboard", label: "작업 보드",           description: "내 작업, PM용 칸반 보드, 내부 WBS 간트에서 상태/진척률/기간을 업데이트합니다.", targetView: "workboard", tone: "good" },
       { id: "go-risks",     label: "리스크·이슈",         description: "대시보드 또는 프로젝트 목록의 숫자 버튼에서 이동한 필터 결과를 확인합니다.", targetView: "risks", tone: "warn" },
       { id: "go-resource",  label: "자원 배분",           description: "WBS 작업 부하, 사용자 계정별 할당, PMO 가동율을 기간 기준으로 조회합니다.", targetView: "resource", tone: "info" },
     ],
     resources: [
-      { id: "menu-map",  title: "메뉴 구성", description: "대시보드, 공지사항, 프로젝트 현황, WBS 현황, WBS 관리, 작업 현황, 표준/일반 WBS 관리, 리스크·이슈, 자원 배분, 설정, 사용자 가이드로 구성됩니다.", meta: "현재 메뉴" },
-      { id: "widget",    title: "위젯 표시 설정", description: "설정 > 플랫폼 설정 하단의 위젯 표시 설정에서 대시보드 패널과 좌측 메뉴 표시 여부를 함께 조정할 수 있습니다.", meta: "개인화" },
+      { id: "menu-map",  title: "메뉴 구성", description: "개요(대시보드·공지사항) → 계획(프로젝트·WBS 계획·WBS 템플릿) → 실행(WBS 현황·작업 보드·자원 배분) → 통제·협업(리스크·이슈·회의·조치사항·노트·보고서) → 관리(시스템 설정) 순서이며, 하단에 사용자 가이드가 있습니다.", meta: "현재 메뉴" },
+      { id: "widget",    title: "위젯 표시 설정", description: "시스템 설정 > 플랫폼 설정 하단의 위젯 표시 설정에서 대시보드 패널과 좌측 메뉴 표시 여부를 함께 조정할 수 있습니다.", meta: "개인화" },
       { id: "theme",     title: "다크모드·모바일", description: "다크/라이트 모드는 시스템 설정을 감지하고 localStorage에 저장됩니다. 모바일에서는 햄버거 드로어와 1열 레이아웃으로 전환됩니다.", meta: "화면 환경" },
-      { id: "numbers",   title: "리스크/이슈 숫자", description: "대시보드와 프로젝트 현황의 리스크/이슈 숫자 버튼은 Closed 제외 미종료 건 기준이며, 클릭 시 해당 목록으로 이동합니다.", meta: "빠른 이동" },
+      { id: "numbers",   title: "리스크/이슈 숫자", description: "대시보드와 프로젝트 메뉴의 리스크/이슈 숫자 버튼은 Closed 제외 미종료 건 기준이며, 클릭 시 해당 목록으로 이동합니다.", meta: "빠른 이동" },
     ],
   },
   announcements: {
@@ -95,7 +95,7 @@ const WBS_GUIDE_CONTENTS = {
   portfolio: {
     kind: "procedure",
     hero: {
-      eyebrow: "프로젝트 현황",
+      eyebrow: "프로젝트",
       title: "프로젝트 등록부터 승인까지",
       description: "PMO 권한으로 프로젝트를 생성하고 WBS를 등록한 뒤 승인을 요청합니다. 목록에서는 테넌트, 상태, 리스크/이슈 건수, 빠른 작업을 함께 확인합니다.",
       tags: ["프로젝트 생성", "테넌트", "리스크/이슈 건수", "승인 요청", "변경요청"],
@@ -111,7 +111,7 @@ const WBS_GUIDE_CONTENTS = {
         id: "detail", order: 2, title: "프로젝트 상세 확인",
         outcome: "프로젝트명 클릭 시 오른쪽 슬라이딩 드로어에서 상세 정보와 승인 이력을 확인합니다.",
         targetView: "portfolio", status: "ready",
-        checks: ["프로젝트명(파란색 링크) 클릭", "기본 정보·단계 구성·WBS 현황·리스크·이슈·승인 이력 확인", "빠른 액션: WBS 관리 열기·작업 현황·승인 요청"],
+        checks: ["프로젝트명(파란색 링크) 클릭", "기본 정보·단계 구성·WBS 현황·리스크·이슈·승인 이력 확인", "빠른 액션: WBS 계획 열기·작업 보드·승인 요청"],
       },
       {
         id: "ri-count", order: 3, title: "리스크/이슈 건수 확인",
@@ -121,15 +121,15 @@ const WBS_GUIDE_CONTENTS = {
       },
       {
         id: "wbs", order: 4, title: "WBS 등록",
-        outcome: "WBS 관리 메뉴에서 항목을 직접 추가하거나 Excel을 업로드합니다.",
+        outcome: "WBS 계획 메뉴에서 항목을 직접 추가하거나 Excel을 업로드합니다.",
         targetView: "wbs-plan", status: "ready",
-        checks: ["WBS 관리 버튼 클릭 또는 좌측 WBS 관리 메뉴 이동", "프로젝트 선택 후 행 추가 또는 ↑ Excel 업로드"],
+        checks: ["WBS 계획 버튼 클릭 또는 좌측 WBS 계획 메뉴 이동", "프로젝트 선택 후 행 추가 또는 ↑ Excel 업로드"],
       },
       {
         id: "approval", order: 5, title: "승인 요청",
         outcome: "PMO가 프로젝트 행의 승인 요청 버튼을 클릭하면 검토 상태로 변경되고 PMO Lead 승인 대기가 됩니다.",
         targetView: "portfolio", status: "ready",
-        checks: ["프로젝트 목록에서 승인 요청 버튼 클릭", "설정 > 승인 이력 탭에서 대기 항목 확인", "PMO Lead가 승인/반려 처리"],
+        checks: ["프로젝트 목록에서 승인 요청 버튼 클릭", "시스템 설정 > 승인 이력 탭에서 대기 항목 확인", "PMO Lead가 승인/반려 처리"],
         caution: "승인 전에는 외부 도구 실제 기준선 반영이 차단됩니다.",
       },
       {
@@ -148,7 +148,7 @@ const WBS_GUIDE_CONTENTS = {
     ],
     guardrails: [
       "프로젝트 상태가 승인이어야 외부 도구 기준선 반영 버튼이 활성화됩니다.",
-      "반려 시 담당자는 WBS 관리에서 내용을 수정한 뒤 재승인 요청합니다.",
+      "반려 시 담당자는 WBS 계획에서 내용을 수정한 뒤 재승인 요청합니다.",
       "상단 필터와 정렬 UI로 상태, 담당자, 일정 기준의 프로젝트 목록을 좁혀 봅니다.",
       "테넌트가 바뀌면 프로젝트와 WBS 목록도 선택된 테넌트 기준으로 다시 표시됩니다.",
     ],
@@ -170,7 +170,7 @@ const WBS_GUIDE_CONTENTS = {
     steps: [
       {
         id: "navigate", order: 1, title: "목록으로 이동",
-        outcome: "좌측 메뉴에서 직접 열거나 대시보드/프로젝트 현황의 리스크·이슈 숫자 버튼을 클릭합니다.",
+        outcome: "좌측 메뉴에서 직접 열거나 대시보드/프로젝트 메뉴의 리스크·이슈 숫자 버튼을 클릭합니다.",
         targetView: "risks", status: "ready",
         checks: ["숫자 버튼으로 이동하면 탭, 프로젝트, 미종료 상태 필터가 자동 적용됩니다", "직접 진입 시 전체 프로젝트 기준으로 조회합니다"],
       },
@@ -184,7 +184,7 @@ const WBS_GUIDE_CONTENTS = {
         id: "detail", order: 3, title: "상세 내용 확인",
         outcome: "행 클릭 또는 상세 버튼으로 오른쪽 슬라이딩 패널을 열어 프로젝트, WBS 코드, 설명, 대응 전략, 목표일을 확인합니다.",
         status: "ready",
-        checks: ["리스크: 심각도, 발생 가능성, 대응 전략 표시", "이슈: 우선순위, 담당자, 설명 표시", "프로젝트 현황 버튼으로 관련 프로젝트 상세로 이동"],
+        checks: ["리스크: 심각도, 발생 가능성, 대응 전략 표시", "이슈: 우선순위, 담당자, 설명 표시", "프로젝트 보기 버튼으로 관련 프로젝트 상세로 이동"],
       },
       {
         id: "close", order: 4, title: "상태 처리",
@@ -249,7 +249,7 @@ const WBS_GUIDE_CONTENTS = {
         outcome: "↑ Excel 업로드 버튼으로 Excel 파일을 업로드하면 WBS 항목이 편집기에 로드됩니다.",
         status: "ready",
         targetView: "templates",
-        checks: ["표준/일반 WBS 관리에서 템플릿 Excel 다운로드", "WBS 작성 후 ↑ Excel 업로드", "편집기에서 항목 검토 후 저장 버튼 클릭"],
+        checks: ["WBS 템플릿에서 템플릿 Excel 다운로드", "WBS 작성 후 ↑ Excel 업로드", "편집기에서 항목 검토 후 저장 버튼 클릭"],
       },
       {
         id: "save", order: 7, title: "저장",
@@ -261,27 +261,27 @@ const WBS_GUIDE_CONTENTS = {
     ],
     questions: [
       { id: "q-code",    question: "WBS 코드를 비워두면 어떻게 되나요?",     answer: "레벨과 행 순서 기반으로 자동 생성됩니다. 예) SI.1.1" },
-      { id: "q-sync",    question: "기준선 반영 상태가 '대기'인 것은 무엇인가요?", answer: "외부 도구로 아직 기준선이 반영되지 않은 항목입니다. 외부 연동을 쓰지 않는 운영에서는 작업 현황 메뉴의 내부 진행 상태를 기준으로 보면 됩니다." },
+      { id: "q-sync",    question: "기준선 반영 상태가 '대기'인 것은 무엇인가요?", answer: "외부 도구로 아직 기준선이 반영되지 않은 항목입니다. 외부 연동을 쓰지 않는 운영에서는 작업 보드 메뉴의 내부 진행 상태를 기준으로 보면 됩니다." },
       { id: "q-approve", question: "저장 버튼이 비활성화되어 있습니다.",      answer: "변경사항이 없거나 프로젝트 상태가 승인 이후 단계입니다. 반려된 프로젝트는 다시 수정 가능합니다." },
     ],
     guardrails: [
       "프로젝트와 WBS 항목에는 테넌트 정보가 함께 부여됩니다.",
       "테넌트 전환 후에는 선택 가능한 프로젝트와 WBS 항목이 해당 테넌트 기준으로 표시됩니다.",
-      "상태·진척률은 WBS 관리 표에서 인라인으로 바꾸거나 작업 현황에서 업데이트합니다. 실행 코멘트·첨부는 작업 현황에서 관리합니다.",
+      "상태·진척률은 WBS 계획 표에서 인라인으로 바꾸거나 작업 보드에서 업데이트합니다. 실행 코멘트·첨부는 작업 보드에서 관리합니다.",
       "진척률은 최하위 작업만 입력합니다. 상위 항목은 하위 작업 가중치로 자동 합산(Σ 표시)되며 모든 화면이 같은 산식을 씁니다.",
     ],
   },
   workboard: {
     kind: "procedure",
     hero: {
-      eyebrow: "작업 현황",
+      eyebrow: "작업 보드",
       title: "내부 WBS 작업 실행 관리",
-      description: "OpenProject 없이도 WBS Platform 안에서 내 작업, PM용 프로젝트 작업 보드, 내부 간트, Agile 백로그와 스프린트를 운영합니다.",
-      tags: ["내 작업", "작업 보드", "간트", "Agile", "Hybrid"],
+      description: "OpenProject 없이도 WBS Platform 안에서 내 작업, PM용 프로젝트 칸반 보드, 내부 간트, Agile 백로그와 스프린트를 운영합니다.",
+      tags: ["내 작업", "칸반 보드", "간트", "Agile", "Hybrid"],
     },
     summary: [
       { id: "mine", label: "내 작업", value: "담당자 기준", description: "로그인 사용자와 담당자·검토자·승인자가 매칭된 WBS 항목을 보여줍니다.", tone: "good" },
-      { id: "board", label: "작업 보드", value: "PM 관점", description: "대기, 진행중, 완료, 지연, 보류 컬럼으로 프로젝트 실행 상태를 확인합니다.", tone: "info" },
+      { id: "board", label: "칸반 보드", value: "PM 관점", description: "대기, 진행중, 완료, 지연, 보류 컬럼으로 프로젝트 실행 상태를 확인합니다.", tone: "info" },
       { id: "gantt", label: "간트", value: "일정 관점", description: "WBS 시작일·종료일을 기준으로 내부 간트를 표시합니다.", tone: "warn" },
       { id: "agile", label: "Agile", value: "Sprint 관점", description: "백로그, 스프린트 보드, 번다운, Velocity를 내부 Agile 데이터로 관리합니다.", tone: "good" },
     ],
@@ -290,7 +290,7 @@ const WBS_GUIDE_CONTENTS = {
         id: "select", order: 1, title: "프로젝트 조회",
         outcome: "상단 프로젝트 선택 후 조회 버튼을 누르면 내부 WBS 작업 항목을 불러옵니다.",
         targetView: "workboard", status: "ready",
-        checks: ["선택된 테넌트의 프로젝트만 표시됩니다", "WBS 항목이 없으면 WBS 관리에서 먼저 등록합니다"],
+        checks: ["선택된 테넌트의 프로젝트만 표시됩니다", "WBS 항목이 없으면 WBS 계획에서 먼저 등록합니다"],
       },
       {
         id: "mine", order: 2, title: "내 작업 확인",
@@ -299,8 +299,8 @@ const WBS_GUIDE_CONTENTS = {
         checks: ["내 작업 탭 선택", "상세 버튼으로 작업 항목을 열어 상태와 진척률 업데이트"],
       },
       {
-        id: "board", order: 3, title: "PM 작업 보드 운영",
-        outcome: "작업 보드 탭에서 상태별 항목을 확인하고 카드 클릭으로 상세를 엽니다.",
+        id: "board", order: 3, title: "PM 칸반 보드 운영",
+        outcome: "칸반 보드 탭에서 상태별 항목을 확인하고 카드 클릭으로 상세를 엽니다.",
         status: "ready",
         checks: ["카드에는 코드, 담당자, 기한, 진척률이 표시됩니다", "상태 변경 후 저장하면 WBS 항목에 반영됩니다"],
       },
@@ -324,19 +324,19 @@ const WBS_GUIDE_CONTENTS = {
       },
     ],
     guardrails: [
-      "작업 현황은 WBS Platform 내부 데이터를 기준으로 동작합니다.",
+      "작업 보드은 WBS Platform 내부 데이터를 기준으로 동작합니다.",
       "Waterfall은 기존 WBS/간트, Agile은 백로그/스프린트, Hybrid는 상위 WBS와 하위 Agile 항목을 함께 사용합니다.",
       "PMO 자원 가동율과 주간 보고서는 OpenProject가 아니라 내부 WBS 담당자, 일정, 진척률 정보를 기준으로 계산하는 방향입니다.",
-      "외부 도구 연동이 필요한 경우 설정 > 외부 연동에서 선택적으로 기준선을 반영합니다.",
+      "외부 도구 연동이 필요한 경우 시스템 설정 > 외부 연동에서 선택적으로 기준선을 반영합니다.",
     ],
   },
   meetings: {
     kind: "procedure",
     hero: {
-      eyebrow: "회의·Action Item",
-      title: "회의록과 Action Item 관리",
-      description: "프로젝트별 회의록을 남기고, 회의에서 나온 Action Item 을 담당자·기한·상태로 추적합니다. Action Item 은 WBS 항목이나 이슈와 연결할 수 있습니다.",
-      tags: ["회의록", "Action Item", "담당자", "기한"],
+      eyebrow: "회의·조치사항",
+      title: "회의록과 조치사항 관리",
+      description: "프로젝트별 회의록을 남기고, 회의에서 나온 조치사항을 담당자·기한·상태로 추적합니다. 조치사항은 WBS 항목이나 이슈와 연결할 수 있습니다.",
+      tags: ["회의록", "조치사항", "담당자", "기한"],
     },
     steps: [
       {
@@ -346,8 +346,8 @@ const WBS_GUIDE_CONTENTS = {
         checks: ["상단 프로젝트 선택", "+ 회의 버튼으로 회의록 작성", "저장 후 목록에서 회의 확인"],
       },
       {
-        id: "action", order: 2, title: "Action Item 등록",
-        outcome: "회의 또는 프로젝트 단위로 Action Item 을 만들고 담당자·기한을 지정합니다.",
+        id: "action", order: 2, title: "조치사항 등록",
+        outcome: "회의 또는 프로젝트 단위로 조치사항을 만들고 담당자·기한을 지정합니다.",
         status: "ready",
         checks: ["담당자·기한(필수 권장) 입력", "필요하면 WBS 항목 또는 이슈와 연결"],
       },
@@ -356,18 +356,18 @@ const WBS_GUIDE_CONTENTS = {
         outcome: "상태(열림·진행중·완료)를 바꾸며 추적하고, 기한이 지난 항목은 빨간색으로 표시됩니다.",
         status: "ready",
         targetView: "workboard",
-        checks: ["작업 현황 > 내 Action Item 에서 내 담당 건 확인", "상태 드롭다운으로 즉시 변경"],
+        checks: ["작업 보드 > 내 조치사항 에서 내 담당 건 확인", "상태 드롭다운으로 즉시 변경"],
       },
     ],
     guardrails: [
-      "Action Item 은 프로젝트 역할(멤버 이상)이 있어야 등록·수정할 수 있습니다.",
+      "조치사항은 프로젝트 역할(멤버 이상)이 있어야 등록·수정할 수 있습니다.",
     ],
   },
   templates: {
     kind: "task-list",
     hero: {
-      eyebrow: "표준/일반 WBS 관리",
-      title: "Waterfall, Agile, Hybrid 표준/일반 WBS 관리",
+      eyebrow: "WBS 템플릿",
+      title: "Waterfall·Agile·Hybrid WBS 템플릿",
       description: "회사 공식 표준 WBS 5종(SI 구축·데이터 이관·유지보수·Agile·Hybrid)을 확인하고 다운로드합니다. Agile/Hybrid 샘플은 내부 표준 문서로 관리되며 OpenProject 연동은 선택 사항입니다.",
       tags: ["표준 WBS", "Agile 샘플", "Hybrid 샘플", "Excel 업로드"],
     },
@@ -388,7 +388,7 @@ const WBS_GUIDE_CONTENTS = {
         id: "custom-preview", title: "일반 WBS(프로젝트별) 미리보기",
         description: "일반 WBS 섹션에서 각 프로젝트의 🔍 미리보기 버튼을 클릭하면 해당 프로젝트의 WBS를 드로어에서 확인합니다.",
         status: "ready", required: false,
-        checks: ["미리보기: 프로젝트 WBS 항목 계층 트리 표시", "WBS 관리 메뉴에서 직접 편집 가능"],
+        checks: ["미리보기: 프로젝트 WBS 항목 계층 트리 표시", "WBS 계획 메뉴에서 직접 편집 가능"],
       },
       {
         id: "excel-upload-tab", title: "Excel 업로드 탭 활용",
@@ -416,7 +416,7 @@ const WBS_GUIDE_CONTENTS = {
         id: "select", order: 1, title: "프로젝트 선택",
         outcome: "상단 드롭다운에서 동기화 완료 프로젝트를 선택합니다.",
         status: "ready",
-        checks: ["드롭다운에는 상태가 '동기화 완료'인 프로젝트만 표시됩니다", "목록이 비어 있으면 먼저 프로젝트를 승인 후 설정 > OpenProject 탭에서 동기화를 실행하세요"],
+        checks: ["드롭다운에는 상태가 '동기화 완료'인 프로젝트만 표시됩니다", "목록이 비어 있으면 먼저 프로젝트를 승인 후 시스템 설정 > OpenProject 탭에서 동기화를 실행하세요"],
       },
       {
         id: "wp", order: 2, title: "작업패키지 목록 확인",
@@ -434,7 +434,7 @@ const WBS_GUIDE_CONTENTS = {
           "진척률(%) 바가 바 안에 표시됩니다",
           "바 안에 업무명과 기간(예: 요구사항 분석 (2026-01-01~2026-01-31)) 텍스트 표시",
         ],
-        caution: "일정(시작일·종료일)이 없는 항목은 간트 바가 표시되지 않습니다. WBS 관리에서 날짜를 입력하세요.",
+        caution: "일정(시작일·종료일)이 없는 항목은 간트 바가 표시되지 않습니다. WBS 계획에서 날짜를 입력하세요.",
       },
       {
         id: "refresh", order: 4, title: "최신 데이터 가져오기",
@@ -444,14 +444,14 @@ const WBS_GUIDE_CONTENTS = {
       },
     ],
     questions: [
-      { id: "q1", question: "동기화 완료 프로젝트가 목록에 없습니다.",        answer: "프로젝트 현황에서 '승인' 상태인 프로젝트를 선택 후, 설정 > OpenProject 탭에서 동기화를 먼저 실행하세요." },
-      { id: "q2", question: "간트 차트가 표시되지 않습니다.",                 answer: "WBS 항목에 시작일과 종료일이 입력되어야 간트 바가 표시됩니다. WBS 관리 메뉴에서 날짜를 입력하세요." },
+      { id: "q1", question: "동기화 완료 프로젝트가 목록에 없습니다.",        answer: "프로젝트 메뉴에서 '승인' 상태인 프로젝트를 선택 후, 시스템 설정 > OpenProject 탭에서 동기화를 먼저 실행하세요." },
+      { id: "q2", question: "간트 차트가 표시되지 않습니다.",                 answer: "WBS 항목에 시작일과 종료일이 입력되어야 간트 바가 표시됩니다. WBS 계획 메뉴에서 날짜를 입력하세요." },
       { id: "q3", question: "상태가 '미시작'인 항목이 있습니다.",             answer: "OpenProject의 기본 상태(New)로 아직 작업이 시작되지 않은 항목입니다. OpenProject에서 상태를 변경하면 진행 중/완료 배지가 표시됩니다." },
-      { id: "q4", question: "작업패키지 목록과 WBS 관리의 차이가 무엇인가요?", answer: "WBS 관리는 AX WBS 내에서 항목을 추가·수정·삭제하는 편집 화면입니다. WBS 현황은 OpenProject로 전송된 항목의 실시간 상태를 조회하는 뷰어입니다." },
+      { id: "q4", question: "작업패키지 목록과 WBS 계획의 차이가 무엇인가요?", answer: "WBS 계획는 AX WBS 내에서 항목을 추가·수정·삭제하는 편집 화면입니다. WBS 현황은 OpenProject로 전송된 항목의 실시간 상태를 조회하는 뷰어입니다." },
     ],
     guardrails: [
       "상단 요약 스트립에서 전체·진행중·완료·지연 건수와 평균 진행률을 한눈에 확인합니다.",
-      "기준 일정과 가중치는 WBS 관리에서, 상태·진척률·실행 코멘트는 WBS 관리 또는 작업 현황에서 수행합니다.",
+      "기준 일정과 가중치는 WBS 계획에서, 상태·진척률·실행 코멘트는 WBS 계획 또는 작업 보드에서 수행합니다.",
     ],
   },
   resource: {
@@ -478,13 +478,13 @@ const WBS_GUIDE_CONTENTS = {
         id: "workload", order: 2, title: "WBS 작업 부하 확인",
         outcome: "WBS 항목의 담당자와 일정 정보를 기준으로 담당자별 작업량을 확인합니다.",
         status: "ready",
-        checks: ["업무가 특정 담당자에게 몰리는지 확인", "일정 조정이 필요한 항목은 WBS 관리에서 수정"],
+        checks: ["업무가 특정 담당자에게 몰리는지 확인", "일정 조정이 필요한 항목은 WBS 계획에서 수정"],
       },
       {
         id: "accounts", order: 3, title: "계정별 할당 확인",
         outcome: "사용자 계정 기준으로 task 할당과 활성 계정 상태를 확인합니다.",
         status: "ready",
-        checks: ["계정별 할당 task 수 확인", "비활성 또는 역할이 맞지 않는 계정은 설정 > 사용자에서 조정"],
+        checks: ["계정별 할당 task 수 확인", "비활성 또는 역할이 맞지 않는 계정은 시스템 설정 > 사용자에서 조정"],
       },
       {
         id: "capacity", order: 4, title: "PMO 가동율 확인",
@@ -494,7 +494,7 @@ const WBS_GUIDE_CONTENTS = {
       },
     ],
     guardrails: [
-      "자원 배분은 분석 화면입니다. 실제 WBS 담당자 변경은 WBS 관리 또는 작업 현황에서 수행합니다.",
+      "자원 배분은 분석 화면입니다. 실제 WBS 담당자 변경은 WBS 계획 또는 작업 보드에서 수행합니다.",
       "계정별 할당은 사용자 계정 데이터와 WBS 담당자 값의 연결 품질에 영향을 받습니다.",
       "테넌트 전환 시 자원 배분 결과도 해당 테넌트 기준으로 다시 조회해야 합니다.",
     ],
@@ -502,8 +502,8 @@ const WBS_GUIDE_CONTENTS = {
   notes: {
     kind: "reference",
     hero: {
-      eyebrow: "노트/보고서",
-      title: "노트 / 보고서 작성 및 관리",
+      eyebrow: "노트·보고서",
+      title: "노트·보고서 작성 및 관리",
       description: "폴더 기반으로 노트를 분류하고 리치 텍스트 에디터로 주간 보고서·월간 보고서·회의록·이슈 보고서를 작성합니다. 삭제된 노트는 숨김 처리되어 DB에 보존되며 관리자가 복구할 수 있습니다.",
       tags: ["노트", "보고서", "회의록", "소프트 딜리트", "이력 관리"],
     },
@@ -521,9 +521,9 @@ const WBS_GUIDE_CONTENTS = {
     resources: [
       { id: "autosave",    title: "자동 저장",        description: "제목 또는 내용 수정 후 1.2초 경과 시 자동 저장됩니다. 에디터 하단 '저장됨 HH:MM' 상태가 표시됩니다.", meta: "저장 방식" },
       { id: "folder-del",  title: "폴더 삭제 주의",   description: "폴더 삭제 시 해당 폴더의 노트는 미분류(폴더 없음) 상태로 이동됩니다. 노트 내용은 삭제되지 않습니다.", meta: "데이터 보존" },
-      { id: "soft-delete", title: "소프트 딜리트 구조", description: "노트 삭제 → deleted_at 컬럼에 시각 기록 → 목록에서 숨김. 감사 로그(설정 > 감사 로그)에 'note.deleted' 이벤트로 기록됩니다.", meta: "이력 관리" },
+      { id: "soft-delete", title: "소프트 딜리트 구조", description: "노트 삭제 → deleted_at 컬럼에 시각 기록 → 목록에서 숨김. 감사 로그(시스템 설정 > 감사 로그)에 'note.deleted' 이벤트로 기록됩니다.", meta: "이력 관리" },
       { id: "restore",     title: "삭제 노트 복구",   description: "admin 계정으로 API 직접 호출: POST /api/notes/{id}/restore. 복구 시 'note.restored' 감사 이벤트 생성.", meta: "admin 전용" },
-      { id: "audit-note",  title: "감사 로그 연동",   description: "노트 생성(note.created)·삭제(note.deleted)·복구(note.restored) 이벤트가 설정 > 감사 로그 탭에서 조회됩니다.", meta: "감사 추적" },
+      { id: "audit-note",  title: "감사 로그 연동",   description: "노트 생성(note.created)·삭제(note.deleted)·복구(note.restored) 이벤트가 시스템 설정 > 감사 로그 탭에서 조회됩니다.", meta: "감사 추적" },
     ],
     guardrails: [
       "삭제 버튼은 노트를 완전히 삭제하지 않습니다. 숨김 처리되어 DB에 보존됩니다.",
@@ -535,7 +535,7 @@ const WBS_GUIDE_CONTENTS = {
   settings: {
     kind: "reference",
     hero: {
-      eyebrow: "설정",
+      eyebrow: "시스템 설정",
       title: "설정 메뉴 안내",
       description: "설정 메뉴는 플랫폼 설정, 프로젝트 운영 정책, 승인 이력, 운영 점검, 사용자, 감사 로그, 외부 연동, 인증(LDAP), 알림(SMTP), 테넌트 탭으로 구성됩니다.",
       tags: ["운영 정책", "운영 점검", "LDAP", "테넌트"],

@@ -118,7 +118,7 @@ function renderProjectDetailBody() {
   } else if (state.pdTab === "diff") {
     renderPdDiffTab();
   } else if (state.pdTab === "wbs") {
-    body.innerHTML = `<p class="empty-state" style="padding:40px">WBS 상세는 <a href="#wbs-plan" style="color:var(--blue)">WBS 관리</a> 탭에서 확인하세요.</p>`;
+    body.innerHTML = `<p class="empty-state" style="padding:40px">WBS 상세는 <a href="#wbs-plan" style="color:var(--blue)">WBS 계획</a> 탭에서 확인하세요.</p>`;
   }
 }
 

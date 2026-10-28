@@ -331,7 +331,7 @@ async function openProjectWbsPreview(projectId) {
 
     if (!rows || !rows.length) {
       document.querySelector("#templateDrawerContent").innerHTML =
-        `<div class="wbs-board-empty"><strong>WBS 항목 없음</strong><span>Excel 업로드 또는 WBS 관리 메뉴에서 항목을 추가하세요.</span></div>`;
+        `<div class="wbs-board-empty"><strong>WBS 항목 없음</strong><span>Excel 업로드 또는 WBS 계획 메뉴에서 항목을 추가하세요.</span></div>`;
       return;
     }
 

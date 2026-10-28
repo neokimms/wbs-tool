@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 import unittest
 
@@ -220,7 +221,7 @@ class WbsPlatformContracts(unittest.TestCase):
         for snippet in (
             '{ id: "risks",      label: "리스크·이슈" }',
             '{ id: "resource",   label: "자원 배분" }',
-            '{ id: "workboard",  label: "작업 현황" }',
+            '{ id: "workboard",  label: "작업 보드" }',
             "숫자 버튼은 Closed 제외 미종료 건 기준",
             "오른쪽 슬라이딩 패널",
             "WBS 작업 부하, 사용자 계정별 할당, PMO 가동율",
@@ -238,7 +239,7 @@ class WbsPlatformContracts(unittest.TestCase):
             "data-wbs-type-chip",
             "hasActiveWbsPlanFilter",
             "hasVisibleDescendant",
-            "기준 일정과 가중치는 WBS 관리에서",
+            "기준 일정과 가중치는 WBS 계획에서",
         ):
             self.assertIn(snippet, PORTAL_HTML + PORTAL_JS + PORTAL_CSS)
 
@@ -392,6 +393,52 @@ class WbsPlatformContracts(unittest.TestCase):
             "010_project_operation_policy.sql",
         ):
             self.assertTrue((ROOT / "services/wbs-api/migrations" / name).is_file(), name)
+
+class SidebarMenuGroupTests(unittest.TestCase):
+    """좌측 메뉴: 그룹(개요/계획/실행/통제·협업/관리)·메뉴명·순서 계약 (2026-10-29)."""
+
+    EXPECTED = [
+        ("개요", ["#dashboard", "#announcements"]),
+        ("계획", ["#portfolio", "#wbs-plan", "#templates"]),
+        ("실행", ["#op-view", "#workboard", "#resource"]),
+        ("통제·협업", ["#risks", "#meetings", "#notes"]),
+        ("관리", ["#settings"]),
+    ]
+    LABELS = {
+        "#portfolio": "프로젝트", "#wbs-plan": "WBS 계획", "#templates": "WBS 템플릿",
+        "#workboard": "작업 보드", "#meetings": "회의·조치사항", "#notes": "노트·보고서",
+        "#settings": "시스템 설정",
+    }
+
+    def _nav(self):
+        m = re.search(r'<nav class="nav-list">(.*?)</nav>', PORTAL_HTML, re.S)
+        self.assertIsNotNone(m)
+        return m.group(1)
+
+    def test_groups_and_order(self):
+        nav = self._nav()
+        groups = re.findall(r'<p class="nav-group-title"[^>]*>([^<]+)</p>(.*?)</div>', nav, re.S)
+        self.assertEqual([g[0] for g in groups], [g[0] for g in self.EXPECTED])
+        for (title, body), (_, hrefs) in zip(groups, self.EXPECTED):
+            self.assertEqual(re.findall(r'href="(#[^"]+)"', body), hrefs, title)
+        self.assertIn('href="#guide" class="nav-guide-link"', nav.split("</div>")[-1])
+
+    def test_labels_and_tooltips_match(self):
+        nav = self._nav()
+        for href, label in self.LABELS.items():
+            a = re.search(rf'<a[^>]*href="{href}"[^>]*>.*?</a>', nav, re.S).group(0)
+            self.assertIn(f'data-tooltip="{label}"', a)
+            self.assertIn(f'<span class="nav-label">{label}</span>', a)
+
+    def test_old_menu_names_removed_from_nav(self):
+        nav = self._nav()
+        for old in ("프로젝트 현황", "WBS 관리", "표준/일반", "작업 현황", "Action Item", "노트/보고서", '"설정"'):
+            self.assertNotIn(old, nav)
+
+    def test_empty_group_hidden_logic_exists(self):
+        self.assertIn("initNavGroups", PORTAL_JS)
+        self.assertIn(".nav-group-title", PORTAL_CSS)
+
 
 if __name__ == "__main__":
     unittest.main()
